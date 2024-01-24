@@ -58,15 +58,16 @@
     }
 
     function calculateTotalCost(startLevel, endLevel) {
-      const startIdx = parseInt(startLevel) - 1;
+      const startIdx = Math.max(0, parseInt(startLevel) - 1); // Ensure the start index is not negative
       const endIdx = parseInt(endLevel) - 1;
 
       if (startIdx >= 0 && endIdx < levels.length && startIdx <= endIdx) {
         return levels.slice(startIdx, endIdx + 1).reduce((total, value) => total + value, 0);
       } else {
         return null; // Invalid levels
-  }
-}
+      }
+    }
+
 
     function toggleInputMode() {
       isRangeMode = !isRangeMode;
