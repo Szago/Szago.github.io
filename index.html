@@ -7,8 +7,19 @@
 </head>
 <body>
 
-  <label for="labelInput">Enter Level (1-170): </label>
-  <input type="text" id="labelInput">
+  <div id="levelInputContainer">
+    <label for="labelInput">Enter Level (1-170): </label>
+    <input type="text" id="labelInput">
+  </div>
+
+  <div id="rangeInputContainer" style="display:none;">
+    <label for="startLevelInput">Starting Level: </label>
+    <input type="text" id="startLevelInput">
+    <label for="endLevelInput">End Level: </label>
+    <input type="text" id="endLevelInput">
+  </div>
+
+  <button onclick="toggleInputMode()">Choose Range</button>
   <button onclick="retrieveCost()">Calculate Cost</button>
 
   <p id="result"></p>
@@ -26,6 +37,7 @@
     }
 
     let levels = null;
+    let isRangeMode = false;
 
     async function initLevels() {
       levels = await getLevelsFromJSON();
@@ -45,31 +57,53 @@
       }
     }
 
-    function calculateTotalCost(level) {
-      const index = parseInt(level) - 1;
-      if (index >= 0 && index < levels.length) {
-        return levels.slice(0, index + 1).reduce((total, value) => total + value, 0);
+    function calculateTotalCost(startLevel, endLevel) {
+      const startIdx = parseInt(startLevel) - 1;
+      const endIdx = parseInt(endLevel) - 1;
+
+      if (startIdx >= 0 && endIdx < levels.length && startIdx <= endIdx) {
+        return levels.slice(startIdx, endIdx + 1).reduce((total, value) => total + value, 0);
       } else {
-        return null; // Invalid level
+        return null; // Invalid levels
+      }
+    }
+
+    function toggleInputMode() {
+      isRangeMode = !isRangeMode;
+      const levelInputContainer = document.getElementById('levelInputContainer');
+      const rangeInputContainer = document.getElementById('rangeInputContainer');
+
+      if (isRangeMode) {
+        levelInputContainer.style.display = 'none';
+        rangeInputContainer.style.display = 'block';
+      } else {
+        levelInputContainer.style.display = 'block';
+        rangeInputContainer.style.display = 'none';
       }
     }
 
     function retrieveCost() {
-      const levelInput = document.getElementById('labelInput').value;
       const resultElement = document.getElementById('result');
 
-      if (levelInput.trim() === '') {
-        resultElement.textContent = 'Please enter a level.';
-        return;
-      }
+      if (isRangeMode) {
+        const startLevel = document.getElementById('startLevelInput').value;
+        const endLevel = document.getElementById('endLevelInput').value;
+        const total = calculateTotalCost(startLevel, endLevel);
 
-      const number = getNumberFromLabel(levelInput);
-      const total = calculateTotalCost(levelInput);
-
-      if (number !== null && total !== null) {
-        resultElement.innerHTML = `Number for level ${levelInput}: ${number}<br>Total cost: ${total}`;
+        if (total !== null) {
+          resultElement.innerHTML = `Total cost from level ${startLevel} to ${endLevel}: ${total}`;
+        } else {
+          resultElement.textContent = 'Invalid levels. Please make sure the range is valid.';
+        }
       } else {
-        resultElement.textContent = 'Invalid level. Please enter a number between 1 and 170.';
+        const levelInput = document.getElementById('labelInput').value;
+        const number = getNumberFromLabel(levelInput);
+
+        if (number !== null) {
+          resultElement.innerHTML = `Number for level ${levelInput}: ${number}`;
+        } else {
+          resultElement.textContent = 'Invalid level. Please enter a number between 1 and 170.';
+        }
       }
     }
   </script>
