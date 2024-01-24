@@ -67,7 +67,7 @@
       const total = calculateTotalCost(levelInput);
 
       if (number !== null && total !== null) {
-        resultElement.textContent = `Number for level ${levelInput}: ${number}, Total cost: ${total}`;
+        resultElement.innerHTML = `Number for level ${levelInput}: ${number}<br>Total cost: ${total}`;
       } else {
         resultElement.textContent = 'Invalid level. Please enter a number between 1 and 170.';
       }
