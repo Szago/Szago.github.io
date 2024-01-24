@@ -62,7 +62,7 @@
       const endIdx = parseInt(endLevel) - 1;
 
       if (startIdx >= 0 && endIdx < levels.length && startIdx <= endIdx) {
-        return levels.slice(startIdx, endIdx + 1).reduce((total, value) => total + value, 0);
+        return levels.slice(0, endIdx + 1).reduce((total, value) => total + value, 0);
       } else {
         return null; // Invalid levels
       }
@@ -100,7 +100,8 @@
         const number = getNumberFromLabel(levelInput);
 
         if (number !== null) {
-          resultElement.innerHTML = `Number for level ${levelInput}: ${number}`;
+          const totalToCurrentLevel = calculateTotalCost(1, levelInput);
+          resultElement.innerHTML = `Number for level ${levelInput}: ${number}<br>Total cost from level 1 to ${levelInput}: ${totalToCurrentLevel}`;
         } else {
           resultElement.textContent = 'Invalid level. Please enter a number between 1 and 170.';
         }
