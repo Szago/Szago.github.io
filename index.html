@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LevelUp Cost Calculator</title>
+  <link rel="stylesheet" type="text/css" href="styles.css">
 </head>
 <body>
 
@@ -19,10 +20,16 @@
     <input type="text" id="endLevelInput">
   </div>
 
-  <button onclick="toggleInputMode()">Choose Range</button>
+  <button id="toggleButton" onclick="toggleInputMode()">Range Mode</button>
   <button onclick="retrieveCost()">Calculate Cost</button>
 
+  <div id="checkboxContainer" style="display:inline-block;">
+    <label for="displayModeCheckbox">Use Abbreviated Display Mode</label>
+    <input type="checkbox" id="displayModeCheckbox" onchange="updateDisplayMode()">
+  </div>
+
   <p id="result"></p>
+  <div id="tableResult"></div>
 
   <script>
     async function getLevelsFromJSON() {
@@ -38,6 +45,7 @@
 
     let levels = null;
     let isRangeMode = false;
+    let useAbbreviatedDisplayMode = false;
 
     async function initLevels() {
       levels = await getLevelsFromJSON();
@@ -57,75 +65,113 @@
       }
     }
 
-    function calculateTotalCost(startLevel, endLevel) {
-      const startIdx = Math.max(0, parseInt(startLevel) - 1); // Ensure the start index is not negative
-      const endIdx = parseInt(endLevel) - 1;
+    function calculateTotalCost(level) {
+      const endIdx = parseInt(level) - 1;
 
-      if (startIdx >= 0 && endIdx < levels.length && startIdx <= endIdx) {
-        return levels.slice(startIdx, endIdx + 1).reduce((total, value) => total + value, 0);
+      if (endIdx >= 0 && endIdx < levels.length) {
+        return levels.slice(0, endIdx + 1).reduce((total, value) => total + value, 0);
       } else {
-        return null; // Invalid levels
+        return null; // Invalid level
       }
     }
 
+    function calculateCostBreakdown(startLevel, endLevel) {
+      const breakdown = [];
+      for (let i = startLevel; i < endLevel; i++) {
+        breakdown.push({
+          startLevel: i,
+          endLevel: i + 1,
+          cost: levels[i],
+        });
+      }
+      return breakdown;
+    }
+
+    function updateDisplayMode() {
+      useAbbreviatedDisplayMode = document.getElementById('displayModeCheckbox').checked;
+      retrieveCost(); // Refresh the displayed values
+    }
+
+    function displayCostBreakdown(breakdown) {
+      const tableResultElement = document.getElementById('tableResult');
+
+      let tableHTML = '<table border="1"><tr><th>Start Level</th><th>End Level</th><th>Cost</th></tr>';
+
+      breakdown.forEach(entry => {
+        tableHTML += `<tr><td>${entry.startLevel}</td><td>${entry.endLevel}</td><td>${useAbbreviatedDisplayMode ? abbreviateNumber(entry.cost) : entry.cost}</td></tr>`;
+      });
+
+      tableHTML += '</table>';
+      tableResultElement.innerHTML = tableHTML;
+    }
+
+    function abbreviateNumber(num) {
+      if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+      } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+      } else {
+        return num;
+      }
+    }
 
     function toggleInputMode() {
       isRangeMode = !isRangeMode;
       const levelInputContainer = document.getElementById('levelInputContainer');
       const rangeInputContainer = document.getElementById('rangeInputContainer');
+      const toggleButton = document.getElementById('toggleButton');
 
       if (isRangeMode) {
         levelInputContainer.style.display = 'none';
         rangeInputContainer.style.display = 'block';
+        toggleButton.textContent = 'Simple Mode';
       } else {
         levelInputContainer.style.display = 'block';
         rangeInputContainer.style.display = 'none';
+        toggleButton.textContent = 'Range Mode';
       }
+
+      retrieveCost(); // Refresh the displayed values
     }
 
     function retrieveCost() {
-  const resultElement = document.getElementById('result');
+      const resultElement = document.getElementById('result');
+      const tableResultElement = document.getElementById('tableResult');
 
-  if (isRangeMode) {
-    const startLevel = document.getElementById('startLevelInput').value;
-    const endLevel = document.getElementById('endLevelInput').value;
-    const total = calculateTotalCost(startLevel, endLevel);
+      if (isRangeMode) {
+        const startLevel = document.getElementById('startLevelInput').value;
+        const endLevel = document.getElementById('endLevelInput').value;
+        const startTotal = calculateTotalCost(startLevel);
+        const endTotal = calculateTotalCost(endLevel);
+        const total = endTotal - startTotal;
 
-    if (total !== null) {
-      // Display total cost
-      resultElement.innerHTML = `Total cost from level ${startLevel} to ${endLevel}: ${total}<br>`;
+        if (total !== null) {
+          const displayTotal = useAbbreviatedDisplayMode ? abbreviateNumber(total) : total;
+          resultElement.innerHTML = `Total cost from level ${startLevel} to ${endLevel}: ${displayTotal}`;
 
-      // Display level costs table
-      resultElement.innerHTML += '<table border="1">';
-      resultElement.innerHTML += '<tr><th>From Level</th><th>To Level</th><th>Cost</th></tr>';
+          const breakdown = calculateCostBreakdown(parseInt(startLevel), parseInt(endLevel));
+          displayCostBreakdown(breakdown);
+        } else {
+          resultElement.textContent = 'Invalid levels. Please make sure the range is valid.';
+          tableResultElement.innerHTML = '';
+        }
+      } else {
+        const levelInput = document.getElementById('labelInput').value;
+        const number = getNumberFromLabel(levelInput);
 
-      for (let i = parseInt(startLevel); i <= parseInt(endLevel); i++) {
-        const fromLevel = i;
-        const toLevel = i + 1;
-        const cost = calculateTotalCost(startLevel, toLevel);
+        if (number !== null) {
+          const totalToCurrentLevel = calculateTotalCost(levelInput);
+          const displayTotalToCurrentLevel = useAbbreviatedDisplayMode ? abbreviateNumber(totalToCurrentLevel) : totalToCurrentLevel;
+          resultElement.innerHTML = `Cost for level ${levelInput}: ${useAbbreviatedDisplayMode ? abbreviateNumber(number) : number}<br>Total cost from level 1 to ${levelInput}: ${displayTotalToCurrentLevel}`;
 
-        resultElement.innerHTML += `<tr><td>${fromLevel}</td><td>${toLevel}</td><td>${cost}</td></tr>`;
+          const breakdown = calculateCostBreakdown(1, parseInt(levelInput));
+          displayCostBreakdown(breakdown);
+        } else {
+          resultElement.textContent = 'Invalid level. Please enter a number between 1 and 170.';
+          tableResultElement.innerHTML = '';
+        }
       }
-
-      resultElement.innerHTML += '</table>';
-    } else {
-      resultElement.textContent = 'Invalid levels. Please make sure the range is valid.';
     }
-  } else {
-    // Handling for the single level input mode
-    const levelInput = document.getElementById('labelInput').value;
-    const number = getNumberFromLabel(levelInput);
-
-    if (number !== null) {
-      const totalToCurrentLevel = calculateTotalCost(1, levelInput);
-      resultElement.innerHTML = `Cost for level ${levelInput}: ${number}<br>Total cost from level 1 to ${levelInput - 1}: ${totalToCurrentLevel}`;
-    } else {
-      resultElement.textContent = 'Invalid level. Please enter a number between 1 and 170.';
-    }
-  }
-}
-
-
   </script>
 
 </body>
