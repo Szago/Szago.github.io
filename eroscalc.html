@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LevelUp Cost Calculator</title>
+</head>
+<body>
+
+  <label for="labelInput">Enter Level (1-170): </label>
+  <input type="text" id="labelInput">
+  <button onclick="retrieveCost()">Calculate Cost</button>
+
+  <p id="result"></p>
+
+  <script>
+    async function getLevelsFromJSON() {
+      try {
+        const response = await fetch('levels.json');
+        const data = await response.json();
+        return data.levels;
+      } catch (error) {
+        console.error('Error loading levels:', error);
+        return null;
+      }
+    }
+
+    let levels = null;
+
+    async function initLevels() {
+      levels = await getLevelsFromJSON();
+      if (!levels) {
+        alert('Failed to load levels. Check the console for details.');
+      }
+    }
+
+    initLevels(); // Initialize levels on page load
+
+    function getNumberFromLabel(label) {
+      const index = parseInt(label) - 1;
+      if (index >= 0 && index < levels.length) {
+        return levels[index];
+      } else {
+        return null; // Invalid label
+      }
+    }
+
+    function calculateTotalCost(level) {
+      const index = parseInt(level) - 1;
+      if (index >= 0 && index < levels.length) {
+        return levels.slice(0, index + 1).reduce((total, value) => total + value, 0);
+      } else {
+        return null; // Invalid level
+      }
+    }
+
+    function retrieveCost() {
+      const levelInput = document.getElementById('labelInput').value;
+      const resultElement = document.getElementById('result');
+
+      if (levelInput.trim() === '') {
+        resultElement.textContent = 'Please enter a level.';
+        return;
+      }
+
+      const number = getNumberFromLabel(levelInput);
+      const total = calculateTotalCost(levelInput);
+
+      if (number !== null && total !== null) {
+        resultElement.textContent = `Number for level ${levelInput}: ${number}, Total cost: ${total}`;
+      } else {
+        resultElement.textContent = 'Invalid level. Please enter a number between 1 and 170.';
+      }
+    }
+  </script>
+
+</body>
+</html>
