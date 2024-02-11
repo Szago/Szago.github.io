@@ -1,0 +1,50 @@
+/* Set background color to match the main page */
+body, html {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background-color: #242323; 
+    height: 100%;
+}
+
+/* Style the header */
+header {
+    background-color: #111;
+    color: #fff;
+    text-align: center;
+    padding: 20px 0;
+}
+
+/* Style the container */
+.container {
+    margin: 20px;
+    display: flex;
+    justify-content: center;
+}
+
+/* Style the Tic-Tac-Toe board */
+.tic-tac-toe-board {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%; /* Adjust as needed */
+    justify-content: center; /* Center the rows */
+}
+
+
+/* Style the cells */
+.cell {
+    width: 300px; /* Adjust as needed */
+    height: 300px; /* Adjust as needed */
+    background-color: #007bff;
+    margin: 70px; /* Adjust as needed */
+    display: inline-block;
+    text-align: center;
+    line-height: 300px; /* Adjust as needed to vertically center text */
+    text-decoration: none; /* Remove underline */
+    color: white;
+}
+
+/* Style on hover (optional) */
+.cell:hover {
+    background-color: #0056b3;
+}
