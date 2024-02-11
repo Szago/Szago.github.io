@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Tool Subpage</title>
+    <title>Shard Simulation</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,20 +12,99 @@
             <button onclick="goBack()">Go Back</button>
         </div>
         <div class="header-center">
-            <h1>New Tool Subpage</h1>
+            <h1>Eros Fantasy tools - Shard Simulation</h1>
         </div>
         <div class="header-right">
             <!-- Add another button or content here if needed -->
         </div>
     </header>
 
+    <div class="container">
+        <div>
+            <label for="shardOdds5">Odds of getting 5 shards: (Example: 6.52% would be 0.0652) </label>
+            <input type="text" id="shardOdds5" value="0.0652">
+        </div>
+        <div>
+            <label for="shardOdds10">Odds of getting 10 shards:</label>
+            <input type="text" id="shardOdds10" value="0.0000">
+        </div>
+        <div>
+            <label for="shardOdds15">Odds of getting 15 shards:</label>
+            <input type="text" id="shardOdds15" value="0.0000">
+        </div>
+        <div>
+            <label for="shardOdds25">Odds of getting 25 shards:</label>
+            <input type="text" id="shardOdds25" value="0.0000">
+        </div>
+        <div>
+            <label for="shardOdds50">Odds of getting 50 shards:</label>
+            <input type="text" id="shardOdds50" value="0.0000">
+        </div>
+        <div>
+            <label for="shardOdds75">Odds of getting 75 shards:</label>
+            <input type="text" id="shardOdds75" value="0.0000">
+        </div>
+        <div>
+            <label for="totalShards">Total number of shards you want:</label>
+            <input type="text" id="totalShards" value="100">
+        </div>
+        <div>
+            <label for="numSimulations">Number of simulations to run: (100k is more than enough) </label>
+            <input type="text" id="numSimulations" value="100000">
+        </div>
+        <button onclick="simulate()">Simulate</button>
+        <div id="result"></div>
+    </div>
 
-
-
-    
     <script>
         function goBack() {
-            window.history.back();
+          window.location.href = "/EROS/eros.html";
+        }
+
+        function simulate() {
+            var shardOdds5 = parseFloat(document.getElementById("shardOdds5").value);
+            var shardOdds10 = parseFloat(document.getElementById("shardOdds10").value);
+            var shardOdds15 = parseFloat(document.getElementById("shardOdds15").value);
+            var shardOdds25 = parseFloat(document.getElementById("shardOdds25").value);
+            var shardOdds50 = parseFloat(document.getElementById("shardOdds50").value);
+            var shardOdds75 = parseFloat(document.getElementById("shardOdds75").value);
+            var totalShards = parseInt(document.getElementById("totalShards").value);
+            var numSimulations = parseInt(document.getElementById("numSimulations").value);
+
+            var startTime = Date.now();
+            var maxDuration = 15000; // 10 seconds
+
+            var chestsNeeded = [];
+            for (var i = 0; i < numSimulations; i++) {
+                var shardsCollected = 0;
+                var chestsOpened = 0;
+                while (shardsCollected < totalShards) {
+                    chestsOpened++;
+                    var rand = Math.random();
+                    if (rand < shardOdds5) {
+                        shardsCollected += 5;
+                    } else if (rand < shardOdds5 + shardOdds10) {
+                        shardsCollected += 10;
+                    } else if (rand < shardOdds5 + shardOdds10 + shardOdds15) {
+                        shardsCollected += 15;
+                    } else if (rand < shardOdds5 + shardOdds10 + shardOdds15 + shardOdds25) {
+                        shardsCollected += 25;
+                    } else if (rand < shardOdds5 + shardOdds10 + shardOdds15 + shardOdds25 + shardOdds50) {
+                        shardsCollected += 50;
+                    } else if (rand < shardOdds5 + shardOdds10 + shardOdds15 + shardOdds25 + shardOdds50 + shardOdds75) {
+                        shardsCollected += 75;
+                    }
+
+                    // Check if simulation time exceeds 10 seconds
+                    if (Date.now() - startTime > maxDuration) {
+                        document.getElementById("result").innerText = "Stopped due to wrong values or too many simulations - check your inputs.";
+                        return;
+                    }
+                }
+                chestsNeeded.push(chestsOpened);
+            }
+            var averageChests = Math.ceil(chestsNeeded.reduce((a, b) => a + b, 0) / chestsNeeded.length);
+            document.getElementById("result").innerText = "Average number of chests needed to obtain " + totalShards + " shards: " + averageChests;
         }
     </script>
 </body>

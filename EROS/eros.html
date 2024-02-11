@@ -23,7 +23,7 @@
         <div class="tic-tac-toe-board">
             <div class="row">
                 <a href="Tools/Tool1/Calculator.html" class="cell">Level cost calculator</a>
-                <a href="Tools/Tool2/tool.html" class="cell">Button 2</a>
+                <a href="Tools/Tool2/tool.html" class="cell">Shard drop simulator</a>
                 <a href="Tools/Tool3/tool.html" class="cell">Button 3</a>
                 <a href="Tools/Tool4/tool.html" class="cell">Button 4</a>
             </div>
@@ -50,8 +50,23 @@
 
     <script>
         function goBack() {
-            window.history.back();
+            window.location.href = "/index.html";
         }
+
+        let cells = document.querySelectorAll('.cell');
+
+cells.forEach(cell => {
+    cell.addEventListener('mouseover', function() {
+        cells.forEach(c => {
+            if (c !== this) c.classList.add('blur-effect'); // add blur to all cells except the hovered one
+        });
+    });
+
+    cell.addEventListener('mouseout', function() {
+        cells.forEach(c => c.classList.remove('blur-effect')); // remove blur from all cells when mouse is out
+    });
+});
+
     </script>
 </body>
 </html>
