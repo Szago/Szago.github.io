@@ -8,7 +8,15 @@
 </head>
 <body>
     <header>
-        <h1>Eros Fantasy tools</h1>
+        <div class="header-left">
+            <button onclick="goBack()">Go Back</button>
+        </div>
+        <div class="header-center">
+            <h1>Eros Fantasy tools</h1>
+        </div>
+        <div class="header-right">
+            <!-- Add another button or content here if needed -->
+        </div>
     </header>
 
     <div class="container">
@@ -39,5 +47,11 @@
             </div>
         </div>             
     </div>
+
+    <script>
+        function goBack() {
+            window.history.back();
+        }
+    </script>
 </body>
 </html>

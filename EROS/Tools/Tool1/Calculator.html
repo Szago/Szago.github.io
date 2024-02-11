@@ -7,6 +7,17 @@
   <link rel="stylesheet" type="text/css" href="styles.css">
 </head>
 <body>
+    <header>
+        <div class="header-left">
+            <button onclick="goBack()">Go Back</button>
+        </div>
+        <div class="header-center">
+            <h1>Eros Fantasy tools - Level Calculator</h1>
+        </div>
+        <div class="header-right">
+            <!-- Add another button or content here if needed -->
+        </div>
+    </header>
 
   <div id="levelInputContainer">
     <label for="labelInput">Enter Level (1-170): </label>
@@ -115,6 +126,10 @@
       }
     }
 
+    function goBack() {
+            window.history.back();
+        }
+        
     function toggleInputMode() {
       isRangeMode = !isRangeMode;
       const levelInputContainer = document.getElementById('levelInputContainer');
