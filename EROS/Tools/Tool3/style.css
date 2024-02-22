@@ -4,6 +4,7 @@ body, html {
     font-family: Arial, sans-serif;
     background-color: #242323; 
     height: 100%;
+    color: #fff;
 }
 
 header {
@@ -42,3 +43,47 @@ header h1 {
     margin: 0;
 }
 
+.calculator {
+    background-color: #333;
+    padding: 20px;
+    margin: 20px auto;
+    width: 80%;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.calculator label {
+    display: block;
+    margin-bottom: 10px;
+    color: #fff;
+}
+
+.calculator input[type="number"],
+.calculator input[type="text"],
+.calculator input[type="range"] {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #444;
+    color: #fff;
+}
+
+.calculator button {
+    background-color: #111;
+    color: #fff;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.calculator button:hover {
+    background-color: #000;
+}
+
+.calculator span {
+    display: inline-block;
+    margin-bottom: 10px;
+}

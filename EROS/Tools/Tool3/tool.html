@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Tool Subpage</title>
+    <title>Silver income calculator</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,21 +12,40 @@
             <button onclick="goBack()">Go Back</button>
         </div>
         <div class="header-center">
-            <h1>New Tool Subpage</h1>
+            <h1>Eros Fantasy tools - Silver income calculator</h1>
         </div>
         <div class="header-right">
             <!-- Add another button or content here if needed -->
         </div>
     </header>
 
+    <div class="calculator">
+        <label for="idleSilver">Idle Silver:</label>
+        <input type="number" id="idleSilver" min="0" step="any" oninput="calculateIncome()">
+        <br>
+        <label for="rushes">Rushes:</label>
+        <input type="range" id="rushes" name="rushes" min="0" max="3" value="0" oninput="calculateIncome()">
+        <span id="rushesDisplay">Rushes: 0</span>
+        <br>
+        <input type="checkbox" id="abbreviateCheckbox" onchange="calculateIncome()"> Abbreviate Numbers
+        <br>
+        <br>
+        <label for="incomeHour">Hourly Income:</label>
+        <input type="text" id="incomeHour" readonly>
+        <br>
+        <label for="incomeDay">Daily Income:</label>
+        <input type="text" id="incomeDay" readonly>
+        <br>
+        <label for="incomeWeek">Weekly Income:</label>
+        <input type="text" id="incomeWeek" readonly>
+        <br>
+        <label for="incomeMonth">Monthly Income:</label>
+        <input type="text" id="incomeMonth" readonly>
+        <br>
+        <label for="incomeYear">Yearly Income:</label>
+        <input type="text" id="incomeYear" readonly>
+    </div>
 
-
-
-    
-    <script>
-        function goBack() {
-            window.history.back();
-        }
-    </script>
+    <script src="script.js"></script>
 </body>
 </html>

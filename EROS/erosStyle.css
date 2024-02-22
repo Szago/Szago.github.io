@@ -66,11 +66,12 @@ header h1 {
     line-height: 300px; 
     text-decoration: none; 
     color: white;
-    font-size: 30px;
+    font-size: 26px;
     transition: all 0.3s ease; 
     border-radius: 10px; 
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
 }
+
 
 .cell:hover {
     background-color: #0056b3;
