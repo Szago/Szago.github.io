@@ -24,8 +24,8 @@
         <input type="number" id="idleSilver" min="0" step="any" oninput="calculateIncome()">
         <br>
         <label for="rushes">Rushes:</label>
-        <input type="range" id="rushes" name="rushes" min="0" max="3" value="0" oninput="calculateIncome()">
-        <span id="rushesDisplay">Rushes: 0</span>
+        <input type="range" id="rushes" name="rushes" min="0" max="3" value="0" oninput="calculateIncome();updateRushesDisplay();">
+        <span id="rushesDisplay">Rushes 0</span>
         <br>
         <input type="checkbox" id="abbreviateCheckbox" onchange="calculateIncome()"> Abbreviate Numbers
         <br>
