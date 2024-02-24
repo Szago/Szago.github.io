@@ -4,6 +4,7 @@ body, html {
     font-family: Arial, sans-serif;
     background-color: #242323; 
     height: 100%;
+    color: #fff; /* Set text color */
 }
 
 header {
@@ -42,3 +43,49 @@ header h1 {
     margin: 0;
 }
 
+/* Additional CSS for input fields */
+input[type="number"], input[type="text"], input[type="datetime-local"] {
+    background-color: #888888; /* Dark background */
+    color: white; /* Light text color */
+    border: none;
+    padding: 10px;
+    margin: 5px 0;
+    border-radius: 5px;
+}
+
+input[type="number"]:focus, input[type="text"]:focus, input[type="datetime-local"]:focus {
+    outline: none;
+    border: 1px solid #fff; /* White border on focus */
+}
+
+.container, .event-container, .leeway-container, .remaining-event-time-container, .current-date-container, .remaining-time-container {
+    padding: 20px;
+    margin: 20px auto;
+    width: 80%;
+    background-color: #333;
+    border-radius: 10px;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+}
+
+span {
+    display: inline-block;
+    margin-bottom: 10px;
+}
+
+.result-container {
+    display: flex;
+    flex-direction: column;
+}
+
+.remaining-time-container, .remaining-event-time-container, .leeway-container {
+    margin-bottom: 10px;
+}
+
+.remaining-time-container span, .remaining-event-time-container span, .leeway-container span {
+    display: inline-block;
+    width: 100%;
+}

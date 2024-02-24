@@ -1,0 +1,19 @@
+{
+    "levels": [
+        {"level": 0, "xp_per_click": 5, "xp_for_next_level": 500, "cost_per_click": 1},
+        {"level": 1, "xp_per_click": 5, "xp_for_next_level": 2000, "cost_per_click": 1},
+        {"level": 2, "xp_per_click": 5, "xp_for_next_level": 3000, "cost_per_click": 1},
+        {"level": 3, "xp_per_click": 20, "xp_for_next_level": 4000, "cost_per_click": 2},
+        {"level": 4, "xp_per_click": 20, "xp_for_next_level": 7000, "cost_per_click": 2},
+        {"level": 5, "xp_per_click": 20, "xp_for_next_level": 10000, "cost_per_click": 2},
+        {"level": 6, "xp_per_click": 60, "xp_for_next_level": 13000, "cost_per_click": 3},
+        {"level": 7, "xp_per_click": 60, "xp_for_next_level": 14500, "cost_per_click": 3},
+        {"level": 8, "xp_per_click": 60, "xp_for_next_level": 17500, "cost_per_click": 3},
+        {"level": 9, "xp_per_click": 60, "xp_for_next_level": 19600, "cost_per_click": 3},
+        {"level": 10, "xp_per_click": 240, "xp_for_next_level": 37000, "cost_per_click": 6},
+        {"level": 11, "xp_per_click": 240, "xp_for_next_level": 58000, "cost_per_click": 6},
+        {"level": 12, "xp_per_click": 240, "xp_for_next_level": 78000, "cost_per_click": 6},
+        {"level": 13, "xp_per_click": 1000, "xp_for_next_level": 150000, "cost_per_click": 10},
+        {"level": 14, "xp_per_click": 1000, "xp_for_next_level": 300000, "cost_per_click": 10}
+    ]
+}

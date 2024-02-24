@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Tool Subpage</title>
+    <title>Eros Fantasy tools - Playroom Calculator</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,21 +12,66 @@
             <button onclick="goBack()">Go Back</button>
         </div>
         <div class="header-center">
-            <h1>New Tool Subpage</h1>
+            <h1>Eros Fantasy tools - Playroom Calculator</h1>
         </div>
         <div class="header-right">
             <!-- Add another button or content here if needed -->
         </div>
     </header>
 
+    <div class="current-date-container">
+        <label for="current-date">Current Date: (UTC)</label>
+        <input type="datetime-local" id="current-date" readonly>
+    </div>
 
+    <div class="event-container">
+        <label for="event-finish-date">Event Finish Date: (UTC)</label>
+        <label style="color:gray">Default: Oana Playroom (February 2024)</label>
+        <input type="datetime-local" id="event-finish-date" oninput="showRemainingEventTime()" value="2024-03-13T23:59">
+    </div>
 
+    <div class="container">
+        <label for="current-pleasure-level">Current Pleasure Level:</label>
+        <input type="number" id="current-pleasure-level" min="0" max="15" oninput="calculateRemainingTime()" value="0">
+        <br>
+        <label for="current-pleasure-xp">Current Pleasure XP:</label>
+        <input type="number" id="current-pleasure-xp" min="0" oninput="calculateRemainingTime()" value="0">
+    </div>
 
-    
+    <div class="result-container">
+        <div class="remaining-time-container">
+            <div class="remaining-time">
+                <label for="remaining-time">Remaining time until lvl 15:</label>
+                <span id="remaining-time"></span>
+            </div>
+            <div class="remaining-event-time">
+                <label for="remaining-event-time">Remaining event time:</label>
+                <span id="remaining-event-time"></span>
+            </div>
+            <div class="leeway">
+                <label for="leeway-minutes">Leeway:</label>
+                <span id="leeway-minutes"></span>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
     <script>
-        function goBack() {
-            window.history.back();
-        }
+
+        // Update the current date input field every second
+        setInterval(function() {
+            const currentDate = new Date();
+            const currentDateString = currentDate.toISOString().slice(0, 16);
+            document.getElementById('current-date').value = currentDateString;
+            calculateRemainingTime();
+            calculateLeeway();
+            showRemainingEventTime();
+        }, 1000);
+
+        // Initial calculations
+        calculateRemainingTime();
+        calculateLeeway();
+        showRemainingEventTime();
     </script>
 </body>
 </html>
