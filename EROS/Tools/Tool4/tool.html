@@ -26,12 +26,12 @@
 
     <div class="event-container">
         <label for="event-finish-date">Event Finish Date: (UTC)</label>
-        <label style="color:gray">Default: Oana Playroom (February 2024)</label>
-        <input type="datetime-local" id="event-finish-date" oninput="showRemainingEventTime()" value="2024-03-10T09:00">
+        <label style="color:gray">Default: Kaori Playroom (March 2024)</label>
+        <input type="datetime-local" id="event-finish-date" oninput="showRemainingEventTime()" value="2024-04-13T09:00">
     </div>
 
     <div class="container">
-        <label for="current-pleasure-level">Current Pleasure Level:</label>
+        <label for="current-pleasure-level">Current Pleasure Level(big number on top):</label>
         <input type="number" id="current-pleasure-level" min="0" max="15" oninput="calculateRemainingTime()" value="0">
         <br>
         <label for="current-pleasure-xp">Current Pleasure XP:</label>
@@ -41,7 +41,7 @@
     <div class="result-container">
         <div class="remaining-time-container">
             <div class="remaining-time">
-                <label for="remaining-time">Remaining time until lvl 15:</label>
+                <label for="remaining-time">Remaining time until finished:</label>
                 <span id="remaining-time"></span>
             </div>
             <div class="remaining-event-time">
