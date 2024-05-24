@@ -1,0 +1,23 @@
+name: Upload Snapshots
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Upload new snapshot
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        cp /C:/Users/jaqb/Desktop/ErosData/* /Szago/Szago.github.io/tree/main/EROS/Test
+        git add /Szago/Szago.github.io/tree/main/EROS/Test
+        git commit -m "Add new leaderboard snapshots"
+        git push
