@@ -1,4 +1,4 @@
-name: Upload Snapshots
+name: Download Files from Google Drive
 
 on:
   push:
@@ -6,18 +6,16 @@ on:
       - main
 
 jobs:
-  upload:
+  download:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
 
-    - name: Upload new snapshot
-      run: |
-        git config --global user.name 'github-actions[bot]'
-        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        cp /C:/Users/jaqb/Desktop/ErosData/* /Szago/Szago.github.io/tree/main/EROS/Test
-        git add /Szago/Szago.github.io/tree/main/EROS/Test
-        git commit -m "Add new leaderboard snapshots"
-        git push
+    - name: Download Files from Google Drive
+      uses: gdrive-org/gdrive-download-action@v2
+      with:
+        api_key: "AIzaSyCxnKvYuxNIqobl6Op-XBC500r8qGIjgeY" # Your Google Drive API key
+        src: "1-6VVb55xUMt1SV5aIKd0tvL9j0Fo1gJB" # Your Google Drive folder ID
+        dest: "Szago/Szago.github.io/tree/main/EROS/Test" # Update with your desired destination path
