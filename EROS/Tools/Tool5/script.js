@@ -1,23 +1,103 @@
 document.addEventListener('DOMContentLoaded', function() {
     fetchLeaderboardData();
     setupToggleButton();
-    setupBattleLogButton();
     setupPrevNextButtons();
 });
 
 let currentDate;
 
 async function fetchLeaderboardData(date = null) {
-    const url = 'fetch_leaderboard_data.php' + (date ? `?date=${date}` : '');
-    const response = await fetch(url);
-    const data = await response.json();
-    if (data.length === 0 && date !== null) {
-        alert(`No data found for ${formatDate(date)}`);
-        return [];
+    const repo = 'Szago/Szago.github.io';
+    const branch = 'main';
+    const folderPath = 'EROS/Data';
+    const apiUrl = `https://api.github.com/repos/${repo}/contents/${folderPath}?ref=${branch}`;
+
+    let data = [];
+    let files;
+
+    try {
+        const response = await fetch(apiUrl);
+        files = await response.json();
+    } catch (error) {
+        console.error('Error fetching file list:', error);
+        return;
     }
-    displayLeaderboard(data);
-    updateDateDisplay(data);
+
+    const playerInfoFiles = files.filter(file => file.name.startsWith('PlayerInfo_'));
+
+    if (playerInfoFiles.length === 0) {
+        console.error('No PlayerInfo files found.');
+        return;
+    }
+
+    let firstFile = playerInfoFiles[0];
+    let firstTimestamp = getTimestamp(firstFile.name);
+    currentDate = getCurrentDate(firstTimestamp);
+
+    if (date) {
+        currentDate = date;
+    }
+
+    let fetchPromises = playerInfoFiles.map(file => {
+        let timestamp = getTimestamp(file.name);
+        let fileDate = getCurrentDate(timestamp);
+        if (fileDate === currentDate) {
+            return fetchData(file.download_url);
+        }
+        return Promise.resolve(null);
+    });
+
+    try {
+        const results = await Promise.all(fetchPromises);
+        data = results.filter(result => result !== null);
+        if (data.length === 0 && date !== null) {
+            alert(`No data found for ${formatDate(date)}`);
+            return [];
+        }
+        displayLeaderboard(data);
+        updateDateDisplay(data);
+    } catch (error) {
+        console.error('Error fetching data:', error);
+    }
+
     return data;
+}
+
+function getTimestamp(fileName) {
+    return fileName.substring('PlayerInfo_'.length, 'PlayerInfo_YYYY-MM-DD_HH-MM-SS'.length);
+}
+
+function getCurrentDate(timestamp) {
+    return timestamp.substring(0, 10);
+}
+
+async function fetchData(fileUrl) {
+    try {
+        const response = await fetch(fileUrl);
+        const content = await response.text();
+        let lines = content.split("\n");
+        let players = [];
+
+        for (let line of lines) {
+            let parts = line.split(', ');
+            if (parts.length === 3) {
+                let playerData = {
+                    rank: parts[0].split(': ')[1],
+                    name: parts[1].split(': ')[1],
+                    trophies: parts[2].split(': ')[1]
+                };
+                players.push(playerData);
+            }
+        }
+
+        return {
+            timestamp: fileUrl.substring(fileUrl.lastIndexOf('PlayerInfo_') + 'PlayerInfo_'.length, fileUrl.lastIndexOf('.txt')),
+            players: players
+        };
+    } catch (error) {
+        console.error('Error fetching file:', error);
+        return null;
+    }
 }
 
 function updateDateDisplay(data) {
@@ -143,7 +223,7 @@ function setupToggleButton() {
 function reloadLeaderboard() {
     const leaderboardDiv = document.getElementById('leaderboard');
     leaderboardDiv.innerHTML = '';
-    fetchLeaderboardData();
+    fetchLeaderboardData(currentDate);
 }
 
 function filterHighlightedRows() {
