@@ -23,16 +23,19 @@ async function fetchLeaderboardData(date = null) {
         return;
     }
 
-    const playerInfoFiles = files.filter(file => file.name.startsWith('PlayerInfo_'));
+    const playerInfoFiles = files.filter(file => file.name.startsWith('PlayerInfo_') && file.type === 'file');
 
     if (playerInfoFiles.length === 0) {
         console.error('No PlayerInfo files found.');
         return;
     }
 
-    let firstFile = playerInfoFiles[0];
-    let firstTimestamp = getTimestamp(firstFile.name);
-    currentDate = getCurrentDate(firstTimestamp);
+    // Sort files to find the latest one
+    playerInfoFiles.sort((a, b) => getTimestamp(b.name) - getTimestamp(a.name));
+
+    let latestFile = playerInfoFiles[0];
+    let latestTimestamp = getTimestamp(latestFile.name);
+    currentDate = getCurrentDate(latestTimestamp);
 
     if (date) {
         currentDate = date;
