@@ -10,17 +10,22 @@ async function fetchLeaderboardData(date = null) {
     const repo = 'Szago/Szago.github.io';
     const branch = 'main';
     const folderPath = 'EROS/Data';
-    const apiUrl = `https://api.github.com/repos/${repo}/contents/${folderPath}?ref=${branch}`;
+    const perPage = 100; // Maksymalna liczba elementów na stronę
+    let files = [];
+    let page = 1;
 
-    let data = [];
-    let files;
-
-    try {
-        const response = await fetch(apiUrl);
-        files = await response.json();
-    } catch (error) {
-        console.error('Error fetching file list:', error);
-        return;
+    while (true) {
+        const apiUrl = `https://api.github.com/repos/${repo}/contents/${folderPath}?ref=${branch}&per_page=${perPage}&page=${page}`;
+        try {
+            const response = await fetch(apiUrl);
+            const result = await response.json();
+            if (result.length === 0) break; // Jeśli nie ma więcej plików, przerwij
+            files = files.concat(result);
+            page++;
+        } catch (error) {
+            console.error('Error fetching file list:', error);
+            return;
+        }
     }
 
     const playerInfoFiles = files.filter(file => file.name.startsWith('PlayerInfo_') && file.type === 'file');
@@ -52,7 +57,7 @@ async function fetchLeaderboardData(date = null) {
 
     try {
         const results = await Promise.all(fetchPromises);
-        data = results.filter(result => result !== null);
+        let data = results.filter(result => result !== null);
         if (data.length === 0 && date !== null) {
             alert(`No data found for ${formatDate(date)}`);
             return [];
@@ -62,8 +67,6 @@ async function fetchLeaderboardData(date = null) {
     } catch (error) {
         console.error('Error fetching data:', error);
     }
-
-    return data;
 }
 
 function getTimestamp(fileName) {
