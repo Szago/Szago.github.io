@@ -3,30 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Tool Subpage</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Leaderboard Monitoring</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="dark-mode">
     <header>
         <div class="header-left">
             <button onclick="goBack()">Go Back</button>
         </div>
         <div class="header-center">
-            <h1>New Tool Subpage</h1>
+            <h1>Eros Fantasy tools - S1 Leaderboard Snapshots</h1>
         </div>
         <div class="header-right">
-            <!-- Add another button or content here if needed -->
         </div>
     </header>
 
-
-
-
+    <div class="align" >
+        <div id="date-controls" style="display: flex;">
+            <button class="fancy-dark-mode" id="prevDayButton" onclick="handlePrevDayClick()">Previous Day</button>
+            <div id="date-display"></div>
+            <button class="fancy-dark-mode" id="nextDayButton" onclick="handleNextDayClick()">Next Day</button>
+        </div>
+        <br>
+    </div>
+    <div class="align" >
+        <button class="fancy-dark-mode" id="toggleButton">Highlight Changed Rows</button>
+    </div>
     
-    <script>
-        function goBack() {
-            window.history.back();
-        }
-    </script>
+    
+
+    <div id="leaderboard" class="leaderboard-container"></div>
+    
+
+    <script src="script.js"></script>
 </body>
 </html>
