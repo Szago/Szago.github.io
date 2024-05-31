@@ -10,17 +10,26 @@ async function fetchLeaderboardData(date = null) {
     const repo = 'Szago/Szago.github.io';
     const branch = 'main';
     const folderPath = 'EROS/Data';
-    const apiUrl = `https://api.github.com/repos/${repo}/contents/${folderPath}?ref=${branch}`;
+    const perPage = 100; // Maksymalna liczba elementów na stronę
+    let files = [];
+    let page = 1;
+    let morePages = true;
 
-    let data = [];
-    let files;
-
-    try {
-        const response = await fetch(apiUrl);
-        files = await response.json();
-    } catch (error) {
-        console.error('Error fetching file list:', error);
-        return;
+    while (morePages) {
+        const apiUrl = `https://api.github.com/repos/${repo}/contents/${folderPath}?ref=${branch}&per_page=${perPage}&page=${page}`;
+        try {
+            const response = await fetch(apiUrl);
+            const result = await response.json();
+            if (result.length > 0) {
+                files = files.concat(result);
+                page++;
+            } else {
+                morePages = false;
+            }
+        } catch (error) {
+            console.error('Error fetching file list:', error);
+            return;
+        }
     }
 
     const playerInfoFiles = files.filter(file => file.name.startsWith('PlayerInfo_') && file.type === 'file');
@@ -30,12 +39,26 @@ async function fetchLeaderboardData(date = null) {
         return;
     }
 
-    // Sort files to find the latest one
-    playerInfoFiles.sort((a, b) => getTimestamp(b.name) - getTimestamp(a.name));
+    // Sort files to find the first file to determine the current month
+    playerInfoFiles.sort((a, b) => getTimestamp(a.name).localeCompare(getTimestamp(b.name)));
 
-    let latestFile = playerInfoFiles[0];
-    let latestTimestamp = getTimestamp(latestFile.name);
-    currentDate = getCurrentDate(latestTimestamp);
+    let firstFile = playerInfoFiles[0];
+    let firstTimestamp = getTimestamp(firstFile.name);
+    let currentMonth = firstTimestamp.substring(0, 7); // YYYY-MM
+
+    let highestDay = '01';
+    playerInfoFiles.forEach(file => {
+        let timestamp = getTimestamp(file.name);
+        let fileMonth = timestamp.substring(0, 7);
+        if (fileMonth === currentMonth) {
+            let day = timestamp.substring(8, 10);
+            if (day > highestDay) {
+                highestDay = day;
+            }
+        }
+    });
+
+    currentDate = `${currentMonth}-${highestDay}`;
 
     if (date) {
         currentDate = date;
@@ -52,7 +75,7 @@ async function fetchLeaderboardData(date = null) {
 
     try {
         const results = await Promise.all(fetchPromises);
-        data = results.filter(result => result !== null);
+        let data = results.filter(result => result !== null);
         if (data.length === 0 && date !== null) {
             alert(`No data found for ${formatDate(date)}`);
             return [];
@@ -221,6 +244,11 @@ function setupToggleButton() {
             toggleButton.textContent = 'Show Original';
         }
     });
+}
+
+function setupPrevNextButtons() { // Definiujemy brakującą funkcję
+    document.getElementById('prevDayButton').addEventListener('click', handlePrevDayClick);
+    document.getElementById('nextDayButton').addEventListener('click', handleNextDayClick);
 }
 
 function reloadLeaderboard() {
