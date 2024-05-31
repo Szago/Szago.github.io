@@ -9,7 +9,7 @@ let currentDate;
 async function fetchLatestLeaderboardData() {
     const repo = 'Szago/Szago.github.io';
     const branch = 'main';
-    const folderPath = 'EROS/Data2';
+    const folderPath = 'EROS/Data';
     const apiUrl = `https://api.github.com/repos/${repo}/contents/${folderPath}?ref=${branch}`;
 
     try {
@@ -23,29 +23,36 @@ async function fetchLatestLeaderboardData() {
             return;
         }
 
-        // Sort files to find the latest file
+        // Sort files to find the latest files
         playerInfoFiles.sort((a, b) => getTimestamp(b.name).localeCompare(getTimestamp(a.name)));
 
-        let latestFile = playerInfoFiles[0];
-        currentDate = getTimestamp(latestFile.name);
+        let latestFiles = playerInfoFiles.slice(0, 3);
+        let data = [];
 
-        await fetchAndDisplayData(latestFile.download_url);
+        for (let file of latestFiles) {
+            let fileData = await fetchData(file.download_url);
+            if (fileData) {
+                data.push(fileData);
+            }
+        }
+
+        displayLeaderboard(data);
 
     } catch (error) {
         console.error('Error fetching file list:', error);
     }
 }
 
-async function fetchAndDisplayData(fileUrl) {
+async function fetchData(fileUrl) {
     try {
         const response = await fetch(fileUrl);
         const content = await response.text();
 
         const data = parseData(content);
-        displayLeaderboard(data);
-        updateDateDisplay(data);
+        return data;
     } catch (error) {
         console.error('Error fetching file:', error);
+        return null;
     }
 }
 
@@ -92,16 +99,30 @@ function displayLeaderboard(data) {
     const leaderboardDiv = document.getElementById('leaderboard');
     leaderboardDiv.innerHTML = '';
 
-    let prevTable = null;
+    let prevData = null;
 
-    data.forEach(fileData => {
-        const table = createTable(fileData);
-        if (prevTable) {
-            markChangedRows(prevTable, table);
+    for (let i = 0; i < data.length; i++) {
+        if (prevData && !isDifferent(prevData.players, data[i].players)) {
+            continue;
         }
+
+        const table = createTable(data[i]);
         leaderboardDiv.appendChild(table);
-        prevTable = table;
-    });
+        prevData = data[i];
+    }
+}
+
+function isDifferent(players1, players2) {
+    if (players1.length !== players2.length) return true;
+
+    for (let i = 0; i < players1.length; i++) {
+        if (players1[i].rank !== players2[i].rank ||
+            players1[i].name !== players2[i].name ||
+            players1[i].trophies !== players2[i].trophies) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function createTable(fileData) {
@@ -140,44 +161,6 @@ function createTable(fileData) {
     });
 
     return table;
-}
-
-function markChangedRows(prevTable, currentTable) {
-    const prevRows = prevTable.querySelectorAll('tr');
-    const currentRows = currentTable.querySelectorAll('tr');
-    const prevRowsMap = new Map();
-
-    prevRows.forEach(prevRow => {
-        const playerNameCell = prevRow.querySelectorAll('td')[1]; 
-        if (playerNameCell) {
-            const playerName = playerNameCell.textContent;
-            prevRowsMap.set(playerName, prevRow);
-        }
-    });
-
-    currentRows.forEach(currentRow => {
-        const playerNameCell = currentRow.querySelectorAll('td')[1];
-        if (playerNameCell) {
-            const playerName = playerNameCell.textContent;
-            const prevRow = prevRowsMap.get(playerName);
-
-            if (prevRow) {
-                const prevTrophiesCell = prevRow.querySelectorAll('td')[2]; 
-                const currentTrophiesCell = currentRow.querySelectorAll('td')[2]; 
-                if (prevTrophiesCell && currentTrophiesCell) {
-                    const prevTrophies = parseInt(prevTrophiesCell.textContent);
-                    const currentTrophies = parseInt(currentTrophiesCell.textContent);
-                    if (!isNaN(prevTrophies) && !isNaN(currentTrophies)) {
-                        if (currentTrophies > prevTrophies) {
-                            currentRow.classList.add('points-increase');
-                        } else if (currentTrophies < prevTrophies) {
-                            currentRow.classList.add('points-decrease');
-                        }
-                    }
-                }
-            }
-        }
-    });
 }
 
 function setupToggleButton() {
