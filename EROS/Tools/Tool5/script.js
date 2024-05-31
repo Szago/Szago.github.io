@@ -9,7 +9,7 @@ let currentDate;
 async function fetchLatestLeaderboardData() {
     const repo = 'Szago/Szago.github.io';
     const branch = 'main';
-    const folderPath = 'EROS/Data';
+    const folderPath = 'EROS/Data2';
     const apiUrl = `https://api.github.com/repos/${repo}/contents/${folderPath}?ref=${branch}`;
 
     try {
