@@ -26,17 +26,13 @@ async function fetchLatestLeaderboardData() {
         // Sort files to find the latest files
         playerInfoFiles.sort((a, b) => getTimestamp(b.name).localeCompare(getTimestamp(a.name)));
 
-        let latestFiles = playerInfoFiles.slice(0, 3);
-        let data = [];
+        let latestFile = playerInfoFiles[0];
+        currentDate = getTimestamp(latestFile.name);
 
-        for (let file of latestFiles) {
-            let fileData = await fetchData(file.download_url);
-            if (fileData) {
-                data.push(fileData);
-            }
+        const data = await fetchData(latestFile.download_url);
+        if (data) {
+            displayLeaderboard(data);
         }
-
-        displayLeaderboard(data);
 
     } catch (error) {
         console.error('Error fetching file list:', error);
@@ -83,11 +79,9 @@ function parseData(content) {
     });
 }
 
-function updateDateDisplay(data) {
-    if (data.length > 0) {
-        const dateDisplayDiv = document.getElementById('date-display');
-        dateDisplayDiv.innerHTML = `Current Date: ${formatDate(currentDate)}`;
-    }
+function updateDateDisplay() {
+    const dateDisplayDiv = document.getElementById('date-display');
+    dateDisplayDiv.innerHTML = `Current Date: ${formatDate(currentDate)}`;
 }
 
 function formatDate(dateStr) {
@@ -99,29 +93,44 @@ function displayLeaderboard(data) {
     const leaderboardDiv = document.getElementById('leaderboard');
     leaderboardDiv.innerHTML = '';
 
-    let prevData = null;
+    let tables = data.map(fileData => createTable(fileData));
+    let filteredTables = filterIdenticalTables(tables);
 
-    for (let i = 0; i < data.length; i++) {
-        if (prevData && !isDifferent(prevData.players, data[i].players)) {
-            continue;
-        }
-
-        const table = createTable(data[i]);
-        leaderboardDiv.appendChild(table);
-        prevData = data[i];
+    if (filteredTables.length === 0 && tables.length > 0) {
+        filteredTables = [tables[0]];  // Ensure at least one table is shown
     }
+
+    filteredTables.forEach(table => {
+        leaderboardDiv.appendChild(table);
+    });
+
+    updateDateDisplay();
 }
 
-function isDifferent(players1, players2) {
-    if (players1.length !== players2.length) return true;
+function filterIdenticalTables(tables) {
+    let filteredTables = [tables[0]];
 
-    for (let i = 0; i < players1.length; i++) {
-        if (players1[i].rank !== players2[i].rank ||
-            players1[i].name !== players2[i].name ||
-            players1[i].trophies !== players2[i].trophies) {
+    for (let i = 1; i < tables.length; i++) {
+        if (isDifferent(tables[i - 1], tables[i])) {
+            filteredTables.push(tables[i]);
+        }
+    }
+
+    return filteredTables;
+}
+
+function isDifferent(table1, table2) {
+    const rows1 = table1.querySelectorAll('tr');
+    const rows2 = table2.querySelectorAll('tr');
+
+    if (rows1.length !== rows2.length) return true;
+
+    for (let i = 0; i < rows1.length; i++) {
+        if (rows1[i].innerHTML !== rows2[i].innerHTML) {
             return true;
         }
     }
+
     return false;
 }
 
