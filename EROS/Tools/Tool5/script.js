@@ -1,111 +1,83 @@
 document.addEventListener('DOMContentLoaded', function() {
-    fetchLeaderboardData();
+    fetchLatestLeaderboardData();
     setupToggleButton();
     setupPrevNextButtons();
 });
 
 let currentDate;
 
-async function fetchLeaderboardData(date = null) {
+async function fetchLatestLeaderboardData() {
     const repo = 'Szago/Szago.github.io';
     const branch = 'main';
-    const folderPath = 'EROS/Data';
+    const folderPath = 'EROS/Data2';
     const apiUrl = `https://api.github.com/repos/${repo}/contents/${folderPath}?ref=${branch}`;
-
-    let data = [];
-    let files;
 
     try {
         const response = await fetch(apiUrl);
-        files = await response.json();
+        const files = await response.json();
+
+        const playerInfoFiles = files.filter(file => file.name.startsWith('PlayerInfo_') && file.type === 'file');
+
+        if (playerInfoFiles.length === 0) {
+            console.error('No PlayerInfo files found.');
+            return;
+        }
+
+        // Sort files to find the latest file
+        playerInfoFiles.sort((a, b) => getTimestamp(b.name).localeCompare(getTimestamp(a.name)));
+
+        let latestFile = playerInfoFiles[0];
+        currentDate = getTimestamp(latestFile.name);
+
+        await fetchAndDisplayData(latestFile.download_url);
+
     } catch (error) {
         console.error('Error fetching file list:', error);
-        return;
     }
-
-    const playerInfoFiles = files.filter(file => file.name.startsWith('PlayerInfo_') && file.type === 'file');
-
-    if (playerInfoFiles.length === 0) {
-        console.error('No PlayerInfo files found.');
-        return;
-    }
-
-    // Sort files to find the latest one
-    playerInfoFiles.sort((a, b) => getTimestamp(b.name) - getTimestamp(a.name));
-
-    let latestFile = playerInfoFiles[0];
-    let latestTimestamp = getTimestamp(latestFile.name);
-    currentDate = getCurrentDate(latestTimestamp);
-
-    if (date) {
-        currentDate = date;
-    }
-
-    let fetchPromises = playerInfoFiles.map(file => {
-        let timestamp = getTimestamp(file.name);
-        let fileDate = getCurrentDate(timestamp);
-        if (fileDate === currentDate) {
-            return fetchData(file.download_url);
-        }
-        return Promise.resolve(null);
-    });
-
-    try {
-        const results = await Promise.all(fetchPromises);
-        data = results.filter(result => result !== null);
-        if (data.length === 0 && date !== null) {
-            alert(`No data found for ${formatDate(date)}`);
-            return [];
-        }
-        displayLeaderboard(data);
-        updateDateDisplay(data);
-    } catch (error) {
-        console.error('Error fetching data:', error);
-    }
-
-    return data;
 }
 
-function getTimestamp(fileName) {
-    return fileName.substring('PlayerInfo_'.length, 'PlayerInfo_YYYY-MM-DD_HH-MM-SS'.length);
-}
-
-function getCurrentDate(timestamp) {
-    return timestamp.substring(0, 10);
-}
-
-async function fetchData(fileUrl) {
+async function fetchAndDisplayData(fileUrl) {
     try {
         const response = await fetch(fileUrl);
         const content = await response.text();
-        let lines = content.split("\n");
-        let players = [];
 
-        for (let line of lines) {
-            let parts = line.split(', ');
-            if (parts.length === 3) {
-                let playerData = {
-                    rank: parts[0].split(': ')[1],
-                    name: parts[1].split(': ')[1],
-                    trophies: parts[2].split(': ')[1]
-                };
-                players.push(playerData);
-            }
-        }
-
-        return {
-            timestamp: fileUrl.substring(fileUrl.lastIndexOf('PlayerInfo_') + 'PlayerInfo_'.length, fileUrl.lastIndexOf('.txt')),
-            players: players
-        };
+        const data = parseData(content);
+        displayLeaderboard(data);
+        updateDateDisplay(data);
     } catch (error) {
         console.error('Error fetching file:', error);
-        return null;
     }
+}
+
+function getTimestamp(fileName) {
+    const timestamp = fileName.match(/PlayerInfo_(\d{4}-\d{2}-\d{2})/);
+    return timestamp ? timestamp[1] : null;
+}
+
+function parseData(content) {
+    const entries = content.split('---').map(entry => entry.trim()).filter(entry => entry.length > 0);
+
+    return entries.map(entry => {
+        const lines = entry.split('\n');
+        const timestamp = lines[0].replace('Data recorded at: ', '').trim();
+        const players = lines.slice(1).map(line => {
+            const [rankPart, namePart, trophiesPart] = line.split(', ');
+            return {
+                rank: rankPart.split(': ')[1],
+                name: namePart.split(': ')[1],
+                trophies: trophiesPart.split(': ')[1]
+            };
+        });
+
+        return {
+            timestamp,
+            players
+        };
+    });
 }
 
 function updateDateDisplay(data) {
     if (data.length > 0) {
-        currentDate = data[0].timestamp.slice(0, 10);
         const dateDisplayDiv = document.getElementById('date-display');
         dateDisplayDiv.innerHTML = `Current Date: ${formatDate(currentDate)}`;
     }
@@ -223,10 +195,15 @@ function setupToggleButton() {
     });
 }
 
+function setupPrevNextButtons() {
+    document.getElementById('prevDayButton').addEventListener('click', handlePrevDayClick);
+    document.getElementById('nextDayButton').addEventListener('click', handleNextDayClick);
+}
+
 function reloadLeaderboard() {
     const leaderboardDiv = document.getElementById('leaderboard');
     leaderboardDiv.innerHTML = '';
-    fetchLeaderboardData(currentDate);
+    fetchLatestLeaderboardData();
 }
 
 function filterHighlightedRows() {
@@ -253,26 +230,33 @@ function filterHighlightedRows() {
 function handlePrevDayClick() {
     const previousDate = getPreviousDate(currentDate);
     console.log(`Trying to load data for ${formatDate(previousDate)}`);
-    loadPreviousDay(previousDate);
+    fetchAndDisplayDataForDate(previousDate);
 }
 
 function handleNextDayClick() {
     const nextDate = getNextDate(currentDate);
     console.log(`Trying to load data for ${formatDate(nextDate)}`);
-    loadNextDay(nextDate);
+    fetchAndDisplayDataForDate(nextDate);
 }
 
-async function loadPreviousDay(date) {
-    const data = await fetchLeaderboardData(date);
-    if (data.length === 0) {
-        alert(`No data found for ${formatDate(date)}`);
-    }
-}
+async function fetchAndDisplayDataForDate(date) {
+    const repo = 'Szago/Szago.github.io';
+    const branch = 'main';
+    const folderPath = 'EROS/Data';
+    const apiUrl = `https://api.github.com/repos/${repo}/contents/${folderPath}/PlayerInfo_${date}?ref=${branch}`;
 
-async function loadNextDay(date) {
-    const data = await fetchLeaderboardData(date);
-    if (data.length === 0) {
-        alert(`No data found for ${formatDate(date)}`);
+    try {
+        const response = await fetch(apiUrl);
+        const file = await response.json();
+
+        if (file) {
+            currentDate = date;
+            await fetchAndDisplayData(file.download_url);
+        } else {
+            alert(`No data found for ${formatDate(date)}`);
+        }
+    } catch (error) {
+        console.error('Error fetching file:', error);
     }
 }
 
