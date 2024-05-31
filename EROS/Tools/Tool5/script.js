@@ -90,7 +90,8 @@ async function fetchLeaderboardData(date = null) {
 }
 
 function getTimestamp(fileName) {
-    return fileName.substring('PlayerInfo_'.length, 'PlayerInfo_YYYY-MM-DD_HH-MM-SS'.length);
+    const timestamp = fileName.match(/PlayerInfo_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/);
+    return timestamp ? timestamp[1] : null;
 }
 
 function getCurrentDate(timestamp) {
@@ -246,7 +247,7 @@ function setupToggleButton() {
     });
 }
 
-function setupPrevNextButtons() { // Definiujemy brakującą funkcję
+function setupPrevNextButtons() {
     document.getElementById('prevDayButton').addEventListener('click', handlePrevDayClick);
     document.getElementById('nextDayButton').addEventListener('click', handleNextDayClick);
 }
