@@ -20,7 +20,7 @@
     </header>
 
   <div id="levelInputContainer">
-    <label for="labelInput">Enter Level (1-200): </label>
+    <label for="labelInput">Enter Level (1-240): </label>
     <input type="text" id="labelInput">
   </div>
 
@@ -182,7 +182,7 @@
           const breakdown = calculateCostBreakdown(1, parseInt(levelInput));
           displayCostBreakdown(breakdown);
         } else {
-          resultElement.textContent = 'Invalid level. Please enter a number between 1 and 200.';
+          resultElement.textContent = 'Invalid level. Please enter a number between 1 and 240.';
           tableResultElement.innerHTML = '';
         }
       }
