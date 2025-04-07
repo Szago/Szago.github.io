@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Character Net Worth Calculator</title>
+  <link rel="stylesheet" type="text/css" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <button onclick="goBack()">Go Back</button>
+    </div>
+    <div class="header-center">
+      <h1>Eros Fantasy tools - Net Worth Calculator</h1>
+    </div>
+    <div class="header-right">
+      <!-- Add another button or content here if needed -->
+    </div>
+  </header>
+
+  <div id="characterInputContainer">
+    <label for="characterLevels">Enter Character Levels (comma-separated):</label>
+    <input type="text" id="characterLevels" placeholder="e.g., 200, 190, 148, 132">
+  </div>
+
+  <div id="checkboxContainer" style="display:inline-block;">
+    <label for="displayModeCheckbox">Use Abbreviated Display Mode</label>
+    <input type="checkbox" id="displayModeCheckbox" onchange="calculateNetWorth()">
+  </div>
+
+  <button onclick="calculateNetWorth()">Calculate Net Worth</button>
+
+  <p id="netWorthResult"></p>
+  <div id="netWorthTable"></div>
+
+  <script>
+    async function getLevelsFromJSON() {
+      try {
+        const response = await fetch('EROS\Tools\Tool1\levels.json');
+        const data = await response.json();
+        return data.levels;
+      } catch (error) {
+        console.error('Error loading levels:', error);
+        return null;
+      }
+    }
+
+    let levels = null;
+
+    async function initLevels() {
+      levels = await getLevelsFromJSON();
+      if (!levels) {
+        alert('Failed to load levels. Check the console for details.');
+      }
+    }
+
+    initLevels();
+
+    function calculateTotalCost(level) {
+      const endIdx = parseInt(level) - 1;
+      if (endIdx >= 0 && endIdx < levels.length) {
+        return levels.slice(0, endIdx + 1).reduce((total, value) => total + value, 0);
+      }
+      return null;
+    }
+
+    function abbreviateNumber(num) {
+      if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+      } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+      } else {
+        return num;
+      }
+    }
+
+    function goBack() {
+      window.location.href = "/EROS/eros.html";
+    }
+
+    function calculateNetWorth() {
+      const levelInput = document.getElementById('characterLevels').value;
+      const resultElement = document.getElementById('netWorthResult');
+      const tableElement = document.getElementById('netWorthTable');
+      const useAbbreviatedDisplay = document.getElementById('displayModeCheckbox').checked;
+
+      const levelsArray = levelInput.split(',').map(lvl => parseInt(lvl.trim())).filter(lvl => !isNaN(lvl));
+
+      if (!levelsArray.length) {
+        resultElement.textContent = "Please enter at least one valid level.";
+        tableElement.innerHTML = "";
+        return;
+      }
+
+      let totalWorth = 0;
+      let tableHTML = '<table border="1"><tr><th>Character #</th><th>Level</th><th>Net Worth</th></tr>';
+
+      levelsArray.forEach((lvl, index) => {
+        const worth = calculateTotalCost(lvl);
+        if (worth !== null) {
+          totalWorth += worth;
+          tableHTML += `<tr><td>${index + 1}</td><td>${lvl}</td><td>${useAbbreviatedDisplay ? abbreviateNumber(worth) : worth}</td></tr>`;
+        }
+      });
+
+      tableHTML += '</table>';
+      tableElement.innerHTML = tableHTML;
+
+      resultElement.innerHTML = `Total Net Worth of All Characters: <strong>${useAbbreviatedDisplay ? abbreviateNumber(totalWorth) : totalWorth}</strong>`;
+    }
+  </script>
+</body>
+</html>
