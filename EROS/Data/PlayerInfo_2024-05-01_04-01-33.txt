@@ -1,8 +1,0 @@
-Rank: 0, Name: radiofreak, Trophies: 1105
-Rank: 1, Name: Purveyor, Trophies: 1068
-Rank: 2, Name: enominay, Trophies: 1014
-Rank: 3, Name: Tomitain, Trophies: 1000
-Rank: 4, Name: Jnuts, Trophies: 1000
-Rank: 5, Name: KaiBaka, Trophies: 1000
-Rank: 6, Name: ZEDevilions, Trophies: 1000
-Rank: 7, Name: Jnut, Trophies: 1000
