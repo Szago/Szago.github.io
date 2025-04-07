@@ -1,5 +1,5 @@
 function goBack() {
-    window.location.href = "/EROS/eros.html";
+    window.location.href = "/EROS/index.html";
 }
 
 function calculateIncome() {

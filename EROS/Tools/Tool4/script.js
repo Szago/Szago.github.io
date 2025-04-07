@@ -72,5 +72,5 @@ function showRemainingEventTime() {
     document.getElementById('remaining-event-time').textContent = `${remainingEventTimeInMinutes.toFixed(2)} minutes OR ${remainingEventTimeInHours.toFixed(2)} hours OR ${remainingEventTimeInDays.toFixed(2)} days`;
 }
 function goBack() {
-    window.location.href = "/EROS/eros.html";
+    window.location.href = "/EROS/index.html";
 }
