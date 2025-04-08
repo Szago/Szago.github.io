@@ -1,13 +1,14 @@
-/* KEEPING HEADER STYLES AS-IS */
+/* Base styles */
 body, html {
     margin: 0;
     padding: 0;
-    font-family: Arial, sans-serif;
-    background-color: #242323; 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(145deg, #1e1e1e, #2a2a2a);
+    color: #f0f0f0;
     height: 100%;
 }
 
-/* your original header */
+/* Header remains untouched, but lightly improved visually */
 header {
     background-color: #111;
     color: #fff;
@@ -44,55 +45,76 @@ header h1 {
     margin: 0;
 }
 
-/* NEW + UPDATED STYLES */
+
+/* Main container */
 .container {
-    margin: 20px;
+    margin: 40px auto;
     display: flex;
     justify-content: center;
-    padding: 0 10px;
+    padding: 0 20px;
+    max-width: 1600px;
+    
 }
 
+/* Tool grid */
 .tic-tac-toe-board {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 30px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 40px;
     width: 100%;
-    max-width: 1400px;
+    padding: 20px;
 }
 
+/* Tool card */
 .cell {
     aspect-ratio: 1 / 1;
-    background-color: #007bff;
-    color: white;
-    font-size: 30px;
+    /*background: linear-gradient(145deg, #007bff, #0056b3);*/
+    background-image: url("UI_Button_Basic.png");
+    background-repeat: no-repeat;
+    background-size: contain;
+    color: #fff9b3;
+    font-size: 1.5rem;
+    font-weight: 700;
+
     display: flex;
     align-items: center;
     justify-content: center;
     text-align: center;
-    padding: 15px;
-    border-radius: 12px;
+    padding: 40px;
+    border-radius: 20px;
     text-decoration: none;
     transition: all 0.3s ease;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    line-height: 1.2;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
+
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(2px);
+}
+
+
+.cell:hover::after {
+    opacity: 1;
 }
 
 .cell:hover {
-    background-color: #0056b3;
-    transform: scale(1.05);
-    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.2);
+
+    background-image: url("UI_Button_Basic_Pressed.png");
+    background-repeat: no-repeat;
+    background-size: contain;
 }
 
+/* Blur effect on hover */
 .blur-effect {
-    filter: blur(3px);
+    filter: blur(4px) grayscale(30%);
 }
 
 /* Responsive tweaks */
 @media (max-width: 600px) {
     .cell {
-        font-size: 16px;
-        padding: 10px;
+        font-size: 1rem;
+        padding: 12px;
+    }
+
+    header button {
+        font-size: 12px;
     }
 }
