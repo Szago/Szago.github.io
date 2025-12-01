@@ -117,7 +117,9 @@
     }
 
     function abbreviateNumber(num) {
-      if (num >= 1000000) {
+      if (num >= 1000000000) {
+        return (num / 1000000000).toFixed(1) + 'B';
+      } else if (num >= 1000000) {
         return (num / 1000000).toFixed(1) + 'M';
       } else if (num >= 1000) {
         return (num / 1000).toFixed(1) + 'K';
@@ -125,6 +127,7 @@
         return num;
       }
     }
+
 
     function goBack() {
           window.location.href = "/EROS/index.html";
@@ -182,7 +185,7 @@
           const breakdown = calculateCostBreakdown(1, parseInt(levelInput));
           displayCostBreakdown(breakdown);
         } else {
-          resultElement.textContent = 'Invalid level. Please enter a number between 1 and 240.';
+          resultElement.textContent = 'Invalid level. Please enter a number between 1 and 220.';
           tableResultElement.innerHTML = '';
         }
       }
