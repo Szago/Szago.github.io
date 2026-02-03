@@ -5,7 +5,7 @@
     --accent: #8c35f7; 
     --text-main: #ffffff;
     --text-dim: #a0a0a0;
-    --sidebar-width: 240px;
+    --sidebar-width: 270px;
     --sidebar-collapsed: 70px;
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
