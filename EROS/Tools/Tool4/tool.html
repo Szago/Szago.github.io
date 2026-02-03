@@ -3,64 +3,116 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Eros Fantasy tools - Playroom Calculator</title>
+    <title>Eros Fantasy Tools - Playroom calculator</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
-    <header>
-        <div class="header-left">
-            <button onclick="goBack()">Go Back</button>
+
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <span class="logo">EROS TOOLS</span>
+            <button id="toggle-btn" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
         </div>
-        <div class="header-center">
-            <h1>Eros Fantasy tools - Playroom Calculator</h1>
-        </div>
-        <div class="header-right">
-            <!-- Add another button or content here if needed -->
-        </div>
-    </header>
+        <ul class="nav-links">
+            <li><a href="#" class="active"><i class="fas fa-gamepad"></i><span>Playroom Calculator</span></a></li>
+            <li><a href="#"><i class="fas fa-chart-line"></i><span>Sample</span></a></li>
+            <li><a href="#"><i class="fas fa-users"></i><span>Sample</span></a></li>
+            <li class="bottom-link"><a href="javascript:goBack()"><i class="fas fa-arrow-left"></i><span>Back to Home</span></a></li>
+        </ul>
+    </nav>
 
-    <div class="current-date-container">
-        <label for="current-date">Current Date: (UTC)</label>
-        <input type="datetime-local" id="current-date" readonly>
-    </div>
-
-    <div class="event-container">
-        <label for="event-finish-date">Event Finish Date: (UTC)</label>
-        <label style="color:gray">Default: Raphaela Playroom (January 2026)</label>
-        <input type="datetime-local" id="event-finish-date" oninput="showRemainingEventTime()" value="2026-01-21T23:59">  <!-- yyyy mm dd -->
-        
-    </div>
-
-    <div class="container">
-        <label for="click-tier">Click Power Tier (experimental):</label>
-        <label style="color:gray">- Use only if you bought playroom currency <br>
-            - Assumes worst case scenario / doesn't account for earlier purchases of subsequent click power tiers becasue of initial purchase, so real leeway might (and likely will) be higher than displayed.</label>
-        <select id="click-tier" onchange="calculateRemainingTime()">
-            <option value="default">Loading tiers...</option>
-        </select>
-        <br><br> <label for="current-pleasure-level">Current Pleasure Level(big number on top):</label>
-        <input type="number" id="current-pleasure-level" min="0" max="15" oninput="calculateRemainingTime()" value="0">
-        <br>
-        <label for="current-pleasure-xp">Current Pleasure XP:</label>
-        <input type="number" id="current-pleasure-xp" min="0" oninput="calculateRemainingTime()" value="0">
-    </div>
-
-    <div class="result-container">
-        <div class="remaining-time-container">
-            <div class="remaining-time">
-                <label for="remaining-time">Remaining time until finished:</label>
-                <span id="remaining-time"></span>
+    <main class="main-content">
+        <header class="top-bar">
+            <div class="header-section">
+                <h1>Playroom Calculator</h1>
             </div>
-            <div class="remaining-event-time">
-                <label for="remaining-event-time">Remaining event time:</label>
-                <span id="remaining-event-time"></span>
+
+            <div class="header-alert danger">
+                <i class="fas fa-exclamation-triangle"></i>
+                <div style="margin: auto;" class="alert-content">
+                    <strong>Important:</strong>
+                    <span>Calculator has been reworked, expect issues, don't trust it 100% until verified nothing went wrong</span>
+                </div>
             </div>
-            <div class="leeway">
-                <label for="leeway-minutes">Leeway:</label>
-                <span id="leeway-minutes"></span>
+
+            <div class="header-section">
+                <div class="current-date-box">
+                    <i class="far fa-clock"></i>
+                    <input type="datetime-local" id="current-date" readonly>
+                </div>
+            </div>
+        </header>
+
+        <div class="dashboard-grid">
+            <section class="card setup-card">
+                <div class="card-header">
+                    <i class="fas fa-calendar-alt"></i>
+                    <h2>Event Settings</h2>
+                </div>
+                <div class="input-group">
+                    <label>Event Finish Date (UTC)</label>
+                    <input type="datetime-local" id="event-finish-date" oninput="showRemainingEventTime()" value="2025-11-18T23:59"> <!-- yyyy mm dd -->
+                    <small>Default: Raphaela Playroom (January 2026)</small>
+                </div>
+                <div class="input-group">
+                    <label>Click Power Tier (Experimental)</label>
+                    <select id="click-tier" onchange="calculateRemainingTime()">
+                        <option value="default">Loading tiers...</option>
+                    </select>
+                    <small class="warningText">- Use only if you bought playroom currency <br>
+            - Assumes worst case scenario / doesn't account for earlier purchases of subsequent click power tiers becasue of initial purchase, so real leeway might (and likely will) be higher than displayed.</small>
+                </div>
+            </section>
+
+            <section class="card progress-card">
+                <div class="card-header">
+                    <i class="fas fa-tasks"></i>
+                    <h2>Current Progress</h2>
+                </div>
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>Current Level</label>
+                        <input type="number" id="current-pleasure-level" min="0" max="15" oninput="calculateRemainingTime()" value="0">
+                    </div>
+                    <div class="input-group">
+                        <label>Current XP</label>
+                        <input type="number" id="current-pleasure-xp" min="0" oninput="calculateRemainingTime()" value="0">
+                    </div>
+                </div>
+            </section>
+
+            <div class="results-grid">
+                <section class="card result-card-split">
+                    <div class="result-box">
+                        <label><i class="fas fa-hourglass-half"></i> Time to Finish</label>
+                        <div id="remaining-time-display" class="time-display">
+                            <span class="unit-block">--</span>
+                        </div>
+                    </div>
+                    <div class="result-divider-v"></div>
+                    <div class="result-box">
+                        <label><i class="fas fa-stopwatch"></i> Event Time Left</label>
+                        <div id="event-time-display" class="time-display">
+                            <span class="unit-block">--</span>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="card leeway-card-wide">
+                    <div class="leeway-content">
+                        <div class="leeway-text">
+                            <label>Leeway (Buffer Time)</label>
+                            <div id="leeway-display" class="time-display primary">
+                                <span class="unit-block">--</span>
+                            </div>
+                        </div>
+                        <div id="status-indicator" class="status-badge">Calculating...</div>
+                    </div>
+                </section>
             </div>
         </div>
-    </div>
+    </main>
 
     <script src="script.js"></script>
     <script>
@@ -79,6 +131,9 @@
         calculateRemainingTime();
         calculateLeeway();
         showRemainingEventTime();
+
+
+
     </script>
 </body>
 </html>
