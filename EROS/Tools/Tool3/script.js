@@ -1,39 +1,58 @@
-function goBack() {
-    window.location.href = "/EROS/index.html";
+window.addEventListener('DOMContentLoaded', () => {
+    // Clock setup
+    setInterval(() => {
+        const currentDate = new Date();
+        document.getElementById('current-date').value = currentDate.toISOString().slice(0, 16);
+    }, 1000);
+});
+
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('collapsed');
 }
 
 function calculateIncome() {
-    const idleSilverPerMinute = parseFloat(document.getElementById('idleSilver').value);
+    const idleSilverPerMinute = parseFloat(document.getElementById('idleSilver').value) || 0;
     const rushes = parseInt(document.getElementById('rushes').value);
-    const idleSilverPerDay = idleSilverPerMinute * 60 * 24; // Convert silver per minute to silver per day
-    const rushBonusPerDay = idleSilverPerMinute * 60 * 2 * rushes; // Convert 2 hours per rush to minutes
+    const abbreviateNumbers = document.getElementById('abbreviateCheckbox').checked;
+
+    const idleSilverPerDay = idleSilverPerMinute * 60 * 24; 
+    const rushBonusPerDay = idleSilverPerMinute * 60 * 2 * rushes; 
+    
     const totalSilverPerDay = idleSilverPerDay + rushBonusPerDay;
     const totalSilverPerHour = totalSilverPerDay / 24;
     const totalSilverPerWeek = totalSilverPerDay * 7;
-    const totalSilverPerMonth = totalSilverPerDay * 30; // Assuming 30 days in a month
-    const totalSilverPerYear = totalSilverPerDay * 365; // Assuming 365 days in a year
+    const totalSilverPerMonth = totalSilverPerDay * 30; 
+    const totalSilverPerYear = totalSilverPerDay * 365;
 
-    const abbreviateCheckbox = document.getElementById('abbreviateCheckbox');
-    const abbreviateNumbers = abbreviateCheckbox.checked;
+    // Display updates
+    updateDisplay('incomeHour', totalSilverPerHour, abbreviateNumbers);
+    updateDisplay('incomeDay', totalSilverPerDay, abbreviateNumbers);
+    updateDisplay('incomeWeek', totalSilverPerWeek, abbreviateNumbers);
+    updateDisplay('incomeMonth', totalSilverPerMonth, abbreviateNumbers);
+    updateDisplay('incomeYear', totalSilverPerYear, abbreviateNumbers);
+}
 
-    document.getElementById('incomeDay').value = abbreviateNumbers ? abbreviateNumber(totalSilverPerDay) : (Math.floor(totalSilverPerDay) + '');
-    document.getElementById('incomeHour').value = abbreviateNumbers ? abbreviateNumber(totalSilverPerHour) : (Math.floor(totalSilverPerHour) + '');
-    document.getElementById('incomeWeek').value = abbreviateNumbers ? abbreviateNumber(totalSilverPerWeek) : (Math.floor(totalSilverPerWeek) + '');
-    document.getElementById('incomeMonth').value = abbreviateNumbers ? abbreviateNumber(totalSilverPerMonth) : (Math.floor(totalSilverPerMonth) + '');
-    document.getElementById('incomeYear').value = abbreviateNumbers ? abbreviateNumber(totalSilverPerYear) : (Math.floor(totalSilverPerYear) + '');
+function updateDisplay(id, value, abbreviate) {
+    const element = document.getElementById(id);
+    if (abbreviate) {
+        element.textContent = abbreviateNumber(value);
+    } else {
+        element.textContent = Math.floor(value).toLocaleString(); // Added commas for readability
+    }
 }
 
 function updateRushesDisplay() {
-    const rushes = parseInt(document.getElementById('rushes').value);
-    document.getElementById('rushesDisplay').textContent = `Rushes: ${rushes}`;
+    const rushes = document.getElementById('rushes').value;
+    document.getElementById('rushesDisplay').textContent = rushes;
 }
 
 function abbreviateNumber(num) {
-    if (num >= 1000000) {
-        return (num / 1000000).toFixed(1) + 'M';
-    } else if (num >= 1000) {
-        return (num / 1000).toFixed(1) + 'K';
-    } else {
-        return num;
-    }
+    if (num >= 1000000000) return (num / 1000000000).toFixed(2) + 'B';
+    if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return Math.floor(num).toString();
+}
+
+function goBack() {
+    window.location.href = "/EROS/index.html";
 }

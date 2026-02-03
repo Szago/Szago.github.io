@@ -3,48 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Silver income calculator</title>
+    <title>Eros Tools - Silver Income</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="..\..\shared-shell.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
-    <header>
-        <div class="header-left">
-            <button onclick="goBack()">Go Back</button>
-        </div>
-        <div class="header-center">
-            <h1>Eros Fantasy tools - Silver income calculator</h1>
-        </div>
-        <div class="header-right">
-            <!-- Add another button or content here if needed -->
-        </div>
-    </header>
+    <script src="..\..\navigation.js"></script>
 
-    <div class="calculator">
-        <label for="idleSilver">Idle Silver:</label>
-        <input type="number" id="idleSilver" min="0" step="any" oninput="calculateIncome()">
-        <br>
-        <label for="rushes">Rushes:</label>
-        <input type="range" id="rushes" name="rushes" min="0" max="3" value="0" oninput="calculateIncome();updateRushesDisplay();">
-        <span id="rushesDisplay">Rushes 0</span>
-        <br>
-        <input type="checkbox" id="abbreviateCheckbox" onchange="calculateIncome()"> Abbreviate Numbers
-        <br>
-        <br>
-        <label for="incomeHour">Hourly Income:</label>
-        <input type="text" id="incomeHour" readonly>
-        <br>
-        <label for="incomeDay">Daily Income:</label>
-        <input type="text" id="incomeDay" readonly>
-        <br>
-        <label for="incomeWeek">Weekly Income:</label>
-        <input type="text" id="incomeWeek" readonly>
-        <br>
-        <label for="incomeMonth">Monthly Income:</label>
-        <input type="text" id="incomeMonth" readonly>
-        <br>
-        <label for="incomeYear">Yearly Income:</label>
-        <input type="text" id="incomeYear" readonly>
-    </div>
+    
+    <main class="main-content">
+        
+
+        <div class="dashboard-grid">
+            <section class="card setup-card">
+                <div class="card-header">
+                    <i class="fas fa-edit"></i>
+                    <h2>Base Statistics</h2>
+                </div>
+                <div class="input-group">
+                    <label>Idle Silver (per minute)</label>
+                    <input type="number" id="idleSilver" min="0" step="any" placeholder="Enter amount..." oninput="calculateIncome()">
+                </div>
+                
+                <div class="input-group">
+                    <div style="display:flex; justify-content:space-between;">
+                        <label>Daily Rushes</label>
+                        <span id="rushesDisplay" class="accent-text">0</span>
+                    </div>
+                    <input type="range" id="rushes" min="0" max="3" value="0" oninput="calculateIncome(); updateRushesDisplay();">
+                </div>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" id="abbreviateCheckbox" onchange="calculateIncome()" checked>
+                    <label for="abbreviateCheckbox">Abbreviate Numbers (K/M)</label>
+                </div>
+            </section>
+
+            <section class="results-container-grid">
+                <div class="card income-card">
+                    <label>Hourly</label>
+                    <div id="incomeHour" class="value primary">0</div>
+                </div>
+                <div class="card income-card">
+                    <label>Daily</label>
+                    <div id="incomeDay" class="value primary">0</div>
+                </div>
+                <div class="card income-card">
+                    <label>Weekly</label>
+                    <div id="incomeWeek" class="value primary">0</div>
+                </div>
+                <div class="card income-card">
+                    <label>Monthly</label>
+                    <div id="incomeMonth" class="value primary">0</div>
+                </div>
+                <div class="card income-card full-width">
+                    <label>Yearly Projected Income</label>
+                    <div id="incomeYear" class="value large-accent">0</div>
+                </div>
+            </section>
+        </div>
+    </main>
+    
+    <script>
+        // Simply call the shell loader!
+        loadShell("Silver Income", "none", "Nothing to announce.");
+    </script>
 
     <script src="script.js"></script>
 </body>

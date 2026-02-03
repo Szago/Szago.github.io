@@ -5,44 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Eros Fantasy Tools - Playroom calculator</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="..\..\shared-shell.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
+    <script src="..\..\navigation.js"></script>
 
-    <nav class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <span class="logo">EROS TOOLS</span>
-            <button id="toggle-btn" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
-        </div>
-        <ul class="nav-links">
-            <li><a href="#" class="active"><i class="fas fa-gamepad"></i><span>Playroom Calculator</span></a></li>
-            <li><a href="#"><i class="fas fa-chart-line"></i><span>Sample</span></a></li>
-            <li><a href="#"><i class="fas fa-users"></i><span>Sample</span></a></li>
-            <li class="bottom-link"><a href="javascript:goBack()"><i class="fas fa-arrow-left"></i><span>Back to Home</span></a></li>
-        </ul>
-    </nav>
+    
 
     <main class="main-content">
-        <header class="top-bar">
-            <div class="header-section">
-                <h1>Playroom Calculator</h1>
-            </div>
-
-            <div class="header-alert danger">
-                <i class="fas fa-exclamation-triangle"></i>
-                <div style="margin: auto;" class="alert-content">
-                    <strong>Important:</strong>
-                    <span>Calculator has been reworked, expect issues, don't trust it 100% until verified nothing went wrong</span>
-                </div>
-            </div>
-
-            <div class="header-section">
-                <div class="current-date-box">
-                    <i class="far fa-clock"></i>
-                    <input type="datetime-local" id="current-date" readonly>
-                </div>
-            </div>
-        </header>
+        
 
         <div class="dashboard-grid">
             <section class="card setup-card">
@@ -113,6 +85,11 @@
             </div>
         </div>
     </main>
+
+    <script>
+        // Simply call the shell loader!
+        loadShell("Playroom Calculator", "danger", "Calculator has been reworked, expect issues, don't trust it 100% until verified nothing went wrong.");
+    </script>
 
     <script src="script.js"></script>
     <script>
