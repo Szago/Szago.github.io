@@ -8,7 +8,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
         <ul class="nav-links">
             <li><a href="../Tool4/tool.html" id="nav-playroom"><i class="fas fa-gamepad"></i><span>Playroom calculator</span></a></li>
             <li><a href="../Tool3/tool.html" id="nav-silver"><i class="fas fa-coins"></i><span>Silver income calculator</span></a></li>
-            <li><a href="../Tool2/tool.html" id="nav-shards"><i class="fas fa-coins"></i><span>Shard drop simulator</span></a></li>
+            <li><a href="../Tool2/tool.html" id="nav-shards"><i class="fas fa-toolbox"></i><span>Shard drop simulator</span></a></li>
             <li class="bottom-link"><a href="javascript:window.location.href='/EROS/index.html'"><i class="fas fa-arrow-left"></i><span>Back to Home</span></a></li>
         </ul>
     </nav>`;
