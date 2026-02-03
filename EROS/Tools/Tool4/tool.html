@@ -32,7 +32,13 @@
     </div>
 
     <div class="container">
-        <label for="current-pleasure-level">Current Pleasure Level(big number on top):</label>
+        <label for="click-tier">Click Power Tier (experimental):</label>
+        <label style="color:gray">- Use only if you bought playroom currency <br>
+            - Assumes worst case scenario / doesn't account for earlier purchases of subsequent click power tiers becasue of initial purchase, so real leeway might (and likely will) be higher than displayed.</label>
+        <select id="click-tier" onchange="calculateRemainingTime()">
+            <option value="default">Loading tiers...</option>
+        </select>
+        <br><br> <label for="current-pleasure-level">Current Pleasure Level(big number on top):</label>
         <input type="number" id="current-pleasure-level" min="0" max="15" oninput="calculateRemainingTime()" value="0">
         <br>
         <label for="current-pleasure-xp">Current Pleasure XP:</label>

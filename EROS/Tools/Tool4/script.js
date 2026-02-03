@@ -1,54 +1,143 @@
-function calculateRemainingTime() {
-    // Read the current pleasure level and pleasure XP from the input fields
-    const currentPleasureLevel = parseInt(document.getElementById('current-pleasure-level').value);
-    const currentPleasureXP = parseInt(document.getElementById('current-pleasure-xp').value);
+// Global variable to store the level data so we don't fetch it 100 times a second
+let globalLevelData = [];
 
-    // Read the levels data from the JSON file
+// 1. Initialize: Fetch data once, setup dropdown, and start the clock
+window.addEventListener('DOMContentLoaded', () => {
     fetch('data.json')
         .then(response => response.json())
         .then(data => {
-            // Initialize variables to hold the total remaining XP and time needed
-            let totalRemainingXP = 0;
-            let totalRemainingTime = 0;
-
-            // Loop through each level from the current level to level 14
-            for (let i = currentPleasureLevel; i < 15; i++) {
-                // Find the current level data
-                const currentLevelData = data.levels.find(levelData => levelData.level === i);
-
-                // Calculate the remaining XP needed to reach the next level
-                const remainingXPNeeded = currentLevelData.xp_for_next_level - (i === currentPleasureLevel ? currentPleasureXP : 0);
-
-                // Calculate the remaining time needed to reach the next level
-                const remainingTimeNeeded = remainingXPNeeded / currentLevelData.xp_per_click * currentLevelData.cost_per_click;
-
-                // Add the remaining XP and time to the total
-                totalRemainingXP += remainingXPNeeded;
-                totalRemainingTime += remainingTimeNeeded;
-            }
-
-            // Display the total remaining time in the HTML
-            const hours = totalRemainingTime / 60;
-            const days = hours / 24;
-
-            document.getElementById('remaining-time').textContent = `${totalRemainingTime.toFixed(2)} minutes OR ${hours.toFixed(2)} hours OR ${days.toFixed(2)} days`;
+            globalLevelData = data.levels;
+            populateClickTiers(globalLevelData);
+            
+            // Run initial calculations now that we have data
+            calculateRemainingTime();
+            calculateLeeway();
+            showRemainingEventTime();
         })
         .catch(error => console.error('Error fetching data:', error));
+
+    // Clock Interval
+    setInterval(function() {
+        const currentDate = new Date();
+        const currentDateString = currentDate.toISOString().slice(0, 16);
+        document.getElementById('current-date').value = currentDateString;
+        
+        // We only recalculate time/leeway, we don't re-fetch data
+        if(globalLevelData.length > 0) {
+            calculateRemainingTime();
+            calculateLeeway();
+            showRemainingEventTime();
+        }
+    }, 1000);
+});
+
+// 2. Generate the Dropdown options based on unique tiers in JSON
+function populateClickTiers(levels) {
+    const tierSelect = document.getElementById('click-tier');
+    tierSelect.innerHTML = ''; // Clear "Loading..."
+
+    // Add Default Option
+    const defaultOption = document.createElement('option');
+    defaultOption.value = 'default';
+    defaultOption.textContent = 'Default (Natural Progression)';
+    tierSelect.appendChild(defaultOption);
+
+    // Find unique combinations of XP and Cost
+    const uniqueTiers = [];
+    const seen = new Set();
+
+    levels.forEach(level => {
+        const identifier = `${level.xp_per_click}-${level.cost_per_click}`;
+        if (!seen.has(identifier)) {
+            seen.add(identifier);
+            uniqueTiers.push({
+                xp: level.xp_per_click,
+                cost: level.cost_per_click
+            });
+        }
+    });
+
+    // Create options for each unique tier
+    uniqueTiers.forEach(tier => {
+        const option = document.createElement('option');
+        // We store the values in the value attribute like "1000,10"
+        option.value = `${tier.xp},${tier.cost}`; 
+        option.textContent = `${tier.xp} XP per click (Cost: ${tier.cost})`;
+        tierSelect.appendChild(option);
+    });
 }
 
+
+// 3. Updated Calculation
+function calculateRemainingTime() {
+    // If data isn't loaded yet, stop.
+    if (globalLevelData.length === 0) return;
+
+    const currentPleasureLevel = parseInt(document.getElementById('current-pleasure-level').value) || 0;
+    const currentPleasureXP = parseInt(document.getElementById('current-pleasure-xp').value) || 0;
+    const selectedTierVal = document.getElementById('click-tier').value;
+
+    let totalRemainingXP = 0;
+    let totalRemainingTime = 0;
+
+    // Parse selected manual tier if it's not default
+    let manualXP = 0;
+    let manualCost = 0;
+    if (selectedTierVal !== 'default') {
+        [manualXP, manualCost] = selectedTierVal.split(',').map(Number);
+    }
+
+    // Loop through levels
+    for (let i = currentPleasureLevel; i < 15; i++) {
+        const currentLevelData = globalLevelData.find(levelData => levelData.level === i);
+        
+        if (!currentLevelData) continue; // Safety check
+
+        // LOGIC: Determine which stats to use for this specific level
+        let activeXP = currentLevelData.xp_per_click;
+        let activeCost = currentLevelData.cost_per_click;
+
+        // If user selected a booster, we use the booster stats ONLY IF 
+        // they are better than what the level naturally gives.
+        // (e.g. If I bought 240XP tier, use it on Lvl 1. But if I reach Lvl 13 (1000XP), use natural 1000XP).
+        if (selectedTierVal !== 'default') {
+            if (manualXP > activeXP) {
+                activeXP = manualXP;
+                activeCost = manualCost;
+            }
+        }
+
+        // Calculate XP needed for this specific level step
+        // If it's the first loop (current level), subtract already gained XP
+        const remainingXPNeeded = currentLevelData.xp_for_next_level - (i === currentPleasureLevel ? currentPleasureXP : 0);
+
+        // Calculate time
+        // validation to prevent division by zero
+        if (activeXP > 0) {
+            const remainingTimeNeeded = (remainingXPNeeded / activeXP) * activeCost;
+            totalRemainingXP += remainingXPNeeded;
+            totalRemainingTime += remainingTimeNeeded;
+        }
+    }
+
+    // Display Result
+    const hours = totalRemainingTime / 60;
+    const days = hours / 24;
+
+    document.getElementById('remaining-time').textContent = `${totalRemainingTime.toFixed(2)} minutes OR ${hours.toFixed(2)} hours OR ${days.toFixed(2)} days`;
+}
+
+// Keep existing helper functions
 function calculateLeeway() {
-    // Read the remaining time from the HTML
     const remainingTimeText = document.getElementById('remaining-time').textContent;
-    const totalRemainingTime = parseFloat(remainingTimeText.split(' ')[0]);
+    if (!remainingTimeText) return; // Guard clause
+    
+    const totalRemainingTime = parseFloat(remainingTimeText.split(' ')[0]) || 0;
 
-    // Read the remaining event time from the HTML
     const remainingEventTimeText = document.getElementById('remaining-event-time').textContent;
-    const totalRemainingEventTime = parseFloat(remainingEventTimeText.split(' ')[0]);
+    const totalRemainingEventTime = parseFloat(remainingEventTimeText.split(' ')[0]) || 0;
 
-    // Subtract the remaining event time from the remaining time to get the leeway
     const leeway = totalRemainingEventTime - totalRemainingTime;
-
-    // Display the leeway in the HTML
     const hours = leeway / 60;
     const days = hours / 24;
 
@@ -57,20 +146,16 @@ function calculateLeeway() {
 
 function showRemainingEventTime() {
     const eventFinishDate = new Date(document.getElementById('event-finish-date').value);
-
-    // Get the current date in UTC
     const currentDate = new Date();
+    // Adjust for timezone logic as per your original co
     const currentDateUTC = new Date(currentDate.getTime() + currentDate.getTimezoneOffset() * 60000);
 
-    // Calculate the difference between the current date and the event finish date in minutes
     const remainingEventTimeInMinutes = (eventFinishDate - currentDateUTC) / (1000 * 60);
-
-    // Convert the difference to hours and days
     const remainingEventTimeInHours = remainingEventTimeInMinutes / 60;
     const remainingEventTimeInDays = remainingEventTimeInHours / 24;
-
     document.getElementById('remaining-event-time').textContent = `${remainingEventTimeInMinutes.toFixed(2)} minutes OR ${remainingEventTimeInHours.toFixed(2)} hours OR ${remainingEventTimeInDays.toFixed(2)} days`;
 }
+
 function goBack() {
     window.location.href = "/EROS/index.html";
 }
