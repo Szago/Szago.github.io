@@ -1,6 +1,17 @@
+// Helper to get cookie value by name
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
+}
+
 function loadShell(pageTitle, alertType, alertMsg) {
+
+    const isCollapsed = getCookie('sidebarStatus') === 'collapsed';
+
     const sidebarHTML = `
-    <nav class="sidebar" id="sidebar">
+    <nav class="sidebar ${isCollapsed ? 'collapsed' : ''}" id="sidebar">
         <div class="sidebar-header">
             <span class="logo">EROS TOOLS</span>
             <button onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
@@ -15,9 +26,8 @@ function loadShell(pageTitle, alertType, alertMsg) {
         </ul>
     </nav>`;
 
-    // Determine if we should show the alert or keep it empty
     const alertHTML = (alertType === 'none' || !alertType) 
-        ? `<div class="header-section"></div>` // Placeholder to maintain flex spacing
+        ? `<div class="header-section"></div>` 
         : `<div class="header-alert ${alertType}">
             <i class="fas fa-exclamation-triangle"></i>
             <div class="alert-content">
@@ -38,19 +48,27 @@ function loadShell(pageTitle, alertType, alertMsg) {
         </div>
     </header>`;
 
-    // Inject into the start of body
     document.body.insertAdjacentHTML('afterbegin', sidebarHTML);
-    // Inject into the main-content container
     document.querySelector('.main-content').insertAdjacentHTML('afterbegin', topBarHTML);
     
-    // Highlight active link
-    if(window.location.href.includes('Tool4')) document.getElementById('nav-playroom').classList.add('active');
-    if(window.location.href.includes('Tool3')) document.getElementById('nav-silver').classList.add('active');
-    if(window.location.href.includes('Tool2')) document.getElementById('nav-shards').classList.add('active');
-    if(window.location.href.includes('Tool1')) document.getElementById('nav-level').classList.add('active');
-    if(window.location.href.includes('Tool6')) document.getElementById('nav-networth').classList.add('active');
+    // Highlight active link logic
+    const path = window.location.href;
+    if(path.includes('Tool4')) document.getElementById('nav-playroom').classList.add('active');
+    if(path.includes('Tool3')) document.getElementById('nav-silver').classList.add('active');
+    if(path.includes('Tool2')) document.getElementById('nav-shards').classList.add('active');
+    if(path.includes('Tool1')) document.getElementById('nav-level').classList.add('active');
+    if(path.includes('Tool6')) document.getElementById('nav-networth').classList.add('active');
 }
 
 function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('collapsed');
+    const sidebar = document.getElementById('sidebar');
+    sidebar.classList.toggle('collapsed');
+    
+    if (sidebar.classList.contains('collapsed')) {
+        // Set cookie for 30 days, force root path so it works across all tool folders
+        document.cookie = "sidebarStatus=collapsed; max-age=" + (30*24*60*60) + "; path=/; SameSite=Lax";
+    } else {
+        // Set to expanded and expire it immediately
+        document.cookie = "sidebarStatus=expanded; path=/; max-age=0; SameSite=Lax";
+    }
 }
