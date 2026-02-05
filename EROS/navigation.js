@@ -6,10 +6,10 @@ function loadShell(pageTitle, alertType, alertMsg) {
             <button onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
         </div>
         <ul class="nav-links">
-            <li><a href="../Tool4/tool.html" id="nav-playroom"><i class="fas fa-gamepad"></i><span>Playroom calculator</span></a></li>
-            <li><a href="../Tool3/tool.html" id="nav-silver"><i class="fas fa-coins"></i><span>Silver income calculator</span></a></li>
-            <li><a href="../Tool2/tool.html" id="nav-shards"><i class="fas fa-toolbox"></i><span>Shard drop simulator</span></a></li>
-            <li><a href="../Tool1/tool.html" id="nav-level"><i class="fas fa-person-arrow-up-from-line"></i><span>Level cost calculator</span></a></li>
+            <li><a href="../Tool4_playroom/tool.html" id="nav-playroom"><i class="fas fa-gamepad"></i><span>Playroom calculator</span></a></li>
+            <li><a href="../Tool3_silverincome/tool.html" id="nav-silver"><i class="fas fa-coins"></i><span>Silver income calculator</span></a></li>
+            <li><a href="../Tool2_sharddrop/tool.html" id="nav-shards"><i class="fas fa-toolbox"></i><span>Shard drop simulator</span></a></li>
+            <li><a href="../Tool1_levelcost/tool.html" id="nav-level"><i class="fas fa-person-arrow-up-from-line"></i><span>Level cost calculator</span></a></li>
             <li><a href="../Tool6_networth/tool.html" id="nav-networth"><i class="fas fa-building-columns"></i><span>Net worth calculator</span></a></li>
             <li class="bottom-link"><a href="javascript:window.location.href='/EROS/index.html'"><i class="fas fa-arrow-left"></i><span>Back to Home</span></a></li>
         </ul>
