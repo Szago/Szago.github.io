@@ -23,6 +23,14 @@ function loadPreset(preset) {
             shardOdds50: "0.0011",
             shardOdds75: "0.0000"
         },
+        mythic: {
+            shardOdds5:  "0.0000",
+            shardOdds10: "0.0000",
+            shardOdds15: "0.1120",
+            shardOdds25: "0.0187",
+            shardOdds50: "0.0027",
+            shardOdds75: "0.0000"
+        },
         blank: {} // intentionally empty → will fall back to zeros
     };
 
