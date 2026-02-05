@@ -24,7 +24,7 @@
                 </div>
                 <div class="input-group">
                     <label>Event Finish Date (UTC)</label>
-                    <input type="datetime-local" id="event-finish-date" oninput="showRemainingEventTime()" value="2025-11-18T23:59"> <!-- yyyy mm dd -->
+                    <input type="datetime-local" id="event-finish-date" oninput="calculateRemainingTime()" onchange="calculateRemainingTime()" value="2025-11-18T23:59"> <!-- yyyy mm dd -->
                     <small>Default: Raphaela Playroom (January 2026)</small>
                 </div>
                 <div class="input-group">
@@ -100,14 +100,12 @@
             const currentDateString = currentDate.toISOString().slice(0, 16);
             document.getElementById('current-date').value = currentDateString;
             calculateRemainingTime();
-            calculateLeeway();
-            showRemainingEventTime();
+            
         }, 1000);
 
         // Initial calculations
         calculateRemainingTime();
-        calculateLeeway();
-        showRemainingEventTime();
+        
 
 
 

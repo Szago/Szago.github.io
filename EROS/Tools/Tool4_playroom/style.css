@@ -1,5 +1,18 @@
 /* PLAYROOM SPECIFIC STYLES */
+/* --- GLOBAL LAYOUT GLUE --- */
+body {
+    margin: 0;
+    display: flex; /* This allows the sidebar and content to sit side-by-side */
+    min-height: 100vh;
+    background-color: var(--bg-dark);
+}
 
+.main-content {
+    margin-left: var(--sidebar-width); /* Uses the variable from shared-shell */
+    flex-grow: 1;
+    padding: 40px;
+    transition: var(--transition); /* Uses the transition from shared-shell */
+}
 /* --- CARDS & GRID --- */
 .dashboard-grid {
     display: grid;

@@ -29,8 +29,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // --- 2. UI HELPERS ---
 
 function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    sidebar.classList.toggle('collapsed');
+    document.getElementById('sidebar').classList.toggle('collapsed');
 }
 
 function populateClickTiers(levels) {
