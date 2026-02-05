@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eros Tools - Net Worth Calculator</title>
+    <link rel="stylesheet" href="../../shared-shell.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
+</head>
+<body>
+    <main class="main-content">
+        <div class="dashboard-grid">
+            
+            <section class="card setup-card">
+                <div class="card-header">
+                    <i class="fas fa-users"></i>
+                    <h2>Account Overview</h2>
+                </div>
+                
+                <div class="input-group">
+                    <label>Character Levels (Comma Separated)</label>
+                    <div class="input-with-icon">
+                        <i class="fas fa-list-ol"></i>
+                        <input type="text" id="characterLevels" placeholder="e.g. 200, 150, 120, 80" oninput="calculateNetWorth()">
+                    </div>
+                </div>
+
+                <div class="settings-footer">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="displayModeCheckbox" onchange="calculateNetWorth()">
+                        <span class="slider"></span>
+                        <span class="toggle-label">Abbreviate numbers (K, M, B)</span>
+                    </label>
+                </div>
+            </section>
+
+            <section class="card hero-result-card">
+                <div class="hero-content">
+                    <label>TOTAL ACCOUNT NET WORTH</label>
+                    <div class="value-display">
+                        <i class="fas fa-coins silver-icon"></i>
+                        <span id="netWorthResult">0</span>
+                    </div>
+                    <div id="characterCount" class="sub-value">0 Characters Tracked</div>
+                </div>
+            </section>
+
+            <section class="card table-card">
+                <div class="card-header">
+                    <i class="fas fa-chart-pie"></i>
+                    <h2>Investment Breakdown</h2>
+                </div>
+                <div id="netWorthTable" class="table-container">
+                    <div class="empty-state">Enter character levels to see the breakdown</div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script src="../../navigation.js"></script>
+    <script src="script.js"></script>
+    <script>
+        // Load shell with 'none' to hide the alert bar if not needed
+        loadShell("Net Worth Calculator", "none");
+        
+        // Dynamic Clock
+        setInterval(() => {
+            const dateInput = document.getElementById('current-date');
+            if(dateInput) dateInput.value = new Date().toISOString().slice(0, 16);
+        }, 1000);
+    </script>
+</body>
+</html>

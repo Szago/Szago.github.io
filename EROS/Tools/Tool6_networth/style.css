@@ -1,0 +1,114 @@
+:root {
+    --accent: #ffd700; /* Gold */
+    --input-bg: #16161d;
+}
+
+/* Hero Result Card */
+.hero-result-card {
+    background: linear-gradient(135deg, #1e1e26 0%, #064e3b 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 4px solid var(--accent);
+}
+
+.hero-content { text-align: center; }
+
+.hero-content label {
+    color: var(--accent);
+    font-weight: 800;
+    letter-spacing: 3px;
+    font-size: 0.8rem;
+}
+
+.value-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin: 15px 0;
+}
+
+.silver-icon {
+    font-size: 2.5rem;
+    color: #ffd700;
+    filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.3));
+}
+
+#netWorthResult {
+    font-family: 'Courier New', monospace;
+    font-size: 3.2rem;
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+}
+
+/* Inputs & Icons */
+.input-with-icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-with-icon i {
+    position: absolute;
+    left: 15px;
+    color: var(--accent);
+}
+
+input[type="text"] {
+    width: 100%;
+    padding: 14px 14px 14px 45px;
+    background: var(--input-bg);
+    border: 1px solid #333;
+    border-radius: 12px;
+    color: white;
+    font-size: 1rem;
+    transition: 0.3s;
+}
+
+input[type="text"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+    outline: none;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    margin-top: 15px;
+}
+
+.toggle-switch input { display: none; }
+.slider {
+    width: 40px; height: 20px;
+    background: #333; border-radius: 20px;
+    position: relative; transition: 0.3s;
+}
+
+.slider:before {
+    content: ""; position: absolute;
+    width: 14px; height: 14px;
+    background: white; border-radius: 50%;
+    top: 3px; left: 3px; transition: 0.3s;
+}
+
+input:checked + .slider { background: var(--accent); }
+input:checked + .slider:before { transform: translateX(20px); }
+
+/* Table */
+.table-card { grid-column: 1 / -1; }
+.table-container { 
+    max-height: 250px; 
+    overflow-y: auto; 
+    background: rgba(0,0,0,0.2);
+    border-radius: 10px;
+}
+
+table { width: 100%; border-collapse: collapse; }
+th { background: #16161d; color: var(--accent); padding: 15px; text-align: left; position: sticky; top: 0; font-size: 0.8rem; text-transform: uppercase; }
+td { padding: 12px 15px; border-bottom: 1px solid #222; }
+.empty-state { padding: 40px; text-align: center; color: #555; font-style: italic; }
