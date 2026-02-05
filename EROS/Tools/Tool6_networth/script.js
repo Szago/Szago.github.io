@@ -3,7 +3,7 @@ let levels = null;
 async function initLevels() {
     try {
         // Fetching from your provided URL
-        const response = await fetch('https://szago.github.io/EROS/Tools/Tool1/levels.json');
+        const response = await fetch('../Tool1_levelcost/levels.json');
         const data = await response.json();
         levels = data.levels;
     } catch (error) {
