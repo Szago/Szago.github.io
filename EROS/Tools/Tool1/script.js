@@ -13,14 +13,17 @@ init();
 
 function setMode(mode) {
     isRangeMode = (mode === 'range');
-    
-    // UI Updates
     document.getElementById('simpleInputs').style.display = isRangeMode ? 'none' : 'block';
     document.getElementById('rangeInputs').style.display = isRangeMode ? 'flex' : 'none';
-    
     document.getElementById('btnSimple').classList.toggle('active', !isRangeMode);
     document.getElementById('btnRange').classList.toggle('active', isRangeMode);
     
+    // Update Labels
+    document.getElementById('labelLeft').innerText = isRangeMode ? "LEVELS TO GAIN" : "LEVEL COST";
+    document.getElementById('labelRight').innerText = isRangeMode ? "RANGE TOTAL" : "TOTAL INVESTMENT";
+    document.getElementById('subLeft').innerText = isRangeMode ? "Level Span" : "Current Level Only";
+    document.getElementById('subRight').innerText = isRangeMode ? "Cost for Range" : "Accumulated from Lv.1";
+
     retrieveCost();
 }
 
@@ -33,7 +36,7 @@ function abbreviateNumber(num) {
 
 function calculateTotalCost(level) {
     const endIdx = parseInt(level) - 1;
-    if (isNaN(endIdx) || endIdx < 0) return null;
+    if (isNaN(endIdx) || endIdx < 0) return 0;
     return levels.slice(0, endIdx + 1).reduce((a, b) => a + b, 0);
 }
 
@@ -45,42 +48,47 @@ function updateDisplayMode() {
 function retrieveCost() {
     if (!levels) return;
     
-    const resultVal = document.getElementById('resultValue');
-    const subVal = document.getElementById('secondaryResult');
+    const resLeft = document.getElementById('resultLeft');
+    const resRight = document.getElementById('resultRight');
     const tableCont = document.getElementById('tableResult');
 
-    let total = 0;
     let breakdown = [];
+    let leftVal = "0";
+    let rightVal = "0";
 
     if (isRangeMode) {
         const start = parseInt(document.getElementById('startLevelInput').value) || 0;
         const end = parseInt(document.getElementById('endLevelInput').value) || 0;
 
         if (end > start && end <= 220) {
-            const startCost = calculateTotalCost(start) || 0;
-            const endCost = calculateTotalCost(end) || 0;
-            total = endCost - startCost;
+            const startTotal = calculateTotalCost(start);
+            const endTotal = calculateTotalCost(end);
+            const diff = endTotal - startTotal;
+            
+            leftVal = `${start} → ${end}`;
+            rightVal = useAbbreviatedDisplayMode ? abbreviateNumber(diff) : diff.toLocaleString();
             
             for (let i = start; i < end; i++) {
                 breakdown.push({ s: i, e: i + 1, c: levels[i] });
             }
-            subVal.innerText = `Upgrading ${end - start} Levels`;
         }
     } else {
         const lvl = parseInt(document.getElementById('labelInput').value) || 0;
         if (lvl > 0 && lvl <= 220) {
-            total = levels[lvl - 1];
+            const singleCost = levels[lvl - 1];
             const cumulative = calculateTotalCost(lvl);
+            
+            leftVal = useAbbreviatedDisplayMode ? abbreviateNumber(singleCost) : singleCost.toLocaleString();
+            rightVal = useAbbreviatedDisplayMode ? abbreviateNumber(cumulative) : cumulative.toLocaleString();
             
             for (let i = 0; i < lvl; i++) {
                 breakdown.push({ s: i, e: i + 1, c: levels[i] });
             }
-            subVal.innerText = `Total from Lv.1: ${useAbbreviatedDisplayMode ? abbreviateNumber(cumulative) : cumulative.toLocaleString()}`;
         }
     }
 
-    // Display Results
-    resultVal.innerText = total > 0 ? (useAbbreviatedDisplayMode ? abbreviateNumber(total) : total.toLocaleString()) : "0";
+    resLeft.innerText = leftVal;
+    resRight.innerText = rightVal;
     
     if (breakdown.length > 0) {
         let html = `<table><tr><th>Start</th><th>End</th><th>Cost</th></tr>`;

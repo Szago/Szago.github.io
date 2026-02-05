@@ -9,6 +9,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
             <li><a href="../Tool4/tool.html" id="nav-playroom"><i class="fas fa-gamepad"></i><span>Playroom calculator</span></a></li>
             <li><a href="../Tool3/tool.html" id="nav-silver"><i class="fas fa-coins"></i><span>Silver income calculator</span></a></li>
             <li><a href="../Tool2/tool.html" id="nav-shards"><i class="fas fa-toolbox"></i><span>Shard drop simulator</span></a></li>
+            <li><a href="../Tool1/tool.html" id="nav-level"><i class="fas fa-person-arrow-up-from-line"></i><span>Level cost calculator</span></a></li>
             <li class="bottom-link"><a href="javascript:window.location.href='/EROS/index.html'"><i class="fas fa-arrow-left"></i><span>Back to Home</span></a></li>
         </ul>
     </nav>`;
@@ -45,6 +46,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
     if(window.location.href.includes('Tool4')) document.getElementById('nav-playroom').classList.add('active');
     if(window.location.href.includes('Tool3')) document.getElementById('nav-silver').classList.add('active');
     if(window.location.href.includes('Tool2')) document.getElementById('nav-shards').classList.add('active');
+    if(window.location.href.includes('Tool1')) document.getElementById('nav-level').classList.add('active');
 }
 
 function toggleSidebar() {

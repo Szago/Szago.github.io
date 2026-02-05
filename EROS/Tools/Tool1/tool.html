@@ -6,7 +6,7 @@
     <title>Eros Tools - Level Calculator</title>
     <link rel="stylesheet" href="../../shared-shell.css">
     <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
 </head>
 <body>
     <main class="main-content">
@@ -48,25 +48,36 @@
                     <label class="toggle-switch">
                         <input type="checkbox" id="displayModeCheckbox" onchange="updateDisplayMode()">
                         <span class="slider"></span>
-                        <span class="toggle-label">Abbreviate Numbers (K, M, B)</span>
+                        <span class="toggle-label">Abbreviate numbers (K, M, B)</span>
                     </label>
                 </div>
             </section>
 
-            <section class="card hero-result-card">
-                <div class="hero-content">
-                    <label id="heroLabel">TOTAL UPGRADE COST</label>
-                    <div class="value-display">
-                        <i class="fas fa-coins silver-icon"></i>
-                        <span id="resultValue">0</span>
+            <div class="results-container">
+                <section class="card hero-card primary-hero">
+                    <div class="hero-content">
+                        <label id="labelLeft">LEVEL COST</label>
+                        <div class="value-display">
+                            <span id="resultLeft">0</span>
+                        </div>
+                        <div id="subLeft" class="sub-value">Current Level Only</div>
                     </div>
-                    <div id="secondaryResult" class="sub-value">Total from Lv.1: 0</div>
-                </div>
-            </section>
+                </section>
+
+                <section class="card hero-card secondary-hero">
+                    <div class="hero-content">
+                        <label id="labelRight">TOTAL INVESTMENT</label>
+                        <div class="value-display">
+                            <span id="resultRight">0</span>
+                        </div>
+                        <div id="subRight" class="sub-value">Accumulated Cost</div>
+                    </div>
+                </section>
+            </div>
 
             <section class="card table-card">
                 <div class="card-header">
-                    <i class="fas fa-stream"></i>
+                    
                     <h2>Cost Breakdown</h2>
                 </div>
                 <div id="tableResult" class="table-container">
