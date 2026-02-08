@@ -18,9 +18,9 @@ function loadPreset(preset) {
         legendary: {
             shardOdds5:  "0.0000",
             shardOdds10: "0.0000",
-            shardOdds15: "0.0472",
-            shardOdds25: "0.0079",
-            shardOdds50: "0.0011",
+            shardOdds15: "0.0315",
+            shardOdds25: "0.0052",
+            shardOdds50: "0.0008",
             shardOdds75: "0.0000"
         },
         mythic: {
