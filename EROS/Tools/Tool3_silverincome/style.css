@@ -1,30 +1,7 @@
 :root {
-    --bg-dark: #0b0e11;
+    --accent: #2ec4b6;   /* Teal/Silver — shell + accents inherit this */
     --card-bg: #15191d;
-    --accent: #2ec4b6; /* Teal/Silver color */
-    --text-main: #ffffff;
-    --text-dim: #94a3b8;
-    --transition: all 0.3s ease;
 }
-
-body {
-    margin: 0;
-    font-family: 'Inter', system-ui, sans-serif;
-    background-color: var(--bg-dark);
-    color: var(--text-main);
-    display: flex;
-}
-
-
-
-/* Main Content */
-.main-content {
-    margin-left: var(--sidebar-width);
-    flex-grow: 1;
-    padding: 40px;
-    transition: var(--transition);
-}
-
 
 /* Cards */
 .dashboard-grid {
@@ -56,8 +33,5 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .value.primary { font-size: 1.5rem; font-weight: bold; margin-top: 10px; color: #fff; }
 .large-accent { font-size: 2.5rem; font-weight: 800; color: var(--accent); margin-top: 10px; }
 .accent-text { color: var(--accent); font-weight: bold; }
-
-.current-date-box { background: #011627; padding: 10px 20px; border-radius: 50px; border: 1px solid #1e293b; }
-.current-date-box input { background: transparent; border: none; color: var(--accent); width: 150px; }
 
 .danger { background: rgba(244, 67, 54, 0.2); color: #e57373; border: 1px solid #f44336; }

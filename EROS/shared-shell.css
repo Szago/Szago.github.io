@@ -1,8 +1,17 @@
-/* SHARED SHELL STYLES - Sidebar, Top Bar, & Global Layout */
+/* ======================================================================
+   SHARED SHELL — universal theme for sidebar, top bar & global layout.
+   Every tool loads this first, then sets ONLY its own --accent (and any
+   tool-specific content styles). Do not override the shell variables,
+   body font, or sidebar rules in a tool's stylesheet — that is what kept
+   the sidebar drifting between tools. Change the look here, once.
+   ====================================================================== */
 :root {
     --bg-dark: #0f0f12;
     --card-bg: #1e1e26;
-    --accent: #8c35f7; 
+    --accent: #8c35f7;                 /* default; each tool overrides this */
+    /* Soft accent tint, derived from --accent so the sidebar highlight
+       always matches the active tool's color. */
+    --accent-fade: color-mix(in srgb, var(--accent) 14%, transparent);
     --text-main: #ffffff;
     --text-dim: #a0a0a0;
     --sidebar-width: 270px;
@@ -13,6 +22,7 @@
 body {
     margin: 0;
     font-family: 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
     background-color: var(--bg-dark);
     color: var(--text-main);
     display: flex;
@@ -60,10 +70,14 @@ body {
 }
 
 .nav-links li a i { min-width: 30px; font-size: 1.2rem; }
+.nav-links li a {
+    border-left: 3px solid transparent; /* reserve space so active state doesn't shift text */
+}
 .nav-links li a:hover, .nav-links li a.active {
-    background: rgba(140, 53, 247, 0.1);
+    background: rgba(255, 255, 255, 0.06);           /* fallback for old browsers */
+    background: var(--accent-fade);                   /* accent-tinted highlight */
     color: var(--accent);
-    border-left: 3px solid var(--accent);
+    border-left-color: var(--accent);
 }
 
 .sidebar.collapsed span { display: none; }
