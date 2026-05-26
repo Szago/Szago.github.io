@@ -22,6 +22,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
             <li><a href="../Tool2_sharddrop/tool.html" id="nav-shards"><i class="fas fa-toolbox"></i><span>Shard drop simulator</span></a></li>
             <li><a href="../Tool1_levelcost/tool.html" id="nav-level"><i class="fas fa-person-arrow-up-from-line"></i><span>Level cost calculator</span></a></li>
             <li><a href="../Tool6_networth/tool.html" id="nav-networth"><i class="fas fa-building-columns"></i><span>Net worth calculator</span></a></li>
+            <li><a href="../Tool7_classstatue/tool.html" id="nav-statue"><i class="fas fa-monument"></i><span>Class statue calculator</span></a></li>
             <li class="bottom-link"><a href="javascript:window.location.href='/EROS/index.html'"><i class="fas fa-arrow-left"></i><span>Back to Home</span></a></li>
         </ul>
     </nav>`;
@@ -58,6 +59,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
     if(path.includes('Tool2')) document.getElementById('nav-shards').classList.add('active');
     if(path.includes('Tool1')) document.getElementById('nav-level').classList.add('active');
     if(path.includes('Tool6')) document.getElementById('nav-networth').classList.add('active');
+    if(path.includes('Tool7')) document.getElementById('nav-statue').classList.add('active');
 }
 
 function toggleSidebar() {

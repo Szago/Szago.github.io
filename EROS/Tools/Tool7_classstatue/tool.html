@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eros Tools - Class Statue Calculator</title>
+
+    <link rel="stylesheet" href="../../shared-shell.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
+</head>
+<body>
+    <main class="main-content">
+
+        <!-- ============ TOP PANEL: USER INPUT (full width) ============ -->
+        <section class="card top-panel">
+            <div class="card-header">
+                <i class="fas fa-monument"></i>
+                <h2>Your Data</h2>
+            </div>
+
+            <div class="top-grid">
+                <!-- Income inputs -->
+                <div class="input-block">
+                    <div class="block-title"><i class="fas fa-clock"></i> Idle Income</div>
+
+                    <div class="input-group">
+                        <label>Idle Coins (per minute)</label>
+                        <input type="number" id="idlePerMin" min="0" step="any" placeholder="Enter amount..." oninput="recalc()">
+                    </div>
+
+                    <div class="input-group">
+                        <div class="label-row">
+                            <label>Daily Rushes</label>
+                            <span id="rushesDisplay" class="accent-text">0</span>
+                        </div>
+                        <input type="range" id="rushes" min="0" max="3" value="0" oninput="recalc()">
+                    </div>
+
+                    <div class="input-group">
+                        <label>Current Stacked Coins</label>
+                        <input type="number" id="stackedCoins" min="0" step="any" placeholder="Coins you have banked..." oninput="recalc()">
+                    </div>
+
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="abbreviateCheckbox" onchange="recalc()" checked>
+                        <span class="slider-toggle"></span>
+                        <span class="toggle-label">Abbreviate numbers (K / M / B)</span>
+                    </label>
+                </div>
+
+                <!-- Statue level inputs -->
+                <div class="input-block">
+                    <div class="block-title"><i class="fas fa-layer-group"></i> Current Statue Levels <span class="hint">(1 – 300)</span></div>
+                    <div class="statue-inputs" id="statueInputs"><!-- injected by JS --></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ BOTTOM SPLIT: SUMMARY (left) + SIMULATOR (right) ============ -->
+        <div class="split-grid">
+
+            <!-- LEFT: summary & time estimates -->
+            <section class="card summary-panel">
+                <div class="card-header">
+                    <i class="fas fa-chart-line"></i>
+                    <h2>Summary &amp; Time to Max</h2>
+                </div>
+
+                <div class="income-readout">
+                    <div class="income-stat">
+                        <label>Income / day</label>
+                        <span id="incomePerDay" class="accent-text">0</span>
+                    </div>
+                    <div class="income-stat">
+                        <label>Income / hour</label>
+                        <span id="incomePerHour" class="accent-text">0</span>
+                    </div>
+                </div>
+
+                <div id="summaryTable" class="summary-list"><!-- injected by JS --></div>
+
+                <div class="totals-box">
+                    <div class="total-row">
+                        <span>Total points invested</span>
+                        <span id="totalInvested" class="accent-text">0</span>
+                    </div>
+                    <div class="total-row">
+                        <span>Total coins to max all</span>
+                        <span id="totalRemaining" class="accent-text">0</span>
+                    </div>
+                    <div class="total-row big">
+                        <span>Time to max everything</span>
+                        <span id="totalTime" class="accent-text">&mdash;</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RIGHT: distribution simulator -->
+            <section class="card sim-panel">
+                <div class="card-header">
+                    <i class="fas fa-sliders"></i>
+                    <h2>Spend Simulator</h2>
+                </div>
+
+                <div class="budget-bar">
+                    <div class="budget-row">
+                        <span>Allocated</span>
+                        <span><span id="allocated">0</span> / <span id="budgetTotal">0</span></span>
+                    </div>
+                    <div class="budget-track"><div id="budgetFill" class="budget-fill"></div></div>
+                    <div class="budget-row sub">
+                        <span>Unspent coins left over</span>
+                        <span id="budgetLeft" class="accent-text">0</span>
+                    </div>
+                </div>
+
+                <div id="simBody" class="sim-list"><!-- injected by JS --></div>
+
+                <button class="reset-btn" onclick="resetAllocations()"><i class="fas fa-rotate-left"></i> Reset sliders</button>
+            </section>
+        </div>
+    </main>
+
+    <script src="../../navigation.js"></script>
+    <script src="script.js"></script>
+    <script>
+        loadShell("Class Statue Calculator", "none");
+
+        // Live clock (matches other tools)
+        setInterval(() => {
+            const dateInput = document.getElementById('current-date');
+            if (dateInput) dateInput.value = new Date().toISOString().slice(0, 16);
+        }, 1000);
+    </script>
+</body>
+</html>
