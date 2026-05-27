@@ -1,0 +1,15 @@
+/* Calendar — Data section. Uses the shared shell's default accent. */
+
+.card {
+    background: var(--card-bg);
+    padding: 25px;
+    border-radius: 16px;
+    border: 1px solid #2a2a33;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.card-header i { color: var(--accent); font-size: 1.3rem; }
+.card-header h2 { margin: 0; font-size: 1.2rem; }
+
+.cal-note { color: var(--text-dim); font-size: 0.85rem; margin: 0 0 18px; }

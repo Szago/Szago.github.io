@@ -1,0 +1,73 @@
+/* ======================================================================
+   CALENDAR TIMELINE — shared component styles.
+   Loaded by both the public Calendar page and the internal editor preview.
+   Both themes are dark and both define --accent, so this file sticks to
+   concrete dark colours + var(--accent) and renders identically in each.
+   ====================================================================== */
+
+.cal-wrap {
+    display: flex;
+    border: 1px solid #2a2a33;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #16161d;
+}
+
+/* ---- Left gutter: row numbers, aligned to the timeline header height ---- */
+.cal-labels { flex-shrink: 0; border-right: 1px solid #2a2a33; background: #1a1a22; }
+.cal-labels-head { height: 54px; border-bottom: 1px solid #2a2a33; }
+.cal-rowlabel {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; font-weight: 600; color: #7a7a86;
+    border-bottom: 1px solid #20202a;
+}
+.cal-labels-body .cal-rowlabel:last-child { border-bottom: none; }
+
+/* ---- Scrollable timeline ---- */
+.cal-scroll { flex: 1; overflow-x: auto; }
+.cal-scroll::-webkit-scrollbar { height: 8px; }
+.cal-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+.cal-timeline { position: relative; min-width: 100%; }
+
+/* ---- Header: month band over day numbers (54px = 26 + 28) ---- */
+.cal-head { height: 54px; border-bottom: 1px solid #2a2a33; }
+.cal-months { display: flex; height: 26px; }
+.cal-month {
+    box-sizing: border-box; flex-shrink: 0;
+    display: flex; align-items: center; padding: 0 10px;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    color: #fff; background: rgba(255, 255, 255, 0.02);
+    border-right: 1px solid #2a2a33; border-bottom: 1px solid #20202a;
+    overflow: hidden; white-space: nowrap;
+}
+.cal-days { display: flex; height: 28px; }
+.cal-day {
+    box-sizing: border-box; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.62rem; color: #7a7a86;
+    border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+.cal-day.weekend { background: rgba(255, 255, 255, 0.035); color: #9a9aa6; }
+
+/* ---- Rows & event bars ---- */
+.cal-rows { position: relative; }
+.cal-track { position: relative; border-bottom: 1px solid #20202a; }
+.cal-track:last-child { border-bottom: none; }
+
+.cal-event {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    height: calc(100% - 12px); min-height: 20px;
+    border-radius: 6px; box-sizing: border-box;
+    display: flex; align-items: center; padding: 0 8px;
+    color: #10101a; font-size: 0.75rem; font-weight: 700;
+    overflow: hidden; cursor: default;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.cal-event span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- Today marker ---- */
+.cal-today {
+    position: absolute; top: 0; bottom: 0; width: 2px;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent);
+    z-index: 5; pointer-events: none;
+}

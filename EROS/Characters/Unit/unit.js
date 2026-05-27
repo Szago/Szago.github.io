@@ -16,6 +16,13 @@ function getParam(name) {
     return new URLSearchParams(window.location.search).get(name);
 }
 
+// Render Markdown to HTML (falls back to escaped text if the lib is missing).
+function renderMarkdown(text) {
+    text = text || '';
+    if (window.marked) { try { return marked.parse(text); } catch (e) { /* fall through */ } }
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>');
+}
+
 async function loadCharacter() {
     setupTabs();
 
@@ -34,21 +41,29 @@ async function loadCharacter() {
     if (!char) return;
 
     renderTile(char);
+    renderTabs(char);
+}
+
+function setText(id, value) {
+    document.getElementById(id).textContent = value || '—';
 }
 
 function renderTile(char) {
     document.title = `Eros - ${char.name}`;
-    document.getElementById('charName').textContent = char.name || '—';
-    document.getElementById('charClass').textContent = char.class || '—';
-    document.getElementById('charFaction').textContent = char.faction || '—';
-    document.getElementById('charElement').textContent = char.element || '—';
+    setText('charName', char.name);
+    setText('charClass', char.class);
+    setText('charRace', char.race);
+    setText('charFaction', char.faction);
+    setText('charElement', char.element);
+
+    // Rarity, with a color class (rarity-legendary, etc.).
+    const rarityEl = document.getElementById('charRarity');
+    rarityEl.textContent = char.rarity || '—';
+    rarityEl.className = 'meta-value' + (char.rarity ? ` rarity-${char.rarity.toLowerCase()}` : '');
 
     // Match the class icon in the tile header row.
     const classIcon = CLASS_ICONS[char.class];
-    if (classIcon) {
-        const el = document.querySelector('.meta-row .meta-label i.fa-shield-halved');
-        if (el) el.className = `fas ${classIcon}`;
-    }
+    if (classIcon) document.getElementById('classIcon').className = `fas ${classIcon}`;
 
     // Portrait: use the image if present, otherwise keep the placeholder icon.
     const portrait = document.getElementById('charPortrait');
@@ -57,6 +72,19 @@ function renderTile(char) {
         portrait.classList.add('has-image');
         portrait.innerHTML = '';
     }
+}
+
+// Fill the Details/Rating/Teams/Placement tabs from the character data.
+function renderTabs(char) {
+    ['details', 'rating', 'teams', 'placement'].forEach(key => {
+        const panel = document.getElementById('tab-' + key);
+        const text = (char[key] || '').trim();
+        if (text) {
+            panel.innerHTML = `<div class="panel-text">${renderMarkdown(text)}</div>`;
+        } else {
+            panel.innerHTML = `<div class="panel-empty">No ${key} info yet.</div>`;
+        }
+    });
 }
 
 function setupTabs() {

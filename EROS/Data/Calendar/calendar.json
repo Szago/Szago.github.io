@@ -1,0 +1,10 @@
+{
+    "rows": 10,
+    "events": [
+        { "name": "Placeholder ", "start": "2026-05-01", "end": "2026-05-14", "row": 0, "color": "#8c35f7" },
+        { "name": "Placeholder ", "start": "2026-05-05", "end": "2026-05-12", "row": 1, "color": "#ff4d6d" },
+        { "name": "Placeholder ", "start": "2026-05-10", "end": "2026-05-24", "row": 2, "color": "#2ec4b6" },
+        { "name": "Banner: Aria", "start": "2026-05-15", "end": "2026-05-29", "row": 3, "color": "#ff9447" },
+        { "name": "Placeholder ", "start": "2026-05-20", "end": "2026-05-23", "row": 4, "color": "#6bcb77" }
+    ]
+}

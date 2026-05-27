@@ -56,6 +56,17 @@ function loadShell(pageTitle, alertType, alertMsg) {
                     <li class="coming-soon"><i class="fas fa-hourglass-half"></i><span>Coming soon</span></li>
                 </ul>
             </div>
+
+            <div class="nav-category" id="cat-data">
+                <button class="category-header" onclick="toggleCategory('cat-data')">
+                    <i class="fas fa-database cat-icon"></i>
+                    <span class="cat-label">Data</span>
+                    <i class="fas fa-chevron-down chevron"></i>
+                </button>
+                <ul class="nav-links category-links">
+                    <li><a href="/EROS/Data/Calendar/index.html" id="nav-calendar"><i class="fas fa-calendar-days"></i><span>Calendar</span></a></li>
+                </ul>
+            </div>
         </div>
 
         <ul class="nav-links bottom-nav">
@@ -98,6 +109,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
     if(path.includes('Tool7')) document.getElementById('nav-statue').classList.add('active');
     if(path.includes('AllUnits')) document.getElementById('nav-allunits').classList.add('active');
     if(path.includes('Tierlist')) document.getElementById('nav-tierlist').classList.add('active');
+    if(path.includes('/Data/Calendar')) document.getElementById('nav-calendar').classList.add('active');
 }
 
 function toggleCategory(id) {

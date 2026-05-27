@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eros - Calendar</title>
+
+    <link rel="stylesheet" href="../../shared-shell.css">
+    <link rel="stylesheet" href="calendar.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
+</head>
+<body>
+    <main class="main-content">
+        <section class="card">
+            <div class="card-header">
+                <i class="fas fa-calendar-days"></i>
+                <h2>Calendar</h2>
+            </div>
+
+            <!--
+                Line-styled timeline: each row is one line, and every event is
+                drawn as a bar spanning its start→end duration. The grid is
+                built from calendar.json — edit that file (or use the editor at
+                /EROS/Characters/Editor/index.html → Calendar tab) to change it.
+            -->
+            <p class="cal-note">Each line is an event drawn across its duration. Scroll sideways to see the full span.</p>
+            <div id="calendar"></div>
+        </section>
+    </main>
+
+    <script src="../../navigation.js"></script>
+    <script src="calendar.js"></script>
+    <script>
+        loadShell("Calendar", "none");
+
+        const CALENDAR_URL = '/EROS/Data/Calendar/calendar.json';
+
+        async function loadCalendar() {
+            const container = document.getElementById('calendar');
+            let data;
+            try {
+                data = await fetch(CALENDAR_URL, { cache: 'no-store' }).then(r => r.json());
+            } catch (e) {
+                container.innerHTML = '<p class="cal-note">Could not load calendar data.</p>';
+                return;
+            }
+            renderCalendar(container, data);
+        }
+
+        loadCalendar();
+    </script>
+</body>
+</html>

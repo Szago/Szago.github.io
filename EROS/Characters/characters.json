@@ -4,7 +4,13 @@
         "name": "Placeholder Name",
         "image": "",
         "class": "Fighter",
-        "faction": "Placeholder Faction",
-        "element": "Placeholder Element"
+        "race": "Human",
+        "faction": "Guardians",
+        "element": "Fire",
+        "rarity": "legendary",
+        "details": "",
+        "rating": "",
+        "teams": "",
+        "placement": ""
     }
 ]
