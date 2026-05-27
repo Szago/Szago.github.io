@@ -4,20 +4,33 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>A bunch of bullshit and tools</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
     <link rel="stylesheet" href="MainStyle.css">
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>A bunch of bullshit and tools</h1>
+    <!-- Ambient animated glow -->
+    <div class="glow glow-1"></div>
+    <div class="glow glow-2"></div>
+
+    <main class="hero">
+        <header class="hero-header">
+            <h1>Szago's <span class="accent">toolkit</span></h1>
+        </header>
+
+        <div class="cards">
+            <a href="EROS/index.html" class="card card-eros">
+                <div class="card-icon"><i class="fa-solid fa-dragon"></i></div>
+                <h2>Eros Fantasy tools</h2>
+                <span class="card-cta">Open <i class="fa-solid fa-arrow-right"></i></span>
+            </a>
+
+            <a href="other.html" class="card card-other">
+                <div class="card-icon"><i class="fa-solid fa-box-archive"></i></div>
+                <h2>Other shit</h2>
+                <span class="card-cta">Open <i class="fa-solid fa-arrow-right"></i></span>
+            </a>
         </div>
-        
-        <div class="content">
-            <div class="button-container">
-                <a href="EROS/index.html" class="button" id="left-button">Eros Fantasy tools</a>
-                <a href="other.html" class="button" id="right-button">Other shit</a>
-            </div>
-        </div>
-    </div>
+    </main>
+
 </body>
 </html>
