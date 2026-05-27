@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eros Content Editor (internal)</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
+    <style>
+        :root {
+            --bg: #0f0f12;
+            --panel: #1e1e26;
+            --input: #16161d;
+            --border: #2a2a33;
+            --accent: #8c35f7;
+            --text: #fff;
+            --dim: #a0a0a0;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
+
+        /* ---- Top bar ---- */
+        .topbar { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+        .topbar h1 { font-size: 1.1rem; margin: 0; margin-right: auto; }
+        .topbar .note { color: var(--dim); font-size: 0.8rem; width: 100%; }
+
+        /* ---- Buttons ---- */
+        button {
+            font-family: inherit; font-size: 0.85rem; padding: 9px 14px;
+            border-radius: 8px; border: 1px solid var(--border); background: var(--input);
+            color: var(--text); cursor: pointer; transition: 0.15s;
+            display: inline-flex; align-items: center; gap: 7px;
+        }
+        button:hover { border-color: var(--accent); }
+        button.primary { background: var(--accent); border-color: var(--accent); }
+        button.danger { color: #ff6b6b; border-color: #5a2a2a; }
+        button.danger:hover { border-color: #ff6b6b; }
+
+        /* ---- Main tab bar ---- */
+        .tabbar { display: flex; gap: 4px; padding: 0 24px; border-bottom: 1px solid var(--border); }
+        .tabbar .tab {
+            border: none; border-bottom: 3px solid transparent; border-radius: 0;
+            background: none; color: var(--dim); font-size: 0.95rem; font-weight: 600; padding: 14px 18px;
+        }
+        .tabbar .tab:hover { color: var(--text); }
+        .tabbar .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+        .tabview { display: none; padding: 20px 24px; }
+        .tabview.active { display: block; }
+        .view-actions { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; align-items: center; }
+        .view-actions .spacer { margin-right: auto; }
+
+        /* ---- Shared output ---- */
+        .output { margin-top: 28px; }
+        .output-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .output-head h2 { font-size: 1rem; margin: 0; margin-right: auto; }
+        textarea {
+            width: 100%; min-height: 200px;
+            background: var(--input); border: 1px solid var(--border); border-radius: 10px;
+            color: var(--text); font-family: 'Courier New', monospace; font-size: 0.85rem;
+            padding: 14px; resize: vertical;
+        }
+        .warn { color: #ffb74d; font-size: 0.8rem; margin-top: 8px; min-height: 1.2em; }
+
+        /* ================= CHARACTERS TAB ================= */
+        .char-layout { display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
+
+        .list-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .list-panel .list-head { padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
+        .char-list { list-style: none; margin: 0; padding: 0; max-height: 60vh; overflow-y: auto; }
+        .char-list li { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .char-list li:hover { background: rgba(255,255,255,0.04); }
+        .char-list li.active { background: rgba(140,53,247,0.15); color: var(--accent); border-left: 3px solid var(--accent); }
+        .char-list li .cid { font-size: 0.7rem; color: var(--dim); }
+        .list-empty { padding: 20px 16px; color: var(--dim); font-style: italic; font-size: 0.85rem; }
+
+        .form-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 22px; }
+        .form-empty { color: var(--dim); font-style: italic; text-align: center; padding: 50px 20px; }
+        .form-head { display: flex; align-items: center; gap: 16px; margin-bottom: 22px; }
+        .preview { width: 72px; height: 72px; border-radius: 10px; flex-shrink: 0; background: var(--input); border: 1px solid var(--border); background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; }
+        .preview i { font-size: 1.8rem; color: #3a3a44; }
+        .form-head h2 { margin: 0; font-size: 1.2rem; }
+        .field { margin-bottom: 16px; }
+        .field label { display: block; font-size: 0.78rem; color: var(--dim); margin-bottom: 6px; }
+        .field input { width: 100%; padding: 10px 12px; background: var(--input); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.95rem; }
+        .field input:focus { outline: none; border-color: var(--accent); }
+        .field .hint { font-size: 0.72rem; color: #666; margin-top: 4px; }
+
+        /* ================= TIER LIST TAB ================= */
+        .tierlist { display: grid; grid-template-columns: 70px repeat(3, 1fr); gap: 10px; align-items: stretch; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+        .col-head { text-align: center; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; font-size: 0.85rem; color: var(--dim); padding-bottom: 6px; }
+        .tier-label { display: flex; align-items: center; justify-content: center; border-radius: 10px; font-weight: 900; font-size: 1.5rem; color: #1a1a1a; min-height: 90px; }
+        .tier-ss { background: #ff4d6d; }
+        .tier-s  { background: #ff9447; }
+        .tier-a  { background: #ffd23f; }
+        .tier-b  { background: #6bcb77; }
+        .tier-d  { background: #5aa9e6; }
+        .tier-cell { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 8px; padding: 8px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 10px; min-height: 90px; transition: background 0.15s, border-color 0.15s; }
+        .tier-cell.drop-hover { background: rgba(140,53,247,0.12); border-color: var(--accent); }
+
+        .pool-head { margin: 24px 0 10px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
+        .pool { display: flex; flex-wrap: wrap; gap: 8px; min-height: 100px; padding: 12px; background: var(--panel); border: 1px dashed var(--border); border-radius: 12px; transition: background 0.15s, border-color 0.15s; }
+        .pool.drop-hover { background: rgba(140,53,247,0.12); border-color: var(--accent); }
+        .pool-empty { color: #5a5a66; font-style: italic; font-size: 0.85rem; align-self: center; }
+
+        .ed-card { position: relative; width: 74px; height: 74px; border-radius: 8px; border: 1px solid #3a3a44; background: #16161d; background-size: cover; background-position: center; cursor: grab; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .ed-card:active { cursor: grabbing; }
+        .ed-card.dragging { opacity: 0.4; }
+        .ed-card .ph { font-size: 1.6rem; color: #3a3a44; }
+        .ed-card .cap { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.72); color: #fff; font-size: 0.6rem; line-height: 1.1; padding: 3px 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <h1><i class="fas fa-pen-to-square"></i> Eros Content Editor</h1>
+        <div class="note">Internal tool — not linked from the site. Edits live in your browser only; download the file and commit it to save. The two tabs read independently from the server — use a tab's “Reload” to resync.</div>
+    </div>
+
+    <div class="tabbar">
+        <button class="tab active" data-tab="characters" onclick="switchTab('characters')"><i class="fas fa-users"></i> Characters</button>
+        <button class="tab" data-tab="tierlist" onclick="switchTab('tierlist')"><i class="fas fa-ranking-star"></i> Tier List</button>
+    </div>
+
+    <!-- ===================== CHARACTERS ===================== -->
+    <section class="tabview active" id="view-characters">
+        <div class="view-actions">
+            <button onclick="CharEditor.reload()"><i class="fas fa-rotate"></i> Reload from server</button>
+            <button onclick="document.getElementById('importFile').click()"><i class="fas fa-file-import"></i> Import file</button>
+            <input type="file" id="importFile" accept="application/json" style="display:none" onchange="CharEditor.importFile(event)">
+            <button class="primary" onclick="CharEditor.add()"><i class="fas fa-plus"></i> Add character</button>
+        </div>
+
+        <div class="char-layout">
+            <div class="list-panel">
+                <div class="list-head">Characters (<span id="charCount">0</span>)</div>
+                <ul id="charList" class="char-list"></ul>
+            </div>
+            <div class="form-panel">
+                <div id="charForm"><div class="form-empty">Select a character on the left, or add a new one.</div></div>
+            </div>
+        </div>
+
+        <div class="output">
+            <div class="output-head">
+                <h2>Generated characters.json</h2>
+                <button onclick="CharEditor.copy()"><i class="fas fa-copy"></i> Copy</button>
+                <button class="primary" onclick="CharEditor.download()"><i class="fas fa-download"></i> Download characters.json</button>
+            </div>
+            <textarea id="charOutput" readonly></textarea>
+            <div id="charWarn" class="warn"></div>
+        </div>
+    </section>
+
+    <!-- ===================== TIER LIST ===================== -->
+    <section class="tabview" id="view-tierlist">
+        <div class="view-actions">
+            <button onclick="TierEditor.reload()"><i class="fas fa-rotate"></i> Reload from server</button>
+            <span class="spacer"></span>
+            <button class="primary" onclick="TierEditor.download()"><i class="fas fa-download"></i> Download tierlist.json</button>
+        </div>
+
+        <div class="tierlist" id="tierlist">
+            <div></div>
+            <div class="col-head">Damage</div>
+            <div class="col-head">Tank</div>
+            <div class="col-head">Support</div>
+        </div>
+
+        <div class="pool-head">Unplaced units</div>
+        <div class="pool" id="pool" data-zone="pool"></div>
+
+        <div class="output">
+            <div class="output-head">
+                <h2>Generated tierlist.json</h2>
+                <button onclick="TierEditor.copy()"><i class="fas fa-copy"></i> Copy</button>
+                <button class="primary" onclick="TierEditor.download()"><i class="fas fa-download"></i> Download tierlist.json</button>
+            </div>
+            <textarea id="tierOutput" readonly></textarea>
+            <div id="tierWarn" class="warn"></div>
+        </div>
+    </section>
+
+    <script>
+        const CHARACTERS_URL = '/EROS/Characters/characters.json';
+        const TIERLIST_URL   = '/EROS/Characters/Tierlist/tierlist.json';
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tabbar .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+            document.querySelectorAll('.tabview').forEach(v => v.classList.toggle('active', v.id === 'view-' + tab));
+        }
+
+        function downloadText(text, filename) {
+            const blob = new Blob([text], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        /* ============================================================
+           CHARACTERS EDITOR
+           ============================================================ */
+        const CharEditor = (() => {
+            const FIELDS = [
+                { key: 'id',      label: 'ID (used in the page URL — ?id=…)', placeholder: 'auto-filled from name' },
+                { key: 'name',    label: 'Name', placeholder: 'Character name' },
+                { key: 'image',   label: 'Image URL / path', placeholder: '/EROS/Characters/img/unit.png' },
+                { key: 'class',   label: 'Class', placeholder: 'Fighter', list: ['Fighter', 'Mage', 'Tank', 'Healer'] },
+                { key: 'faction', label: 'Faction', placeholder: 'Faction name' },
+                { key: 'element', label: 'Element', placeholder: 'Element name' }
+            ];
+
+            let roster = [];
+            let selected = null;
+
+            const slugify = s => (s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+            const escapeAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            const warn = msg => { document.getElementById('charWarn').textContent = msg; };
+
+            async function reload() {
+                try {
+                    const res = await fetch(CHARACTERS_URL, { cache: 'no-store' });
+                    roster = await res.json();
+                } catch (e) {
+                    roster = [];
+                    warn('Could not fetch characters.json (need a local server / GitHub Pages). Use “Import file”.');
+                }
+                selected = roster.length ? 0 : null;
+                renderAll();
+            }
+
+            function importFile(ev) {
+                const file = ev.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    try { roster = JSON.parse(reader.result); selected = roster.length ? 0 : null; warn(''); renderAll(); }
+                    catch (e) { warn('That file is not valid JSON.'); }
+                };
+                reader.readAsText(file);
+                ev.target.value = '';
+            }
+
+            function add() {
+                roster.push({ id: '', name: 'New Character', image: '', class: 'Fighter', faction: '', element: '' });
+                selected = roster.length - 1;
+                renderAll();
+            }
+
+            function del() {
+                if (selected === null) return;
+                if (!confirm(`Delete "${roster[selected].name || 'this character'}"?`)) return;
+                roster.splice(selected, 1);
+                selected = roster.length ? Math.min(selected, roster.length - 1) : null;
+                renderAll();
+            }
+
+            function select(i) { selected = i; renderAll(); }
+
+            function renderAll() { renderList(); renderForm(); renderOutput(); }
+
+            function renderList() {
+                document.getElementById('charCount').textContent = roster.length;
+                const ul = document.getElementById('charList');
+                if (!roster.length) { ul.innerHTML = '<li class="list-empty">No characters yet.</li>'; return; }
+                ul.innerHTML = roster.map((c, i) => `
+                    <li class="${i === selected ? 'active' : ''}" onclick="CharEditor.select(${i})">
+                        <span>${c.name || '(unnamed)'}</span>
+                        <span class="cid">${c.id || 'no-id'}</span>
+                    </li>`).join('');
+            }
+
+            function renderForm() {
+                const area = document.getElementById('charForm');
+                if (selected === null) { area.innerHTML = '<div class="form-empty">Select a character on the left, or add a new one.</div>'; return; }
+                const c = roster[selected];
+                const portrait = c.image ? `style="background-image:url('${c.image}')"` : '';
+                const dataLists = FIELDS.filter(f => f.list).map(f =>
+                    `<datalist id="dl-${f.key}">${f.list.map(o => `<option value="${o}">`).join('')}</datalist>`).join('');
+
+                area.innerHTML = `
+                    <div class="form-head">
+                        <div class="preview" id="preview" ${portrait}>${c.image ? '' : '<i class="fas fa-user"></i>'}</div>
+                        <h2 id="formTitle">${c.name || '(unnamed)'}</h2>
+                    </div>
+                    ${FIELDS.map(f => `
+                        <div class="field">
+                            <label>${f.label}</label>
+                            <input id="f-${f.key}" value="${escapeAttr(c[f.key] || '')}"
+                                   placeholder="${f.placeholder || ''}" ${f.list ? `list="dl-${f.key}"` : ''}
+                                   oninput="CharEditor.onField('${f.key}', this.value)">
+                            ${f.key === 'id' ? '<div class="hint">Leave blank to auto-fill from the name. Changing this changes the character\'s page link.</div>' : ''}
+                        </div>`).join('')}
+                    ${dataLists}
+                    <button class="danger" onclick="CharEditor.del()"><i class="fas fa-trash"></i> Delete character</button>`;
+            }
+
+            function onField(key, value) {
+                const c = roster[selected];
+                c[key] = value;
+                if (key === 'name') {
+                    document.getElementById('formTitle').textContent = value || '(unnamed)';
+                    const idInput = document.getElementById('f-id');
+                    if (idInput && (!c.id || c.id === slugify(c._lastNameSlug || ''))) { c.id = slugify(value); idInput.value = c.id; }
+                    c._lastNameSlug = value;
+                }
+                if (key === 'image') {
+                    const p = document.getElementById('preview');
+                    if (value) { p.style.backgroundImage = `url('${value}')`; p.innerHTML = ''; }
+                    else { p.style.backgroundImage = ''; p.innerHTML = '<i class="fas fa-user"></i>'; }
+                }
+                renderList();
+                renderOutput();
+            }
+
+            function clean() {
+                return roster.map(c => { const out = {}; FIELDS.forEach(f => out[f.key] = c[f.key] || ''); return out; });
+            }
+
+            function renderOutput() {
+                document.getElementById('charOutput').value = JSON.stringify(clean(), null, 4) + '\n';
+                const ids = clean().map(c => c.id);
+                const blanks = ids.filter(x => !x).length;
+                const dupes = ids.filter((x, i) => x && ids.indexOf(x) !== i);
+                let msg = '';
+                if (blanks) msg += `${blanks} character(s) missing an id. `;
+                if (dupes.length) msg += `Duplicate id(s): ${[...new Set(dupes)].join(', ')}.`;
+                warn(msg);
+            }
+
+            function download() { downloadText(document.getElementById('charOutput').value, 'characters.json'); }
+            function copy() { navigator.clipboard.writeText(document.getElementById('charOutput').value).then(() => warn('Copied to clipboard.')); }
+
+            return { reload, importFile, add, del, select, onField, download, copy };
+        })();
+
+        /* ============================================================
+           TIER LIST EDITOR
+           ============================================================ */
+        const TierEditor = (() => {
+            const ROWS = ['SS', 'S', 'A', 'B', 'D'];
+            const COLS = ['Damage', 'Tank', 'Support'];
+            const TIER_CLASS = { SS: 'tier-ss', S: 'tier-s', A: 'tier-a', B: 'tier-b', D: 'tier-d' };
+
+            let dragged = null;
+            const warn = msg => { document.getElementById('tierWarn').textContent = msg; };
+
+            function buildGrid() {
+                const grid = document.getElementById('tierlist');
+                while (grid.children.length > 4) grid.removeChild(grid.lastChild);
+                ROWS.forEach(row => {
+                    const label = document.createElement('div');
+                    label.className = `tier-label ${TIER_CLASS[row]}`;
+                    label.textContent = row;
+                    grid.appendChild(label);
+                    COLS.forEach(col => {
+                        const cell = document.createElement('div');
+                        cell.className = 'tier-cell';
+                        cell.dataset.row = row;
+                        cell.dataset.col = col;
+                        attachZone(cell);
+                        grid.appendChild(cell);
+                    });
+                });
+            }
+
+            function makeCard(name, image, id) {
+                const card = document.createElement('div');
+                card.className = 'ed-card';
+                card.draggable = true;
+                card.dataset.name = name;
+                card.dataset.id = id || '';
+                if (image) card.style.backgroundImage = `url('${image}')`;
+                card.innerHTML = (image ? '' : '<i class="fas fa-user ph"></i>') + `<span class="cap">${name}</span>`;
+                card.title = name;
+                card.addEventListener('dragstart', () => { dragged = card; card.classList.add('dragging'); });
+                card.addEventListener('dragend', () => { dragged = null; card.classList.remove('dragging'); updateOutput(); });
+                return card;
+            }
+
+            function attachZone(zone) {
+                zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drop-hover'); });
+                zone.addEventListener('dragleave', e => { if (!zone.contains(e.relatedTarget)) zone.classList.remove('drop-hover'); });
+                zone.addEventListener('drop', e => {
+                    e.preventDefault();
+                    zone.classList.remove('drop-hover');
+                    if (!dragged) return;
+                    const overCard = e.target.closest('.ed-card');
+                    if (overCard && overCard !== dragged && overCard.parentElement === zone) zone.insertBefore(dragged, overCard);
+                    else zone.appendChild(dragged);
+                    updateOutput();
+                });
+            }
+
+            async function reload() {
+                buildGrid();
+                attachZone(document.getElementById('pool'));
+                const pool = document.getElementById('pool');
+                pool.innerHTML = '';
+
+                let roster = [], placements = [];
+                try {
+                    [roster, placements] = await Promise.all([
+                        fetch(CHARACTERS_URL, { cache: 'no-store' }).then(r => r.json()),
+                        fetch(TIERLIST_URL, { cache: 'no-store' }).then(r => r.json()).catch(() => [])
+                    ]);
+                } catch (e) {
+                    warn('Could not fetch data from the server (need a local server / GitHub Pages).');
+                }
+
+                const cardByKey = {};
+                roster.forEach(c => {
+                    const card = makeCard(c.name, c.image, c.id);
+                    cardByKey[c.id] = card;
+                    cardByKey[c.name] = card;
+                    pool.appendChild(card);
+                });
+
+                placements.forEach(p => {
+                    const cell = document.querySelector(`.tier-cell[data-row="${p.row}"][data-col="${p.column}"]`);
+                    if (!cell) return;
+                    let card = cardByKey[p.name];
+                    if (!card) card = makeCard(p.name, '', '');
+                    cell.appendChild(card);
+                });
+
+                refreshPoolEmpty();
+                updateOutput();
+            }
+
+            function refreshPoolEmpty() {
+                const pool = document.getElementById('pool');
+                const placeholder = pool.querySelector('.pool-empty');
+                const hasCards = pool.querySelector('.ed-card');
+                if (!hasCards && !placeholder) {
+                    const el = document.createElement('span');
+                    el.className = 'pool-empty';
+                    el.textContent = 'All units are placed.';
+                    pool.appendChild(el);
+                } else if (hasCards && placeholder) { placeholder.remove(); }
+            }
+
+            function buildPlacements() {
+                const out = [];
+                document.querySelectorAll('.tier-cell').forEach(cell => {
+                    cell.querySelectorAll('.ed-card').forEach(card => {
+                        out.push({ row: cell.dataset.row, column: cell.dataset.col, name: card.dataset.name });
+                    });
+                });
+                return out;
+            }
+
+            function updateOutput() {
+                refreshPoolEmpty();
+                document.getElementById('tierOutput').value = JSON.stringify(buildPlacements(), null, 4) + '\n';
+                const placed = document.querySelectorAll('.tier-cell .ed-card').length;
+                warn(placed ? '' : 'No units placed yet — the file will be an empty list.');
+            }
+
+            function download() { downloadText(document.getElementById('tierOutput').value, 'tierlist.json'); }
+            function copy() { navigator.clipboard.writeText(document.getElementById('tierOutput').value).then(() => warn('Copied to clipboard.')); }
+
+            return { reload, download, copy };
+        })();
+
+        // Initial load of both tabs.
+        CharEditor.reload();
+        TierEditor.reload();
+    </script>
+</body>
+</html>
