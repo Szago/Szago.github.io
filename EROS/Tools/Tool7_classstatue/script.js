@@ -25,10 +25,8 @@ const COST_BRACKETS = [
     [241, 260, 170000],[261, 280, 240000],[281, 300, 330000]
 ];
 
-/* --- Cost lookup tables -------------------------------------------------
-   levelUpCost[L] = cost to go from level L to L+1   (valid for L = 1..299)
-   cumCost[L]     = total coins spent to reach level L from level 1
------------------------------------------------------------------------- */
+// --- Cost lookup tables -------------------------------------------------
+
 const levelUpCost = new Array(MAX_LEVEL + 1).fill(Infinity);
 const cumCost = new Array(MAX_LEVEL + 1).fill(0);
 
@@ -42,8 +40,6 @@ const cumCost = new Array(MAX_LEVEL + 1).fill(0);
     }
 })();
 
-// How far can `budget` coins push a statue from `startLevel`? Returns the
-// reached level and the coins actually spent (rest is unspendable leftover).
 function projectLevel(startLevel, budget) {
     let lvl = startLevel;
     let spent = 0;
@@ -54,11 +50,9 @@ function projectLevel(startLevel, budget) {
     return { level: lvl, spent: spent, gained: lvl - startLevel };
 }
 
-/* --- State -------------------------------------------------------------- */
-let allocations = {};        // coins assigned to each statue in the simulator
+let allocations = {};    
 STATUES.forEach(s => allocations[s.key] = 0);
 
-/* --- Helpers ------------------------------------------------------------ */
 function abbreviate(num) {
     if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
     if (num >= 1e9)  return (num / 1e9).toFixed(2) + 'B';
@@ -74,7 +68,6 @@ function fmt(num) {
         : Math.floor(num).toLocaleString();
 }
 
-// days -> "2mo 4d", "5d 3h", "4h 12m", "ready" etc.
 function formatTime(days) {
     if (days <= 0) return 'Maxed';
     if (!isFinite(days)) return 'No income';
@@ -105,7 +98,6 @@ function incomePerDay() {
     return idlePerDay + rushBonus;
 }
 
-/* --- Initial DOM build -------------------------------------------------- */
 function buildStatueInputs() {
     const wrap = document.getElementById('statueInputs');
     wrap.innerHTML = STATUES.map(s => `
@@ -124,8 +116,12 @@ function buildSimRows() {
                 <span class="sim-name"><i class="fas ${s.icon}"></i> ${s.name}</span>
                 <span class="sim-proj" id="proj-${s.key}">Lv 1 &rarr; 1</span>
             </div>
-            <input type="range" class="alloc-slider" id="alloc-${s.key}" min="0" max="0"
-                   value="0" step="any" oninput="onAllocInput('${s.key}')">
+            <div class="sim-control">
+                <button class="step-btn" onclick="stepLevel('${s.key}', -1)" title="One level down">&minus;</button>
+                <input type="range" class="alloc-slider" id="alloc-${s.key}" min="0" max="0"
+                       value="0" step="any" oninput="onAllocInput('${s.key}')">
+                <button class="step-btn" onclick="stepLevel('${s.key}', 1)" title="One level up">+</button>
+            </div>
             <div class="sim-foot">
                 <span id="allocAmt-${s.key}">0 coins</span>
                 <span class="sim-gain" id="gain-${s.key}">+0 levels</span>
@@ -133,7 +129,6 @@ function buildSimRows() {
         </div>`).join('');
 }
 
-/* --- Simulator logic ---------------------------------------------------- */
 function totalAllocated() {
     return STATUES.reduce((sum, s) => sum + allocations[s.key], 0);
 }
@@ -143,7 +138,7 @@ function onAllocInput(key) {
     const slider = document.getElementById(`alloc-${key}`);
     let value = parseFloat(slider.value) || 0;
 
-    // Clamp this slider so the running total never exceeds the coin pool.
+    
     const others = totalAllocated() - allocations[key];
     const maxForThis = Math.max(0, budget - others);
     if (value > maxForThis) {
@@ -151,6 +146,27 @@ function onAllocInput(key) {
         slider.value = value;
     }
     allocations[key] = value;
+    renderSimulator();
+}
+
+function stepLevel(key, dir) {
+    const budget = parseFloat(document.getElementById('stackedCoins').value) || 0;
+    const base = getLevel(key);
+    const current = projectLevel(base, allocations[key]).level;
+
+    let target = current + dir;
+    if (target < base) target = base;
+    if (target > MAX_LEVEL) target = MAX_LEVEL;
+
+    let needed = cumCost[target] - cumCost[base];
+
+    const others = totalAllocated() - allocations[key];
+    const maxForThis = Math.max(0, budget - others);
+    if (needed > maxForThis) needed = maxForThis;
+
+    allocations[key] = needed;
+    const sl = document.getElementById(`alloc-${key}`);
+    if (sl) sl.value = needed;
     renderSimulator();
 }
 
@@ -166,7 +182,6 @@ function resetAllocations() {
 function renderSimulator() {
     const budget = parseFloat(document.getElementById('stackedCoins').value) || 0;
 
-    // Keep slider ranges in sync with the available pool.
     STATUES.forEach(s => {
         const sl = document.getElementById(`alloc-${s.key}`);
         sl.max = budget;
@@ -174,7 +189,7 @@ function renderSimulator() {
         if (allocations[s.key] > budget) { allocations[s.key] = budget; sl.value = budget; }
     });
 
-    let usedToLevel = 0; // coins actually consumed by level-ups
+    let usedToLevel = 0; 
     STATUES.forEach(s => {
         const base = getLevel(s.key);
         const proj = projectLevel(base, allocations[s.key]);
@@ -197,9 +212,17 @@ function renderSimulator() {
     fill.style.width = budget > 0 ? Math.min(100, (allocated / budget) * 100) + '%' : '0%';
 }
 
-/* --- Summary logic ------------------------------------------------------ */
+function timeToMax(remaining, banked, perDay) {
+    if (remaining <= 0) return 'Maxed';
+    const needed = Math.max(0, remaining - banked);
+    if (needed === 0) return 'In bank ✓';     // already affordable right now
+    if (perDay <= 0) return 'No income';
+    return formatTime(needed / perDay);
+}
+
 function renderSummary() {
     const perDay = incomePerDay();
+    const banked = parseFloat(document.getElementById('stackedCoins').value) || 0;
     document.getElementById('incomePerDay').textContent = fmt(perDay);
     document.getElementById('incomePerHour').textContent = fmt(perDay / 24);
 
@@ -213,7 +236,7 @@ function renderSummary() {
         totalInvested += invested;
         totalRemaining += remaining;
 
-        const days = perDay > 0 ? remaining / perDay : (remaining === 0 ? 0 : Infinity);
+        const timeStr = timeToMax(remaining, banked, perDay);
         const pct = (lvl / MAX_LEVEL) * 100;
 
         return `
@@ -226,7 +249,7 @@ function renderSummary() {
                 <div class="summary-stats">
                     <div><label>Invested</label><span>${fmt(invested)}</span></div>
                     <div><label>To max</label><span>${fmt(remaining)}</span></div>
-                    <div><label>Time to max</label><span class="accent-text">${formatTime(days)}</span></div>
+                    <div><label>Time to max</label><span class="accent-text">${timeStr}</span></div>
                 </div>
             </div>`;
     }).join('');
@@ -235,11 +258,9 @@ function renderSummary() {
     document.getElementById('totalInvested').textContent = fmt(totalInvested);
     document.getElementById('totalRemaining').textContent = fmt(totalRemaining);
 
-    const totalDays = perDay > 0 ? totalRemaining / perDay : (totalRemaining === 0 ? 0 : Infinity);
-    document.getElementById('totalTime').textContent = formatTime(totalDays);
+    document.getElementById('totalTime').textContent = timeToMax(totalRemaining, banked, perDay);
 }
 
-/* --- Master recalc ------------------------------------------------------ */
 function recalc() {
     document.getElementById('rushesDisplay').textContent =
         document.getElementById('rushes').value;

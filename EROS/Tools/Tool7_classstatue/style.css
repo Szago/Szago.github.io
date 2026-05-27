@@ -33,23 +33,29 @@
    ==================================================================== */
 .top-panel { margin-bottom: 25px; }
 
-.top-grid {
+/* Income controls in a single row; toggle sits in the last column */
+.controls-row {
     display: grid;
-    grid-template-columns: 1fr 1.3fr;
-    gap: 40px;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 24px;
+    align-items: end;
 }
+.controls-row .input-group { margin-bottom: 0; }
 
-.block-title {
-    font-size: 0.95rem;
+/* Statue levels label + one-line row */
+.statue-row-label {
+    font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-main);
-    margin-bottom: 18px;
+    margin: 24px 0 14px;
+    padding-top: 20px;
+    border-top: 1px solid #2a2a33;
     display: flex;
     align-items: center;
     gap: 8px;
 }
-.block-title i { color: var(--accent); }
-.block-title .hint { color: var(--text-dim); font-weight: 400; font-size: 0.8rem; }
+.statue-row-label i { color: var(--accent); }
+.statue-row-label .hint { color: var(--text-dim); font-weight: 400; font-size: 0.8rem; }
 
 .input-group { margin-bottom: 20px; }
 .label-row { display: flex; justify-content: space-between; align-items: center; }
@@ -74,17 +80,17 @@ input[type="number"]:focus {
 
 input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 
-/* Statue level inputs - 2x2 grid */
+/* Statue level inputs - single row of 4 */
 .statue-inputs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(4, 1fr);
     gap: 16px;
 }
 .statue-input label { display: flex; align-items: center; gap: 8px; }
 .statue-input label i { color: var(--accent); }
 
 /* Toggle switch (matches Tool6 styling) */
-.toggle-switch { display: flex; align-items: center; gap: 12px; cursor: pointer; margin-top: 8px; }
+.toggle-switch { display: flex; align-items: center; gap: 12px; cursor: pointer; padding-bottom: 12px; }
 .toggle-switch input { display: none; }
 .slider-toggle {
     width: 40px; height: 20px; background: var(--border);
@@ -105,8 +111,11 @@ input:checked + .slider-toggle:before { transform: translateX(20px); }
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 25px;
-    align-items: start;
+    align-items: stretch;   /* both panels match the taller one */
 }
+
+/* Sim panel fills its height; reset button pinned to the bottom */
+.sim-panel { display: flex; flex-direction: column; }
 
 /* ---- Left: summary ---- */
 .income-readout {
@@ -192,14 +201,31 @@ input:checked + .slider-toggle:before { transform: translateX(20px); }
 .sim-name i { color: var(--accent); }
 .sim-proj { font-weight: 700; color: var(--accent); font-size: 1.05rem; }
 
-.alloc-slider { width: 100%; accent-color: var(--accent); cursor: pointer; }
+/* Slider flanked by -/+ level steppers */
+.sim-control { display: flex; align-items: center; gap: 10px; }
+.alloc-slider { flex: 1; min-width: 0; accent-color: var(--accent); cursor: pointer; }
+.step-btn {
+    flex-shrink: 0;
+    width: 32px; height: 32px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    border-radius: 8px;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: 0.2s;
+    display: flex; align-items: center; justify-content: center;
+}
+.step-btn:hover { background: var(--accent-soft); }
+.step-btn:active { transform: scale(0.92); }
 
 .sim-foot { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-dim); margin-top: 8px; }
 .sim-gain { color: var(--accent); font-weight: 600; }
 .sim-gain.zero { color: var(--text-dim); font-weight: 400; }
 
 .reset-btn {
-    margin-top: 20px;
+    margin-top: auto;   /* pin to bottom so the panel fills its height */
     width: 100%;
     padding: 12px;
     background: transparent;

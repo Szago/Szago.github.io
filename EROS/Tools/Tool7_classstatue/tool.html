@@ -19,42 +19,33 @@
                 <h2>Your Data</h2>
             </div>
 
-            <div class="top-grid">
-                <!-- Income inputs -->
-                <div class="input-block">
-                    <div class="block-title"><i class="fas fa-clock"></i> Idle Income</div>
-
-                    <div class="input-group">
-                        <label>Idle Coins (per minute)</label>
-                        <input type="number" id="idlePerMin" min="0" step="any" placeholder="Enter amount..." oninput="recalc()">
-                    </div>
-
-                    <div class="input-group">
-                        <div class="label-row">
-                            <label>Daily Rushes</label>
-                            <span id="rushesDisplay" class="accent-text">0</span>
-                        </div>
-                        <input type="range" id="rushes" min="0" max="3" value="0" oninput="recalc()">
-                    </div>
-
-                    <div class="input-group">
-                        <label>Current Stacked Coins</label>
-                        <input type="number" id="stackedCoins" min="0" step="any" placeholder="Coins you have banked..." oninput="recalc()">
-                    </div>
-
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="abbreviateCheckbox" onchange="recalc()" checked>
-                        <span class="slider-toggle"></span>
-                        <span class="toggle-label">Abbreviate numbers (K / M / B)</span>
-                    </label>
+            <!-- Income controls, one line -->
+            <div class="controls-row">
+                <div class="input-group">
+                    <label>Idle Coins (per minute)</label>
+                    <input type="number" id="idlePerMin" min="0" step="any" placeholder="Per minute..." oninput="recalc()">
                 </div>
-
-                <!-- Statue level inputs -->
-                <div class="input-block">
-                    <div class="block-title"><i class="fas fa-layer-group"></i> Current Statue Levels <span class="hint">(1 – 300)</span></div>
-                    <div class="statue-inputs" id="statueInputs"><!-- injected by JS --></div>
+                <div class="input-group">
+                    <label>Banked Coins</label>
+                    <input type="number" id="stackedCoins" min="0" step="any" placeholder="Coins in the bank..." oninput="recalc()">
                 </div>
+                <div class="input-group">
+                    <div class="label-row">
+                        <label>Daily Rushes</label>
+                        <span id="rushesDisplay" class="accent-text">0</span>
+                    </div>
+                    <input type="range" id="rushes" min="0" max="3" value="0" oninput="recalc()">
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="abbreviateCheckbox" onchange="recalc()" checked>
+                    <span class="slider-toggle"></span>
+                    <span class="toggle-label">Abbreviate (K/M/B)</span>
+                </label>
             </div>
+
+            <!-- Statue levels, one line -->
+            <div class="statue-row-label"><i class="fas fa-layer-group"></i> Current Statue Levels <span class="hint">(1 – 300)</span></div>
+            <div class="statue-inputs" id="statueInputs"><!-- injected by JS --></div>
         </section>
 
         <!-- ============ BOTTOM SPLIT: SUMMARY (left) + SIMULATOR (right) ============ -->
@@ -127,7 +118,6 @@
     <script>
         loadShell("Class Statue Calculator", "none");
 
-        // Live clock (matches other tools)
         setInterval(() => {
             const dateInput = document.getElementById('current-date');
             if (dateInput) dateInput.value = new Date().toISOString().slice(0, 16);
