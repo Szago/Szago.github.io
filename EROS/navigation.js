@@ -33,12 +33,12 @@ function loadShell(pageTitle, alertType, alertMsg) {
                     <i class="fas fa-chevron-down chevron"></i>
                 </button>
                 <ul class="nav-links category-links">
-                    <li><a href="../Tool4_playroom/tool.html" id="nav-playroom"><i class="fas fa-gamepad"></i><span>Playroom calculator</span></a></li>
-                    <li><a href="../Tool3_silverincome/tool.html" id="nav-silver"><i class="fas fa-coins"></i><span>Silver income calculator</span></a></li>
-                    <li><a href="../Tool2_sharddrop/tool.html" id="nav-shards"><i class="fas fa-toolbox"></i><span>Shard drop simulator</span></a></li>
-                    <li><a href="../Tool1_levelcost/tool.html" id="nav-level"><i class="fas fa-person-arrow-up-from-line"></i><span>Level cost calculator</span></a></li>
-                    <li><a href="../Tool6_networth/tool.html" id="nav-networth"><i class="fas fa-building-columns"></i><span>Net worth calculator</span></a></li>
-                    <li><a href="../Tool7_classstatue/tool.html" id="nav-statue"><i class="fas fa-monument"></i><span>Class statue calculator</span><span class="badge-new">New</span></a></li>
+                    <li><a href="/EROS/Tools/Tool4_playroom/tool.html" id="nav-playroom"><i class="fas fa-gamepad"></i><span>Playroom calculator</span></a></li>
+                    <li><a href="/EROS/Tools/Tool3_silverincome/tool.html" id="nav-silver"><i class="fas fa-coins"></i><span>Silver income calculator</span></a></li>
+                    <li><a href="/EROS/Tools/Tool2_sharddrop/tool.html" id="nav-shards"><i class="fas fa-toolbox"></i><span>Shard drop simulator</span></a></li>
+                    <li><a href="/EROS/Tools/Tool1_levelcost/tool.html" id="nav-level"><i class="fas fa-person-arrow-up-from-line"></i><span>Level cost calculator</span></a></li>
+                    <li><a href="/EROS/Tools/Tool6_networth/tool.html" id="nav-networth"><i class="fas fa-building-columns"></i><span>Net worth calculator</span></a></li>
+                    <li><a href="/EROS/Tools/Tool7_classstatue/tool.html" id="nav-statue"><i class="fas fa-monument"></i><span>Class statue calculator</span><span class="badge-new">New</span></a></li>
                 </ul>
             </div>
 
@@ -49,7 +49,8 @@ function loadShell(pageTitle, alertType, alertMsg) {
                     <i class="fas fa-chevron-down chevron"></i>
                 </button>
                 <ul class="nav-links category-links">
-                    <li class="coming-soon"><i class="fas fa-hourglass-half"></i><span>Coming soon</span></li>
+                    <li><a href="/EROS/Characters/AllUnits/index.html" id="nav-allunits"><i class="fas fa-table-cells-large"></i><span>All units</span></a></li>
+                    <li><a href="/EROS/Characters/Tierlist/index.html" id="nav-tierlist"><i class="fas fa-ranking-star"></i><span>Tier list</span></a></li>
                 </ul>
             </div>
 
@@ -103,6 +104,8 @@ function loadShell(pageTitle, alertType, alertMsg) {
     if(path.includes('Tool1')) document.getElementById('nav-level').classList.add('active');
     if(path.includes('Tool6')) document.getElementById('nav-networth').classList.add('active');
     if(path.includes('Tool7')) document.getElementById('nav-statue').classList.add('active');
+    if(path.includes('AllUnits')) document.getElementById('nav-allunits').classList.add('active');
+    if(path.includes('Tierlist')) document.getElementById('nav-tierlist').classList.add('active');
 }
 
 function toggleCategory(id) {

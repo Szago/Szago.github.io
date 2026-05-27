@@ -1,0 +1,105 @@
+/* Tier List — Characters section.
+   Uses the shared shell's default accent. Set a section color by adding
+   :root { --accent: #xxxxxx; } here if you want it themed later. */
+
+.card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.card-header i { color: var(--accent); font-size: 1.3rem; }
+.card-header h2 { margin: 0; font-size: 1.2rem; }
+
+/* ---- Tier grid: tier label + 3 role columns ---- */
+.tierlist {
+    display: grid;
+    grid-template-columns: 70px repeat(3, 1fr);
+    gap: 10px;
+    align-items: stretch;
+}
+
+/* Column headers */
+.corner { /* empty top-left cell */ }
+.col-head {
+    text-align: center;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    padding-bottom: 6px;
+}
+
+/* Tier label (left column) */
+.tier-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    font-weight: 900;
+    font-size: 1.5rem;
+    color: #1a1a1a;
+    min-height: 90px;
+}
+.tier-ss { background: #ff4d6d; }
+.tier-s  { background: #ff9447; }
+.tier-a  { background: #ffd23f; }
+.tier-b  { background: #6bcb77; }
+.tier-d  { background: #5aa9e6; }
+
+/* A role cell within a tier row — holds one or more unit cards (wraps) */
+.tier-cell {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 8px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid #2a2a33;
+    border-radius: 10px;
+    min-height: 90px;
+}
+
+/* ---- Unit card: square, background image (added later), links out ---- */
+.unit-card {
+    position: relative;
+    width: 74px;
+    height: 74px;            /* square */
+    border-radius: 8px;
+    border: 1px solid #3a3a44;
+    background-color: #16161d;
+    background-size: cover;
+    background-position: center;
+    text-decoration: none;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.unit-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--accent);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+    z-index: 40;
+}
+
+/* Hover details popout — blank for now, fill in later */
+.unit-details {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%) scale(0.96);
+    width: 160px;
+    min-height: 70px;
+    background: var(--card-bg);
+    border: 1px solid #3a3a44;
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    z-index: 60;
+}
+.unit-card:hover .unit-details {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) scale(1);
+}
+
+/* ---- Per-card background images go here later, e.g.:
+.unit-card[data-slot="ss-damage"] { background-image: url('img/your-unit.png'); }
+---- */

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eros - Tier List</title>
+
+    <link rel="stylesheet" href="../../shared-shell.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
+</head>
+<body>
+    <main class="main-content">
+        <section class="card">
+            <div class="card-header">
+                <i class="fas fa-ranking-star"></i>
+                <h2>Tier List</h2>
+            </div>
+
+            <!--
+                Grid layout: rows = tiers (SS / S / A / B / D),
+                columns = roles (Damage / Tank / Support).
+                Each cell holds unit cards. Right now there is one empty
+                placeholder card per cell.
+
+                To fill a card later:
+                  - set its link:        <a class="unit-card" href="/EROS/Characters/Units/<unit>.html" ...>
+                  - set its background:   add a rule in style.css targeting
+                                          its data-slot, e.g.
+                                          .unit-card[data-slot="ss-damage"] { background-image: url('...'); }
+                  - to add MORE units to a cell, just copy another
+                    <a class="unit-card">…</a> inside the same .tier-cell.
+            -->
+            <div class="tierlist">
+                <!-- Column headers -->
+                <div class="corner"></div>
+                <div class="col-head">Damage</div>
+                <div class="col-head">Tank</div>
+                <div class="col-head">Support</div>
+
+                <!-- SS -->
+                <div class="tier-label tier-ss">SS</div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="ss-damage"><span class="unit-details"></span></a>
+                </div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="ss-tank"><span class="unit-details"></span></a>
+                </div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="ss-support"><span class="unit-details"></span></a>
+                </div>
+
+                <!-- S -->
+                <div class="tier-label tier-s">S</div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="s-damage"><span class="unit-details"></span></a>
+                </div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="s-tank"><span class="unit-details"></span></a>
+                </div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="s-support"><span class="unit-details"></span></a>
+                </div>
+
+                <!-- A -->
+                <div class="tier-label tier-a">A</div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="a-damage"><span class="unit-details"></span></a>
+                </div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="a-tank"><span class="unit-details"></span></a>
+                </div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="a-support"><span class="unit-details"></span></a>
+                </div>
+
+                <!-- B -->
+                <div class="tier-label tier-b">B</div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="b-damage"><span class="unit-details"></span></a>
+                </div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="b-tank"><span class="unit-details"></span></a>
+                </div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="b-support"><span class="unit-details"></span></a>
+                </div>
+
+                <!-- D -->
+                <div class="tier-label tier-d">D</div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="d-damage"><span class="unit-details"></span></a>
+                </div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="d-tank"><span class="unit-details"></span></a>
+                </div>
+                <div class="tier-cell">
+                    <a class="unit-card" href="#" data-slot="d-support"><span class="unit-details"></span></a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="../../navigation.js"></script>
+    <script>
+        loadShell("Tier List", "none");
+    </script>
+</body>
+</html>
