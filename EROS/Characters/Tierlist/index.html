@@ -18,18 +18,11 @@
             </div>
 
             <!--
-                Grid layout: rows = tiers (SS / S / A / B / D),
-                columns = roles (Damage / Tank / Support).
-                Each cell holds unit cards. Right now there is one empty
-                placeholder card per cell.
-
-                To fill a card later:
-                  - set its link:        <a class="unit-card" href="/EROS/Characters/Units/<unit>.html" ...>
-                  - set its background:   add a rule in style.css targeting
-                                          its data-slot, e.g.
-                                          .unit-card[data-slot="ss-damage"] { background-image: url('...'); }
-                  - to add MORE units to a cell, just copy another
-                    <a class="unit-card">…</a> inside the same .tier-cell.
+                Cells are empty; units are placed via tierlist.json.
+                Each entry there is { "row", "column", "name" } — edit that
+                file to sort units or swap their positions. The card's image
+                and link are pulled automatically from characters.json by
+                matching the "name" (a character's name or id).
             -->
             <div class="tierlist">
                 <!-- Column headers -->
@@ -40,63 +33,33 @@
 
                 <!-- SS -->
                 <div class="tier-label tier-ss">SS</div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="ss-damage"><span class="unit-details"></span></a>
-                </div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="ss-tank"><span class="unit-details"></span></a>
-                </div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="ss-support"><span class="unit-details"></span></a>
-                </div>
+                <div class="tier-cell" data-row="SS" data-col="Damage"></div>
+                <div class="tier-cell" data-row="SS" data-col="Tank"></div>
+                <div class="tier-cell" data-row="SS" data-col="Support"></div>
 
                 <!-- S -->
                 <div class="tier-label tier-s">S</div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="s-damage"><span class="unit-details"></span></a>
-                </div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="s-tank"><span class="unit-details"></span></a>
-                </div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="s-support"><span class="unit-details"></span></a>
-                </div>
+                <div class="tier-cell" data-row="S" data-col="Damage"></div>
+                <div class="tier-cell" data-row="S" data-col="Tank"></div>
+                <div class="tier-cell" data-row="S" data-col="Support"></div>
 
                 <!-- A -->
                 <div class="tier-label tier-a">A</div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="a-damage"><span class="unit-details"></span></a>
-                </div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="a-tank"><span class="unit-details"></span></a>
-                </div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="a-support"><span class="unit-details"></span></a>
-                </div>
+                <div class="tier-cell" data-row="A" data-col="Damage"></div>
+                <div class="tier-cell" data-row="A" data-col="Tank"></div>
+                <div class="tier-cell" data-row="A" data-col="Support"></div>
 
                 <!-- B -->
                 <div class="tier-label tier-b">B</div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="b-damage"><span class="unit-details"></span></a>
-                </div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="b-tank"><span class="unit-details"></span></a>
-                </div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="b-support"><span class="unit-details"></span></a>
-                </div>
+                <div class="tier-cell" data-row="B" data-col="Damage"></div>
+                <div class="tier-cell" data-row="B" data-col="Tank"></div>
+                <div class="tier-cell" data-row="B" data-col="Support"></div>
 
                 <!-- D -->
                 <div class="tier-label tier-d">D</div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="d-damage"><span class="unit-details"></span></a>
-                </div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="d-tank"><span class="unit-details"></span></a>
-                </div>
-                <div class="tier-cell">
-                    <a class="unit-card" href="#" data-slot="d-support"><span class="unit-details"></span></a>
-                </div>
+                <div class="tier-cell" data-row="D" data-col="Damage"></div>
+                <div class="tier-cell" data-row="D" data-col="Tank"></div>
+                <div class="tier-cell" data-row="D" data-col="Support"></div>
             </div>
         </section>
     </main>
@@ -104,6 +67,50 @@
     <script src="../../navigation.js"></script>
     <script>
         loadShell("Tier List", "none");
+
+        const TIERLIST_URL = '/EROS/Characters/Tierlist/tierlist.json';
+        const CHARACTERS_URL = '/EROS/Characters/characters.json';
+
+        async function loadTierlist() {
+            let placements, roster;
+            try {
+                [placements, roster] = await Promise.all([
+                    fetch(TIERLIST_URL).then(r => r.json()),
+                    fetch(CHARACTERS_URL).then(r => r.json())
+                ]);
+            } catch (e) {
+                return; // leave the grid empty if data can't be loaded
+            }
+
+            // Index the cells by "row|col" so placements can find their home.
+            const cells = {};
+            document.querySelectorAll('.tier-cell').forEach(cell => {
+                cells[`${cell.dataset.row}|${cell.dataset.col}`] = cell;
+            });
+
+            placements.forEach(p => {
+                const cell = cells[`${p.row}|${p.column}`];
+                if (!cell) return;
+
+                // Resolve the unit from characters.json by name or id.
+                const char = roster.find(c => c.name === p.name || c.id === p.name);
+                const id = char ? char.id : '';
+                const image = char && char.image ? char.image : '';
+                const label = char ? char.name : p.name;
+
+                const card = document.createElement('a');
+                card.className = 'unit-card';
+                card.href = id ? `/EROS/Characters/Unit/index.html?id=${encodeURIComponent(id)}` : '#';
+                if (image) card.style.backgroundImage = `url('${image}')`;
+                card.innerHTML =
+                    (image ? '' : '<i class="fas fa-user card-ph"></i>') +
+                    `<span class="unit-details">${label}</span>`;
+
+                cell.appendChild(card);
+            });
+        }
+
+        loadTierlist();
     </script>
 </body>
 </html>

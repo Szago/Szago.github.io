@@ -1,0 +1,10 @@
+[
+    {
+        "id": "placeholder-unit",
+        "name": "Placeholder Name",
+        "image": "",
+        "class": "Fighter",
+        "faction": "Placeholder Faction",
+        "element": "Placeholder Element"
+    }
+]

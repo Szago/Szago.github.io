@@ -8,32 +8,94 @@
     <link rel="stylesheet" href="../../shared-shell.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
     <style>
-        .coming-soon-wrap {
+        .unit-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 18px;
+        }
+
+        .unit-tile {
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            text-align: center;
-            min-height: 60vh;
-            color: var(--text-dim);
+            text-decoration: none;
+            background: var(--card-bg);
+            border: 1px solid #2a2a33;
+            border-radius: 12px;
+            padding: 12px;
+            transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
         }
-        .coming-soon-wrap i { font-size: 3.5rem; color: var(--accent); margin-bottom: 20px; }
-        .coming-soon-wrap h2 { color: var(--text-main); margin: 0 0 10px; font-size: 1.6rem; }
-        .coming-soon-wrap p { max-width: 420px; line-height: 1.6; }
+        .unit-tile:hover {
+            transform: translateY(-4px);
+            border-color: var(--accent);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .unit-tile .portrait {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            border-radius: 8px;
+            background: #16161d;
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+        }
+        .unit-tile .portrait i { font-size: 2.2rem; color: #3a3a44; }
+
+        .unit-tile .name {
+            color: var(--text-main);
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-align: center;
+        }
+        .unit-tile .role { color: var(--text-dim); font-size: 0.75rem; margin-top: 2px; }
+
+        .units-empty { color: #5a5a66; font-style: italic; padding: 40px; text-align: center; }
     </style>
 </head>
 <body>
     <main class="main-content">
-        <div class="coming-soon-wrap">
-            <i class="fas fa-table-cells-large"></i>
-            <h2>All Units</h2>
-            <p>This page is coming soon — a full roster of every unit will live here.</p>
+        <div id="unitGrid" class="unit-grid">
+            <div class="units-empty">Loading units…</div>
         </div>
     </main>
 
     <script src="../../navigation.js"></script>
     <script>
         loadShell("All Units", "none");
+
+        const CHARACTERS_URL = '/EROS/Characters/characters.json';
+
+        async function loadUnits() {
+            const grid = document.getElementById('unitGrid');
+            let roster;
+            try {
+                const res = await fetch(CHARACTERS_URL);
+                roster = await res.json();
+            } catch (e) {
+                grid.innerHTML = '<div class="units-empty">Could not load unit data.</div>';
+                return;
+            }
+
+            if (!roster.length) {
+                grid.innerHTML = '<div class="units-empty">No units yet.</div>';
+                return;
+            }
+
+            grid.innerHTML = roster.map(c => `
+                <a class="unit-tile" href="/EROS/Characters/Unit/index.html?id=${encodeURIComponent(c.id)}">
+                    <div class="portrait" ${c.image ? `style="background-image:url('${c.image}')"` : ''}>
+                        ${c.image ? '' : '<i class="fas fa-user"></i>'}
+                    </div>
+                    <div class="name">${c.name}</div>
+                    <div class="role">${c.class || ''}</div>
+                </a>`).join('');
+        }
+
+        loadUnits();
     </script>
 </body>
 </html>

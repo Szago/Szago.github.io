@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eros - Character</title>
+
+    <link rel="stylesheet" href="../../shared-shell.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
+</head>
+<body>
+    <main class="main-content">
+        <div class="char-layout">
+
+            <!-- LEFT: switchable tabs -->
+            <section class="char-main">
+                <div class="tab-bar">
+                    <button class="tab-btn active" data-tab="details">Details</button>
+                    <button class="tab-btn" data-tab="rating">Rating</button>
+                    <button class="tab-btn" data-tab="teams">Teams</button>
+                    <button class="tab-btn" data-tab="placement">Placement</button>
+                </div>
+
+                <div class="tab-panels">
+                    <div class="tab-panel active" id="tab-details">
+                        <div class="panel-empty">Details — coming soon.</div>
+                    </div>
+                    <div class="tab-panel" id="tab-rating">
+                        <div class="panel-empty">Rating — coming soon.</div>
+                    </div>
+                    <div class="tab-panel" id="tab-teams">
+                        <div class="panel-empty">Teams — coming soon.</div>
+                    </div>
+                    <div class="tab-panel" id="tab-placement">
+                        <div class="panel-empty">Placement — coming soon.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RIGHT: character tile -->
+            <aside class="char-tile">
+                <div class="char-portrait" id="charPortrait">
+                    <i class="fas fa-user"></i>
+                </div>
+                <h2 class="char-name" id="charName">Character Name</h2>
+                <div class="char-meta">
+                    <div class="meta-row">
+                        <span class="meta-label"><i class="fas fa-shield-halved"></i> Class</span>
+                        <span class="meta-value" id="charClass">Fighter</span>
+                    </div>
+                    <div class="meta-row">
+                        <span class="meta-label"><i class="fas fa-flag"></i> Faction</span>
+                        <span class="meta-value" id="charFaction">—</span>
+                    </div>
+                    <div class="meta-row">
+                        <span class="meta-label"><i class="fas fa-fire"></i> Element</span>
+                        <span class="meta-value" id="charElement">—</span>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </main>
+
+    <script src="../../navigation.js"></script>
+    <script src="unit.js"></script>
+    <script>
+        loadShell("Character", "none");
+        loadCharacter();
+    </script>
+</body>
+</html>

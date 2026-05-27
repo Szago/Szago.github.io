@@ -1,0 +1,105 @@
+/* Character page layout: tabs on the left, character tile on the right. */
+
+.char-layout {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 25px;
+    align-items: start;
+}
+
+/* ---- LEFT: tabs ---- */
+.char-main {
+    background: var(--card-bg);
+    border: 1px solid #2a2a33;
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.tab-bar {
+    display: flex;
+    border-bottom: 1px solid #2a2a33;
+}
+.tab-btn {
+    flex: 1;
+    padding: 16px 10px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: var(--text-dim);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+    font-family: inherit;
+}
+.tab-btn:hover { color: var(--text-main); background: rgba(255, 255, 255, 0.03); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.tab-panels { padding: 30px; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.panel-empty {
+    color: #5a5a66;
+    font-style: italic;
+    text-align: center;
+    padding: 60px 20px;
+}
+
+/* ---- RIGHT: character tile ---- */
+.char-tile {
+    background: var(--card-bg);
+    border: 1px solid #2a2a33;
+    border-radius: 16px;
+    padding: 24px;
+    text-align: center;
+    position: sticky;
+    top: 30px;
+}
+
+.char-portrait {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 12px;
+    background: #16161d;
+    background-size: cover;
+    background-position: center;
+    border: 1px solid #2a2a33;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 18px;
+}
+.char-portrait i { font-size: 4rem; color: #3a3a44; }
+.char-portrait.has-image { border-color: var(--accent); }
+
+.char-name {
+    margin: 0 0 20px;
+    font-size: 1.4rem;
+    color: var(--text-main);
+}
+
+.char-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    text-align: left;
+}
+.meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: #16161d;
+    border: 1px solid #2a2a33;
+    border-radius: 10px;
+}
+.meta-label { color: var(--text-dim); font-size: 0.85rem; display: flex; align-items: center; gap: 8px; }
+.meta-label i { color: var(--accent); width: 16px; text-align: center; }
+.meta-value { font-weight: 600; color: var(--text-main); }
+
+/* ---- Responsive ---- */
+@media (max-width: 900px) {
+    .char-layout { grid-template-columns: 1fr; }
+    .char-tile { position: static; order: -1; }
+}

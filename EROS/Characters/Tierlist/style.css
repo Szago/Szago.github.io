@@ -67,8 +67,12 @@
     background-size: cover;
     background-position: center;
     text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
+.unit-card .card-ph { font-size: 1.6rem; color: #3a3a44; }
 .unit-card:hover {
     transform: translateY(-3px);
     border-color: var(--accent);
@@ -84,6 +88,15 @@
     transform: translateX(-50%) scale(0.96);
     width: 160px;
     min-height: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 12px;
+    box-sizing: border-box;
+    color: var(--text-main);
+    font-size: 0.9rem;
+    font-weight: 600;
     background: var(--card-bg);
     border: 1px solid #3a3a44;
     border-radius: 10px;
@@ -100,6 +113,5 @@
     transform: translateX(-50%) scale(1);
 }
 
-/* ---- Per-card background images go here later, e.g.:
-.unit-card[data-slot="ss-damage"] { background-image: url('img/your-unit.png'); }
----- */
+/* Card images & links come from characters.json (matched by name/id),
+   placed into cells via tierlist.json — no per-card CSS needed. */
