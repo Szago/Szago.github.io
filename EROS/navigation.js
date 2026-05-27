@@ -6,17 +6,9 @@ function getCookie(name) {
     return null;
 }
 
-// Categories the user has collapsed (persisted across pages)
-function getCollapsedCats() {
-    const c = getCookie('collapsedCats');
-    return c ? decodeURIComponent(c).split(',').filter(Boolean) : [];
-}
-
 function loadShell(pageTitle, alertType, alertMsg) {
 
     const isCollapsed = getCookie('sidebarStatus') === 'collapsed';
-    const collapsedCats = getCollapsedCats();
-    const catClass = id => collapsedCats.includes(id) ? 'collapsed' : '';
 
     const sidebarHTML = `
     <nav class="sidebar ${isCollapsed ? 'collapsed' : ''}" id="sidebar">
@@ -26,7 +18,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
         </div>
 
         <div class="nav-scroll">
-            <div class="nav-category ${catClass('cat-calculators')}" id="cat-calculators">
+            <div class="nav-category" id="cat-calculators">
                 <button class="category-header" onclick="toggleCategory('cat-calculators')">
                     <i class="fas fa-calculator cat-icon"></i>
                     <span class="cat-label">Calculators</span>
@@ -42,7 +34,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
                 </ul>
             </div>
 
-            <div class="nav-category ${catClass('cat-characters')}" id="cat-characters">
+            <div class="nav-category" id="cat-characters">
                 <button class="category-header" onclick="toggleCategory('cat-characters')">
                     <i class="fas fa-users cat-icon"></i>
                     <span class="cat-label">Characters</span>
@@ -54,7 +46,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
                 </ul>
             </div>
 
-            <div class="nav-category ${catClass('cat-guides')}" id="cat-guides">
+            <div class="nav-category" id="cat-guides">
                 <button class="category-header" onclick="toggleCategory('cat-guides')">
                     <i class="fas fa-book-open cat-icon"></i>
                     <span class="cat-label">Guides</span>
@@ -109,19 +101,14 @@ function loadShell(pageTitle, alertType, alertMsg) {
 }
 
 function toggleCategory(id) {
+    // Categories always start expanded on load (no persistence); this just
+    // toggles the current page's view.
     const cat = document.getElementById(id);
-    if (!cat) return;
-    cat.classList.toggle('collapsed');
-
-    let list = getCollapsedCats();
-    if (cat.classList.contains('collapsed')) {
-        if (!list.includes(id)) list.push(id);
-    } else {
-        list = list.filter(x => x !== id);
-    }
-    document.cookie = "collapsedCats=" + encodeURIComponent(list.join(',')) +
-        "; max-age=" + (30 * 24 * 60 * 60) + "; path=/; SameSite=Lax";
+    if (cat) cat.classList.toggle('collapsed');
 }
+
+// Clear any stale collapse state saved by older versions of this script.
+document.cookie = "collapsedCats=; path=/; max-age=0; SameSite=Lax";
 
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
