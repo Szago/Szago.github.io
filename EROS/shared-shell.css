@@ -54,6 +54,16 @@ body {
 .logo { font-weight: bold; letter-spacing: 1px; color: var(--accent); }
 .sidebar.collapsed .logo { display: none; }
 
+/* Scrollable area holding the categories; bottom nav stays pinned below */
+.nav-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 10px 0;
+}
+.nav-scroll::-webkit-scrollbar { width: 6px; }
+.nav-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
 .nav-links {
     list-style: none;
     padding: 0;
@@ -63,16 +73,14 @@ body {
 .nav-links li a {
     display: flex;
     align-items: center;
-    padding: 15px 25px;
+    padding: 13px 25px;
     color: var(--text-dim);
     text-decoration: none;
     transition: 0.2s;
+    border-left: 3px solid transparent; /* reserve space so active state doesn't shift text */
 }
 
 .nav-links li a i { min-width: 30px; font-size: 1.2rem; }
-.nav-links li a {
-    border-left: 3px solid transparent; /* reserve space so active state doesn't shift text */
-}
 .nav-links li a:hover, .nav-links li a.active {
     background: rgba(255, 255, 255, 0.06);           /* fallback for old browsers */
     background: var(--accent-fade);                   /* accent-tinted highlight */
@@ -80,8 +88,71 @@ body {
     border-left-color: var(--accent);
 }
 
+/* --- COLLAPSIBLE CATEGORIES --- */
+.nav-category { border-bottom: 1px solid #20202a; }
+
+.category-header {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 14px 22px;
+    background: none;
+    border: none;
+    color: var(--text-main);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: inherit;
+}
+.category-header .cat-icon { min-width: 30px; font-size: 1rem; color: var(--accent); }
+.category-header .cat-label { flex: 1; text-align: left; }
+.category-header .chevron { font-size: 0.8rem; color: var(--text-dim); transition: transform 0.25s ease; }
+.category-header:hover .chevron { color: var(--accent); }
+
+.category-links { margin: 0 0 8px; overflow: hidden; }
+
+/* Collapsed category: hide its links, rotate the chevron */
+.nav-category.collapsed .category-links { display: none; }
+.nav-category.collapsed .chevron { transform: rotate(-90deg); }
+
+/* "Coming soon" placeholder rows */
+.coming-soon {
+    display: flex;
+    align-items: center;
+    padding: 13px 25px;
+    color: #5a5a66;
+    font-style: italic;
+    font-size: 0.9rem;
+    border-left: 3px solid transparent;
+}
+.coming-soon i { min-width: 30px; font-size: 1.1rem; }
+
+/* "New" badge */
+.badge-new {
+    margin-left: auto;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 10px;
+    line-height: 1.4;
+}
+
+/* Bottom nav (Back to Home) pinned under the scroll area */
+.bottom-nav { margin: 0; border-top: 1px solid #2a2a33; }
+
+/* --- COLLAPSED (icon-only) SIDEBAR --- */
 .sidebar.collapsed span { display: none; }
-.bottom-link { margin-top: auto; }
+.sidebar.collapsed .cat-label,
+.sidebar.collapsed .chevron { display: none; }
+.sidebar.collapsed .category-header { justify-content: center; padding: 14px 0; }
+/* In icon mode always show the icons, ignoring per-category collapse */
+.sidebar.collapsed .category-links { display: block; }
 
 /* --- MAIN CONTENT & TOP BAR --- */
 .main-content {
