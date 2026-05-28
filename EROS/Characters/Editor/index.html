@@ -651,6 +651,8 @@
            ============================================================ */
         const CalEditor = (() => {
             let data = { rows: 10, events: [] };
+            // Held across renders so edits preserve the user's scroll/zoom.
+            let mounted = null;
             const warn = msg => { document.getElementById('calWarn').textContent = msg; };
             const escapeAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
@@ -675,6 +677,9 @@
                     warn('Could not fetch calendar.json (need a local server / GitHub Pages).');
                 }
                 document.getElementById('calRows').value = data.rows;
+                // A reload from server is a fresh start — discard any prior
+                // mount so the preview re-centres on today.
+                mounted = null;
                 renderAll();
             }
 
@@ -725,7 +730,9 @@
             }
 
             function renderPreview() {
-                renderCalendar(document.getElementById('calPreview'), data);
+                const el = document.getElementById('calPreview');
+                if (!mounted) mounted = mountCalendar(el, data);
+                else mounted.setData(data);
             }
 
             function clean() {

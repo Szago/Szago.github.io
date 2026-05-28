@@ -120,6 +120,11 @@
         const gridBg = `background-image:linear-gradient(to right, rgba(255,255,255,0.045) 1px, transparent 1px);` +
             `background-size:${dayWidth}px 100%;`;
 
+        // Expose the domain on the DOM so the controller (mountCalendar)
+        // can do date-aware things like "scroll by one month" without
+        // re-parsing the data.
+        const isoStart = domainStart.toISOString().slice(0, 10);
+
         container.innerHTML = `
         <div class="cal-wrap">
             <div class="cal-labels" style="width:${opts.labelWidth}px">
@@ -127,7 +132,11 @@
                 <div class="cal-labels-body">${labelsHtml}</div>
             </div>
             <div class="cal-scroll">
-                <div class="cal-timeline" style="width:${width}px">
+                <div class="cal-timeline"
+                     data-domain-start="${isoStart}"
+                     data-total-days="${totalDays}"
+                     data-day-width="${dayWidth}"
+                     style="width:${width}px">
                     <div class="cal-head">
                         <div class="cal-months">${monthsHtml}</div>
                         <div class="cal-days">${daysHtml}</div>
@@ -138,6 +147,228 @@
         </div>`;
     }
 
+    /* ------------------------------------------------------------------
+       mountCalendar — wraps renderCalendar with a toolbar + interactions.
+       Returns an API used by the page and the editor preview:
+         setData(data)      — re-render with new data, preserves view
+         scrollToToday()    — center the today marker (or jump to start)
+         scrollByMonths(n)  — pan one month at a time, snapped
+         zoomIn() / zoomOut()
+       Interactions: drag-to-pan, Ctrl/Cmd + wheel to zoom (anchored on
+       the cursor), Shift + wheel to scroll horizontally.
+       ------------------------------------------------------------------ */
+    function mountCalendar(container, data, opts) {
+        opts = Object.assign({
+            dayWidth: 26, minDay: 8, maxDay: 80,
+            rowHeight: 40, labelWidth: 96,
+            autoScrollToToday: true
+        }, opts || {});
+
+        const baseDayWidth = opts.dayWidth;
+        const state = { data: data || {}, dayWidth: opts.dayWidth };
+        let firstRender = true;
+
+        container.classList.add('cal-mount');
+        container.innerHTML =
+            '<div class="cal-toolbar">' +
+                '<div class="cal-tools-left">' +
+                    '<button class="cal-btn" data-act="prev" title="Previous month"><i class="fas fa-chevron-left"></i></button>' +
+                    '<button class="cal-btn" data-act="today" title="Jump to today">Today</button>' +
+                    '<button class="cal-btn" data-act="next" title="Next month"><i class="fas fa-chevron-right"></i></button>' +
+                '</div>' +
+                '<div class="cal-tools-right">' +
+                    '<button class="cal-btn" data-act="zoom-out" title="Zoom out (Ctrl + wheel down)"><i class="fas fa-magnifying-glass-minus"></i></button>' +
+                    '<span class="cal-zoom-label" title="Zoom level">100%</span>' +
+                    '<button class="cal-btn" data-act="zoom-in" title="Zoom in (Ctrl + wheel up)"><i class="fas fa-magnifying-glass-plus"></i></button>' +
+                '</div>' +
+            '</div>' +
+            '<div class="cal-host"></div>';
+
+        const host = container.querySelector('.cal-host');
+        const zoomLabel = container.querySelector('.cal-zoom-label');
+
+        container.querySelectorAll('.cal-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const act = btn.dataset.act;
+                if (act === 'prev')      scrollByMonths(-1);
+                else if (act === 'next') scrollByMonths(1);
+                else if (act === 'today')scrollToToday();
+                else if (act === 'zoom-in')  zoomIn();
+                else if (act === 'zoom-out') zoomOut();
+            });
+        });
+
+        let currentScroll = null;
+
+        function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+        function render() {
+            // Preserve the day at the centre of the viewport across re-renders
+            // (zoom, data change). Pixel scrollLeft would shift; the centre
+            // day is what the user expects to stay put.
+            let centreDay = null;
+            const dom = readDomain();
+            if (currentScroll && dom) {
+                centreDay = (currentScroll.scrollLeft + currentScroll.clientWidth / 2) / dom.dayWidth;
+            }
+
+            renderCalendar(host, state.data, {
+                dayWidth: state.dayWidth,
+                rowHeight: opts.rowHeight,
+                labelWidth: opts.labelWidth
+            });
+
+            currentScroll = host.querySelector('.cal-scroll');
+            bindScrollInteractions(currentScroll);
+
+            if (firstRender && opts.autoScrollToToday) {
+                requestAnimationFrame(() => scrollToToday(false));
+            } else if (centreDay !== null) {
+                const newDom = readDomain();
+                if (newDom) {
+                    const target = centreDay * newDom.dayWidth - currentScroll.clientWidth / 2;
+                    currentScroll.scrollLeft = clamp(target, 0, currentScroll.scrollWidth - currentScroll.clientWidth);
+                }
+            }
+            firstRender = false;
+            updateZoomLabel();
+        }
+
+        function bindScrollInteractions(scroll) {
+            if (!scroll) return;
+
+            // Drag-to-pan using Pointer Events with capture. Capturing the
+            // pointer means we keep getting move events even if the cursor
+            // leaves .cal-scroll — no window-level listeners needed, and no
+            // stale-closure issues across re-renders.
+            let dragging = false;
+            let startX = 0;
+            let startScroll = 0;
+
+            scroll.addEventListener('pointerdown', (e) => {
+                if (e.button !== 0) return;                 // left button only
+                if (e.pointerType === 'touch') return;      // let native touch scroll
+                dragging = true;
+                startX = e.clientX;
+                startScroll = scroll.scrollLeft;
+                scroll.classList.add('dragging');
+                try { scroll.setPointerCapture(e.pointerId); } catch (_) { /* old browser */ }
+            });
+            scroll.addEventListener('pointermove', (e) => {
+                if (!dragging) return;
+                scroll.scrollLeft = startScroll - (e.clientX - startX);
+            });
+            const endDrag = (e) => {
+                if (!dragging) return;
+                dragging = false;
+                scroll.classList.remove('dragging');
+                if (e && e.pointerId != null) {
+                    try { scroll.releasePointerCapture(e.pointerId); } catch (_) {}
+                }
+            };
+            scroll.addEventListener('pointerup', endDrag);
+            scroll.addEventListener('pointercancel', endDrag);
+            scroll.addEventListener('lostpointercapture', endDrag);
+
+            // Block the browser's native drag-start on the inner bars so a
+            // click-and-drag on an event becomes a pan instead of a ghost drag.
+            scroll.addEventListener('dragstart', (e) => e.preventDefault());
+
+            scroll.addEventListener('wheel', (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    zoomAt(e.clientX, e.deltaY < 0 ? 1 : -1);
+                } else if (e.shiftKey && e.deltaY !== 0 && e.deltaX === 0) {
+                    e.preventDefault();
+                    scroll.scrollLeft += e.deltaY;
+                }
+            }, { passive: false });
+        }
+
+        function readDomain() {
+            const tl = host.querySelector('.cal-timeline');
+            if (!tl) return null;
+            const start = tl.dataset.domainStart;
+            const total = parseInt(tl.dataset.totalDays, 10);
+            const dw    = parseInt(tl.dataset.dayWidth, 10);
+            if (!start || !total || !dw) return null;
+            const p = start.split('-').map(Number);
+            return { start: new Date(Date.UTC(p[0], p[1] - 1, p[2])), totalDays: total, dayWidth: dw };
+        }
+
+        function setDayWidthAnchored(target, anchorClientX) {
+            const next = clamp(Math.round(target), opts.minDay, opts.maxDay);
+            if (next === state.dayWidth) return;
+            // Remember the world-x under the anchor so we can keep it pinned.
+            let worldX = null;
+            if (currentScroll && anchorClientX != null) {
+                const rect = currentScroll.getBoundingClientRect();
+                worldX = (anchorClientX - rect.left + currentScroll.scrollLeft) / state.dayWidth;
+            }
+            state.dayWidth = next;
+            render();
+            if (worldX != null && currentScroll) {
+                const rect = currentScroll.getBoundingClientRect();
+                const newScrollLeft = worldX * next - (anchorClientX - rect.left);
+                currentScroll.scrollLeft = clamp(newScrollLeft, 0, currentScroll.scrollWidth - currentScroll.clientWidth);
+            }
+        }
+
+        function zoomAt(clientX, dir) {
+            const factor = 1.2;
+            setDayWidthAnchored(state.dayWidth * (dir > 0 ? factor : 1 / factor), clientX);
+        }
+        function zoomIn()  { setDayWidthAnchored(state.dayWidth * 1.25); }
+        function zoomOut() { setDayWidthAnchored(state.dayWidth / 1.25); }
+
+        function setData(d) { state.data = d || {}; render(); }
+
+        function updateZoomLabel() {
+            if (zoomLabel) zoomLabel.textContent = Math.round(100 * state.dayWidth / baseDayWidth) + '%';
+        }
+
+        function scrollByMonths(n) {
+            const dom = readDomain();
+            if (!currentScroll || !dom) return;
+            const maxScroll = Math.max(0, currentScroll.scrollWidth - currentScroll.clientWidth);
+            if (maxScroll <= 0) return;  // nothing to scroll
+
+            // Use the LEFT edge of the viewport as the anchor — that matches
+            // user intuition ("show me the next month" = align next month to
+            // the left), and works the same regardless of zoom level.
+            const leftDay = Math.round(currentScroll.scrollLeft / dom.dayWidth);
+            const leftDate = new Date(dom.start.getTime() + leftDay * 86400000);
+
+            // For n=+1 (next), jump to the start of the NEXT calendar month.
+            // For n=-1 (prev), jump to the start of the PREVIOUS month — but
+            // if the left edge already sits past day 1 of its own month, the
+            // first "prev" press should snap back to day 1 of that month
+            // (otherwise it would skip a whole month).
+            let targetY = leftDate.getUTCFullYear();
+            let targetM = leftDate.getUTCMonth() + n;
+            if (n < 0 && leftDate.getUTCDate() > 1) targetM += 1;
+
+            const target = new Date(Date.UTC(targetY, targetM, 1));
+            const targetDay = Math.round((target - dom.start) / 86400000);
+            const targetX = clamp(targetDay * dom.dayWidth, 0, maxScroll);
+            currentScroll.scrollTo({ left: targetX, behavior: 'smooth' });
+        }
+
+        function scrollToToday(smooth) {
+            if (!currentScroll) return;
+            const marker = host.querySelector('.cal-today');
+            const target = marker
+                ? parseFloat(marker.style.left) - currentScroll.clientWidth / 2
+                : 0;
+            const clamped = clamp(target, 0, currentScroll.scrollWidth - currentScroll.clientWidth);
+            currentScroll.scrollTo({ left: clamped, behavior: smooth === false ? 'auto' : 'smooth' });
+        }
+
+        render();
+        return { setData, scrollToToday, scrollByMonths, zoomIn, zoomOut };
+    }
+
     global.renderCalendar = renderCalendar;
+    global.mountCalendar  = mountCalendar;
     global.CalendarPalette = PALETTE;
 })(window);

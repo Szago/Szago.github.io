@@ -3,18 +3,47 @@
    Loaded by both the public Calendar page and the internal editor preview.
    Both themes are dark and both define --accent, so this file sticks to
    concrete dark colours + var(--accent) and renders identically in each.
+
+   LAYOUT NOTE — why grid, not flex:
+   The timeline (.cal-timeline) is intentionally wider than the viewport;
+   .cal-scroll must clip it and provide its own scrollbar instead of
+   leaking the overflow out into a page-level scrollbar. Flex items
+   default to `min-width: auto` (= content size), so a flex .cal-scroll
+   refuses to shrink below ~4000px and the page stretches. CSS grid with
+   `minmax(0, 1fr)` is the canonical fix: the second track is *allowed
+   to shrink to 0*, which lets overflow-x:auto actually engage.
+   Every .cal-* ancestor also gets `min-width: 0` for the same reason.
    ====================================================================== */
 
-.cal-wrap {
+/* Scope a sane box-model & overflow guard to all calendar descendants */
+.cal-mount, .cal-mount *, .cal-mount *::before, .cal-mount *::after { box-sizing: border-box; }
+
+/* ---- Outer wrapper added by mountCalendar (toolbar + host) ---- */
+.cal-mount {
     display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+.cal-host { min-width: 0; width: 100%; max-width: 100%; }
+
+/* ---- The card-like frame holding labels + scrollable timeline ---- */
+.cal-wrap {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);  /* the magic */
     border: 1px solid #2a2a33;
     border-radius: 12px;
     overflow: hidden;
     background: #16161d;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
 }
 
 /* ---- Left gutter: row numbers, aligned to the timeline header height ---- */
-.cal-labels { flex-shrink: 0; border-right: 1px solid #2a2a33; background: #1a1a22; }
+.cal-labels { border-right: 1px solid #2a2a33; background: #1a1a22; }
 .cal-labels-head { height: 54px; border-bottom: 1px solid #2a2a33; }
 .cal-rowlabel {
     display: flex; align-items: center; justify-content: center;
@@ -23,17 +52,30 @@
 }
 .cal-labels-body .cal-rowlabel:last-child { border-bottom: none; }
 
-/* ---- Scrollable timeline ---- */
-.cal-scroll { flex: 1; overflow-x: auto; }
-.cal-scroll::-webkit-scrollbar { height: 8px; }
-.cal-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
-.cal-timeline { position: relative; min-width: 100%; }
+/* ---- Scrollable timeline column ---- */
+.cal-scroll {
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    cursor: grab;
+    /* Let touch users pan natively in both directions; pointer events
+       used for mouse drag don't fight this. */
+    touch-action: pan-x pan-y;
+}
+.cal-scroll.dragging { cursor: grabbing; user-select: none; }
+.cal-scroll.dragging .cal-event { pointer-events: none; }
+.cal-scroll::-webkit-scrollbar { height: 10px; }
+.cal-scroll::-webkit-scrollbar-track { background: #14141a; }
+.cal-scroll::-webkit-scrollbar-thumb { background: #3a3a44; border-radius: 5px; }
+.cal-scroll::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+.cal-timeline { position: relative; }
 
 /* ---- Header: month band over day numbers (54px = 26 + 28) ---- */
 .cal-head { height: 54px; border-bottom: 1px solid #2a2a33; }
 .cal-months { display: flex; height: 26px; }
 .cal-month {
-    box-sizing: border-box; flex-shrink: 0;
+    flex-shrink: 0;
     display: flex; align-items: center; padding: 0 10px;
     font-size: 0.72rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
     color: #fff; background: rgba(255, 255, 255, 0.02);
@@ -42,7 +84,7 @@
 }
 .cal-days { display: flex; height: 28px; }
 .cal-day {
-    box-sizing: border-box; flex-shrink: 0;
+    flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
     font-size: 0.62rem; color: #7a7a86;
     border-right: 1px solid rgba(255, 255, 255, 0.04);
@@ -57,17 +99,45 @@
 .cal-event {
     position: absolute; top: 50%; transform: translateY(-50%);
     height: calc(100% - 12px); min-height: 20px;
-    border-radius: 6px; box-sizing: border-box;
+    border-radius: 6px;
     display: flex; align-items: center; padding: 0 8px;
     color: #10101a; font-size: 0.75rem; font-weight: 700;
-    overflow: hidden; cursor: default;
+    overflow: hidden; cursor: inherit;          /* don't kill the grab cursor */
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+    user-select: none;
 }
-.cal-event span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-event span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 
 /* ---- Today marker ---- */
 .cal-today {
     position: absolute; top: 0; bottom: 0; width: 2px;
     background: var(--accent); box-shadow: 0 0 8px var(--accent);
     z-index: 5; pointer-events: none;
+}
+
+/* ======================================================================
+   TOOLBAR (mountCalendar wrapper).
+   Prev / Today / Next, zoom out / level / zoom in.
+   ====================================================================== */
+.cal-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; flex-wrap: wrap;
+}
+.cal-tools-left, .cal-tools-right { display: flex; align-items: center; gap: 6px; }
+
+.cal-btn {
+    font-family: inherit; font-size: 0.85rem;
+    padding: 7px 12px; border-radius: 8px;
+    border: 1px solid #2a2a33; background: #16161d; color: #fff;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.cal-btn:hover { border-color: var(--accent); color: var(--accent); }
+.cal-btn:active { background: #1f1f28; }
+
+.cal-zoom-label {
+    font-size: 0.8rem; color: #a0a0a0;
+    min-width: 48px; text-align: center;
+    font-variant-numeric: tabular-nums;
 }

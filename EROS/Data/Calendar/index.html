@@ -24,7 +24,7 @@
                 built from calendar.json — edit that file (or use the editor at
                 /EROS/Characters/Editor/index.html → Calendar tab) to change it.
             -->
-            <p class="cal-note">Each line is an event drawn across its duration. Scroll sideways to see the full span.</p>
+            <p class="cal-note">Each line is an event drawn across its duration. Drag to pan, Ctrl + scroll to zoom.</p>
             <div id="calendar"></div>
         </section>
     </main>
@@ -45,7 +45,7 @@
                 container.innerHTML = '<p class="cal-note">Could not load calendar data.</p>';
                 return;
             }
-            renderCalendar(container, data);
+            mountCalendar(container, data);
         }
 
         loadCalendar();
