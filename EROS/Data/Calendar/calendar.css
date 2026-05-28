@@ -46,9 +46,11 @@
 .cal-labels { border-right: 1px solid #2a2a33; background: #1a1a22; }
 .cal-labels-head { height: 54px; border-bottom: 1px solid #2a2a33; }
 .cal-rowlabel {
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.8rem; font-weight: 600; color: #7a7a86;
+    display: flex; align-items: center;
+    padding: 0 12px;
+    font-size: 0.8rem; font-weight: 600; color: #c2c2cc;
     border-bottom: 1px solid #20202a;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cal-labels-body .cal-rowlabel:last-child { border-bottom: none; }
 

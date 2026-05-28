@@ -1,12 +1,21 @@
 {
-    "rows": 5,
+    "rows": 7,
     "events": [
         {
             "name": "Banner: Aria",
             "start": "2026-05-15",
             "end": "2026-05-29",
             "row": 3,
-            "color": "#ff9447"
+            "color": "#54f1ea"
         }
+    ],
+    "rowNames": [
+        "Event",
+        "Legendary event",
+        "Mythic Event",
+        "Divine Event",
+        "Playroom",
+        "Portal",
+        "AMA"
     ]
 }

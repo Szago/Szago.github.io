@@ -34,11 +34,15 @@
     }
 
     function renderCalendar(container, data, opts) {
-        opts = Object.assign({ dayWidth: 26, rowHeight: 40, labelWidth: 96 }, opts || {});
+        opts = Object.assign({
+            dayWidth: 26, rowHeight: 40, labelWidth: 140,
+            minPastMonths: 1, minFutureMonths: 2
+        }, opts || {});
         const dayWidth = opts.dayWidth, rowHeight = opts.rowHeight;
         data = data || {};
 
         const rows = Math.max(1, parseInt(data.rows, 10) || 10);
+        const rowNames = Array.isArray(data.rowNames) ? data.rowNames : [];
         const events = (data.events || []).map((e, i) => ({
             name: e.name || '',
             start: parseDate(e.start),
@@ -47,19 +51,31 @@
             color: e.color || PALETTE[i % PALETTE.length]
         })).filter(e => e.start && e.end && e.end >= e.start);
 
-        // Date domain: the span actually covered by events, snapped out to
-        // whole months. With no events, fall back to the current month.
+        // Date domain: starts from the events' span (or today, if none),
+        // then expanded so the calendar ALWAYS shows a reasonable window
+        // around today — otherwise an empty / past-only schedule looks
+        // like a frozen void you can't scroll.
         let domainStart, domainEnd;
         if (events.length) {
             domainStart = events.reduce((m, e) => e.start < m ? e.start : m, events[0].start);
-            domainEnd = events.reduce((m, e) => e.end > m ? e.end : m, events[0].end);
+            domainEnd   = events.reduce((m, e) => e.end   > m ? e.end   : m, events[0].end);
         } else {
             const n = new Date();
             domainStart = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1));
-            domainEnd = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + 1, 0));
+            domainEnd   = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + 1, 0));
         }
+        // Snap to whole months.
         domainStart = new Date(Date.UTC(domainStart.getUTCFullYear(), domainStart.getUTCMonth(), 1));
-        domainEnd = new Date(Date.UTC(domainEnd.getUTCFullYear(), domainEnd.getUTCMonth() + 1, 0));
+        domainEnd   = new Date(Date.UTC(domainEnd.getUTCFullYear(),   domainEnd.getUTCMonth() + 1, 0));
+
+        // Always include a window around today so the timeline stays useful
+        // when events are sparse, all in the past, or absent entirely.
+        const nowD = new Date();
+        const minStart = new Date(Date.UTC(nowD.getUTCFullYear(), nowD.getUTCMonth() - opts.minPastMonths, 1));
+        const minEnd   = new Date(Date.UTC(nowD.getUTCFullYear(), nowD.getUTCMonth() + opts.minFutureMonths + 1, 0));
+        if (minStart < domainStart) domainStart = minStart;
+        if (minEnd   > domainEnd)   domainEnd   = minEnd;
+        const today = new Date(Date.UTC(nowD.getUTCFullYear(), nowD.getUTCMonth(), nowD.getUTCDate()));
 
         const totalDays = daysBetween(domainStart, domainEnd) + 1;
         const width = totalDays * dayWidth;
@@ -103,17 +119,16 @@
 
         // ---- "Today" marker (only if it falls within the domain) ----
         let todayHtml = '';
-        const n = new Date();
-        const today = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()));
         if (today >= domainStart && today <= domainEnd) {
             const left = (daysBetween(domainStart, today) + 0.5) * dayWidth;
             todayHtml = `<div class="cal-today" style="left:${left}px" title="Today"></div>`;
         }
 
-        // ---- Left gutter row labels (1..rows) ----
+        // ---- Left gutter row labels (rowNames if provided, else "1".."N") ----
         let labelsHtml = '';
         for (let r = 0; r < rows; r++) {
-            labelsHtml += `<div class="cal-rowlabel" style="height:${rowHeight}px">${r + 1}</div>`;
+            const name = (rowNames[r] || '').trim() || String(r + 1);
+            labelsHtml += `<div class="cal-rowlabel" style="height:${rowHeight}px" title="${esc(name)}">${esc(name)}</div>`;
         }
 
         // Per-day vertical gridlines behind the tracks.

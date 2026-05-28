@@ -164,6 +164,15 @@
 
         .cal-preview { margin-bottom: 24px; }
 
+        .cal-rownames { margin-bottom: 18px; }
+        .cal-rownames-head { color: var(--dim); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+        .cal-rownames-head span { text-transform: none; letter-spacing: 0; opacity: 0.7; margin-left: 6px; }
+        .cal-rownames-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+        .cal-rownames-grid label { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+        .cal-rownames-grid label .idx { color: var(--dim); font-size: 0.78rem; min-width: 20px; text-align: right; font-variant-numeric: tabular-nums; }
+        .cal-rownames-grid label input { flex: 1; min-width: 0; padding: 6px 8px; background: var(--input); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: inherit; font-size: 0.9rem; }
+        .cal-rownames-grid label input:focus { outline: none; border-color: var(--accent); }
+
         .cal-edit { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
         .cal-edit th { text-align: left; padding: 12px 14px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); border-bottom: 1px solid var(--border); }
         .cal-edit td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
@@ -260,6 +269,11 @@
             <label class="rows-field"><i class="fas fa-grip-lines"></i> Rows (lines)
                 <input type="number" id="calRows" min="1" value="10" onchange="CalEditor.setRows(this.value)">
             </label>
+        </div>
+
+        <div class="cal-rownames">
+            <div class="cal-rownames-head">Row labels <span>(blank = numbered)</span></div>
+            <div class="cal-rownames-grid" id="calRowNames"></div>
         </div>
 
         <div class="cal-preview" id="calPreview"></div>
@@ -658,8 +672,12 @@
 
             function normalize(d) {
                 d = d || {};
+                const rows = Math.max(1, parseInt(d.rows, 10) || 10);
+                const names = Array.isArray(d.rowNames) ? d.rowNames.slice(0, rows) : [];
+                while (names.length < rows) names.push('');
                 return {
-                    rows: Math.max(1, parseInt(d.rows, 10) || 10),
+                    rows,
+                    rowNames: names.map(s => String(s || '')),
                     events: Array.isArray(d.events) ? d.events.map(e => ({
                         name: e.name || '', start: e.start || '', end: e.end || '',
                         row: Math.max(0, parseInt(e.row, 10) || 0), color: e.color || ''
@@ -699,8 +717,12 @@
 
             function setRows(v) {
                 data.rows = Math.max(1, parseInt(v, 10) || 1);
+                // Keep rowNames length in sync with rows.
+                if (!Array.isArray(data.rowNames)) data.rowNames = [];
+                if (data.rowNames.length > data.rows) data.rowNames.length = data.rows;
+                while (data.rowNames.length < data.rows) data.rowNames.push('');
                 document.getElementById('calRows').value = data.rows;
-                renderPreview(); renderOutput();
+                renderRowNames(); renderPreview(); renderOutput();
             }
 
             // Edits update the preview + output only, so input focus is kept.
@@ -710,7 +732,26 @@
                 renderPreview(); renderOutput();
             }
 
-            function renderAll() { renderRows(); renderPreview(); renderOutput(); }
+            function onRowName(r, val) {
+                if (!Array.isArray(data.rowNames)) data.rowNames = [];
+                while (data.rowNames.length < data.rows) data.rowNames.push('');
+                data.rowNames[r] = val;
+                renderPreview(); renderOutput();
+            }
+
+            function renderAll() { renderRows(); renderRowNames(); renderPreview(); renderOutput(); }
+
+            function renderRowNames() {
+                const host = document.getElementById('calRowNames');
+                if (!Array.isArray(data.rowNames)) data.rowNames = [];
+                while (data.rowNames.length < data.rows) data.rowNames.push('');
+                let html = '';
+                for (let r = 0; r < data.rows; r++) {
+                    html += `<label><span class="idx">${r + 1}.</span>` +
+                        `<input value="${escapeAttr(data.rowNames[r] || '')}" placeholder="Row ${r + 1}" oninput="CalEditor.onRowName(${r}, this.value)"></label>`;
+                }
+                host.innerHTML = html;
+            }
 
             function renderRows() {
                 const body = document.getElementById('calRowsBody');
@@ -736,7 +777,14 @@
             }
 
             function clean() {
-                return {
+                const names = Array.isArray(data.rowNames)
+                    ? data.rowNames.slice(0, data.rows).map(s => String(s || ''))
+                    : [];
+                while (names.length < data.rows) names.push('');
+                // Drop trailing empties so the file stays tidy when names aren't used.
+                let lastUsed = -1;
+                names.forEach((s, i) => { if (s.trim()) lastUsed = i; });
+                const out = {
                     rows: data.rows,
                     events: data.events.map(e => ({
                         name: e.name || '', start: e.start || '', end: e.end || '',
@@ -744,6 +792,8 @@
                         color: e.color || ''
                     }))
                 };
+                if (lastUsed >= 0) out.rowNames = names.slice(0, lastUsed + 1);
+                return out;
             }
 
             function renderOutput() {
@@ -761,7 +811,7 @@
             function download() { downloadText(document.getElementById('calOutput').value, 'calendar.json'); }
             function copy() { navigator.clipboard.writeText(document.getElementById('calOutput').value).then(() => warn('Copied to clipboard.')); }
 
-            return { reload, add, del, setRows, onField, download, copy };
+            return { reload, add, del, setRows, onField, onRowName, download, copy };
         })();
 
         // Initial load of all tabs.
