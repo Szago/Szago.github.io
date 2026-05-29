@@ -130,6 +130,19 @@ body {
 .coming-soon i { min-width: 30px; font-size: 1.1rem; }
 
 /* "New" badge */
+.badge-wip {
+    margin-left: auto;
+    background: #e08c00;
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 10px;
+    line-height: 1.4;
+}
+
 .badge-new {
     margin-left: auto;
     background: var(--accent);

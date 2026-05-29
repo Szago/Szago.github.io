@@ -41,8 +41,8 @@ function loadShell(pageTitle, alertType, alertMsg) {
                     <i class="fas fa-chevron-down chevron"></i>
                 </button>
                 <ul class="nav-links category-links">
-                    <li><a href="/EROS/Characters/AllUnits/index.html" id="nav-allunits"><i class="fas fa-table-cells-large"></i><span>All units</span></a></li>
-                    <li><a href="/EROS/Characters/Tierlist/index.html" id="nav-tierlist"><i class="fas fa-ranking-star"></i><span>Tier list</span></a></li>
+                    <li><a href="/EROS/Characters/AllUnits/index.html" id="nav-allunits"><i class="fas fa-table-cells-large"></i><span>All units</span><span class="badge-wip">WIP</span></a></li>
+                    <li><a href="/EROS/Characters/Tierlist/index.html" id="nav-tierlist"><i class="fas fa-ranking-star"></i><span>Tier list</span><span class="badge-wip">WIP</span></a></li>
                 </ul>
             </div>
 
@@ -64,7 +64,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
                     <i class="fas fa-chevron-down chevron"></i>
                 </button>
                 <ul class="nav-links category-links">
-                    <li><a href="/EROS/Data/Calendar/index.html" id="nav-calendar"><i class="fas fa-calendar-days"></i><span>Calendar</span></a></li>
+                    <li><a href="/EROS/Data/Calendar/index.html" id="nav-calendar"><i class="fas fa-calendar-days"></i><span>Calendar</span><span class="badge-wip">WIP</span></a></li>
                 </ul>
             </div>
         </div>
