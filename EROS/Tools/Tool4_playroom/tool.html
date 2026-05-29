@@ -94,17 +94,9 @@
     <script src="script.js"></script>
     <script>
 
-        // Update the current date input field every second
-        setInterval(function() {
-            const currentDate = new Date();
-            const currentDateString = currentDate.toISOString().slice(0, 16);
-            document.getElementById('current-date').value = currentDateString;
-            calculateRemainingTime();
-            
-        }, 1000);
-
-        // Initial calculations
+        // Initial calculation + keep it live every second
         calculateRemainingTime();
+        setInterval(calculateRemainingTime, 1000);
         
 
 

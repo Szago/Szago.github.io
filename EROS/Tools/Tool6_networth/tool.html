@@ -63,12 +63,6 @@
     <script>
         // Load shell with 'none' to hide the alert bar if not needed
         loadShell("Net Worth Calculator", "none");
-        
-        // Dynamic Clock
-        setInterval(() => {
-            const dateInput = document.getElementById('current-date');
-            if(dateInput) dateInput.value = new Date().toISOString().slice(0, 16);
-        }, 1000);
     </script>
 </body>
 </html>

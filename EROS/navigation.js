@@ -98,7 +98,16 @@ function loadShell(pageTitle, alertType, alertMsg) {
 
     document.body.insertAdjacentHTML('afterbegin', sidebarHTML);
     document.querySelector('.main-content').insertAdjacentHTML('afterbegin', topBarHTML);
-    
+
+    // Clock — update every second; offset by timezone so displayed time is local
+    const clockEl = document.getElementById('current-date');
+    const tick = () => {
+        const now = new Date();
+        clockEl.value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    };
+    tick();
+    setInterval(tick, 1000);
+
     // Highlight active link logic
     const path = window.location.href;
     if(path.includes('Tool4')) document.getElementById('nav-playroom').classList.add('active');

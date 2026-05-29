@@ -91,11 +91,6 @@
     <script src="script.js"></script>
     <script>
         loadShell("Level Calculator", "none");
-        setInterval(() => {
-            const currentDate = new Date();
-            const dateInput = document.getElementById('current-date');
-            if(dateInput) dateInput.value = currentDate.toISOString().slice(0, 16);
-        }, 1000);
     </script>
 </body>
 </html>

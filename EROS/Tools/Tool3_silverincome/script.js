@@ -1,10 +1,3 @@
-window.addEventListener('DOMContentLoaded', () => {
-    // Clock setup
-    setInterval(() => {
-        const currentDate = new Date();
-        document.getElementById('current-date').value = currentDate.toISOString().slice(0, 16);
-    }, 1000);
-});
 
 function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('collapsed');
