@@ -10,84 +10,97 @@
         /* "Other" uses the teal accent as its signature here */
         .soon { --c: var(--accent-2); }
 
-        .soon-card {
+        .other-wrapper {
             position: relative;
             z-index: 1;
-            max-width: 560px;
+            max-width: 860px;
             margin: auto;
-            text-align: center;
-            background: var(--card-bg);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 56px 40px;
-            box-shadow: 0 4px 40px rgba(0, 0, 0, 0.5);
+            padding: 0 20px;
             animation: fadeUp 0.7s ease both;
         }
 
-        .soon-badge {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 88px; height: 88px;
-            border-radius: 24px;
-            background: color-mix(in srgb, var(--accent-2) 16%, transparent);
-            color: var(--accent-2);
-            font-size: 2.4rem;
-            margin-bottom: 28px;
-            animation: float 3.5s ease-in-out infinite;
+        .other-header {
+            text-align: center;
+            margin-bottom: 48px;
         }
-        @keyframes float {
-            0%, 100% { transform: translateY(0); }
-            50%      { transform: translateY(-10px); }
-        }
-
-        .soon-card h1 {
-            margin: 0 0 14px;
+        .other-header h1 {
+            margin: 0 0 12px;
             font-size: clamp(2rem, 5vw, 2.8rem);
             font-weight: 800;
             letter-spacing: -0.5px;
         }
-        .soon-card .accent {
+        .other-header .accent {
             background: linear-gradient(120deg, var(--accent-2), #6fe3d8);
             -webkit-background-clip: text;
             background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        .soon-card p {
-            margin: 0 auto 32px;
-            max-width: 420px;
+        .other-header p {
+            margin: 0;
             color: var(--text-dim);
             font-size: 1.05rem;
-            line-height: 1.6;
         }
 
-        /* Animated progress shimmer */
-        .progress {
-            height: 8px;
-            background: #16161d;
-            border-radius: 50px;
-            overflow: hidden;
-            margin-bottom: 36px;
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 24px;
+            margin-bottom: 48px;
         }
-        .progress span {
-            display: block;
-            height: 100%;
-            width: 35%;
-            border-radius: 50px;
-            background: linear-gradient(90deg, var(--accent-2), #6fe3d8);
-            position: relative;
+
+        .project-card {
+            display: flex;
+            flex-direction: column;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 32px 28px;
+            text-decoration: none;
+            color: var(--text-main);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            transition: var(--transition);
         }
-        .progress span::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
-            animation: shimmer 1.8s infinite;
+        .project-card:hover {
+            border-color: var(--accent-2);
+            box-shadow: 0 8px 40px rgba(46, 196, 182, 0.2);
+            transform: translateY(-4px);
         }
-        @keyframes shimmer {
-            from { transform: translateX(-100%); }
-            to   { transform: translateX(250%); }
+
+        .project-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 56px; height: 56px;
+            border-radius: 16px;
+            background: color-mix(in srgb, var(--accent-2) 16%, transparent);
+            color: var(--accent-2);
+            font-size: 1.5rem;
+            margin-bottom: 20px;
         }
+
+        .project-card h2 {
+            margin: 0 0 10px;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+        .project-card p {
+            margin: 0 0 20px;
+            color: var(--text-dim);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            flex: 1;
+        }
+
+        .project-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--accent-2);
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        .project-link i { transition: transform 0.25s ease; }
+        .project-card:hover .project-link i { transform: translateX(4px); }
 
         .back-btn {
             display: inline-flex;
@@ -117,11 +130,21 @@
     <div class="glow glow-2"></div>
 
     <main class="hero">
-        <div class="soon-card">
-            <div class="soon-badge"><i class="fa-solid fa-screwdriver-wrench"></i></div>
-            <h1>Coming <span class="accent">soon</span></h1>
-            <p>This corner is still under construction. Something will land here eventually.</p>
-            <div class="progress"><span></span></div>
+        <div class="other-wrapper">
+            <div class="other-header">
+                <h1><span class="accent">Other</span> stuff</h1>
+                <p>Experiments, games, and things that don't fit anywhere else.</p>
+            </div>
+
+            <div class="projects-grid">
+                <a href="OTHER/AetherSlop/index.html" class="project-card">
+                    <div class="project-icon"><i class="fa-solid fa-city"></i></div>
+                    <h2>AetherSlop</h2>
+                    <p>Clicker/Idle city builder made with Claude Mythos to test out it's capabilities</p>
+                    <span class="project-link">Play <i class="fa-solid fa-arrow-right"></i></span>
+                </a>
+            </div>
+
             <a href="index.html" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Back to home</a>
         </div>
     </main>

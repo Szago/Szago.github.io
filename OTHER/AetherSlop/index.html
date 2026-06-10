@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aetherholm — Idle Kingdom</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div id="game">
+
+    <!-- ============ LEFT: CITY DEFENSE (clicker) ============ -->
+    <aside id="combat" class="panel">
+      <div class="panel-title">CITY DEFENSE</div>
+
+      <div id="zone-info">
+        <span id="zone-name">Zone 1 — Greenfields</span>
+        <div id="zone-pips"></div>
+      </div>
+
+      <div id="monster-area">
+        <div id="monster-name"></div>
+        <canvas id="monster-canvas"></canvas>
+        <div id="hp-bar">
+          <div id="hp-fill"></div>
+          <span id="hp-text"></span>
+        </div>
+      </div>
+
+      <div id="combat-stats">
+        <div>CLICK DMG<b id="stat-click">1</b></div>
+        <div>IDLE DPS<b id="stat-dps">0</b></div>
+        <div>BOUNTY<b id="stat-bounty">0</b></div>
+      </div>
+
+      <div class="scroll">
+        <div class="section-title">WAR COUNCIL — click a unit for details</div>
+        <div id="unit-cards"></div>
+      </div>
+    </aside>
+
+    <!-- ============ MIDDLE: THE CITY ============ -->
+    <main id="city" class="panel">
+      <div id="resources">
+        <div class="res"><canvas id="ico-gold"></canvas><span><span id="res-gold">0</span><span class="rate" id="res-gold-rate">+0/s</span></span></div>
+        <div class="res"><canvas id="ico-wood"></canvas><span><span id="res-wood">0</span><span class="rate" id="res-wood-rate">+0/s</span></span></div>
+        <div class="res"><canvas id="ico-stone"></canvas><span><span id="res-stone">0</span><span class="rate" id="res-stone-rate">+0/s</span></span></div>
+        <div class="res"><canvas id="ico-mana"></canvas><span><span id="res-mana">0</span><span class="rate" id="res-mana-rate">+0/s</span></span></div>
+        <div class="res" id="cycle-chip"><canvas id="ico-cycle"></canvas><span><span id="cycle-phase">DAY</span><span class="rate" id="cycle-time">5:00</span></span></div>
+      </div>
+
+      <div id="city-view">
+        <div id="map-world">
+          <canvas id="terrain"></canvas>
+          <canvas id="anim"></canvas>
+          <div id="districts"></div>
+          <div id="plots"></div>
+          <div id="chests"></div>
+        </div>
+        <div id="night-tint"></div>
+        <canvas id="lights"></canvas>
+        <div id="map-ui">
+          <button id="zoom-in" title="Zoom in">+</button>
+          <button id="zoom-out" title="Zoom out">-</button>
+          <button id="zoom-fit" title="Reset view">&#8962;</button>
+        </div>
+        <div id="toasts"></div>
+
+        <!-- stats / settings overlay (replaces the city visualisation) -->
+        <div id="menu-overlay" class="hidden">
+          <div id="menu-head">
+            <button id="menu-tab-stats" class="menu-tab active">STATISTICS</button>
+            <button id="menu-tab-settings" class="menu-tab">SETTINGS</button>
+            <button id="menu-close">X</button>
+          </div>
+          <div id="menu-body" class="scroll"></div>
+        </div>
+      </div>
+
+      <div id="city-footer">
+        <button id="ascend-btn">ASCEND (+0 Sigils)</button>
+        <span id="sigil-wrap"><canvas id="ico-sigil"></canvas><span id="sigil-count">0</span></span>
+        <span id="stat-line"></span>
+        <button id="menu-btn" title="Statistics & settings">MENU</button>
+      </div>
+    </main>
+
+    <!-- ============ RIGHT: ROYAL BUILDER / DETAILS / BAG ============ -->
+    <aside id="shop" class="panel">
+      <div class="panel-title" id="right-title">ROYAL BUILDER</div>
+
+      <div id="right-tabs">
+        <button id="tab-build" class="rtab active">BUILD</button>
+        <button id="tab-bag" class="rtab">BAG <span id="bag-count"></span></button>
+      </div>
+
+      <div class="scroll" id="right-body">
+        <div id="view-shop">
+          <div id="amt-toggle">
+            <button class="amt-btn active" data-amt="1">x1</button>
+            <button class="amt-btn" data-amt="10">x10</button>
+          </div>
+          <div id="shop-list"></div>
+        </div>
+
+        <div id="view-bag" class="hidden">
+          <div id="inv-list"></div>
+        </div>
+
+        <div id="view-detail" class="hidden">
+          <button id="detail-back">&lt; BACK</button>
+          <div id="detail-content"></div>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- ============ ASCENSION MODAL ============ -->
+  <div id="prestige-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2>THE CROWN REMEMBERS</h2>
+        <button id="close-prestige">X</button>
+      </div>
+      <div class="modal-sub">
+        Crown Sigils: <b id="sigil-balance">0</b> &nbsp;•&nbsp; Pending on Ascension: <b id="sigil-pending">0</b><br><br>
+        Ascending resets your city, gold, resources, defenses and upgrades — but grants Crown Sigils
+        based on lifetime gold, spent here on permanent advancements. Items are kept.
+      </div>
+      <div id="tree-branches"></div>
+      <div class="modal-foot">
+        <button id="modal-ascend-btn">ASCEND NOW</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/sprites.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/ambient.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
