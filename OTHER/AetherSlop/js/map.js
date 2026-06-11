@@ -257,34 +257,82 @@ function districtTrees(dx, dy, ownedKeys) {
   return trees;
 }
 
-/* a narrow dirt lane from a building to the nearest kingsroad */
-function drawSidePath(ctx, rnd, bx, by) {
-  const rect = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
-  const vertical = Math.abs(by - ROAD_Y) <= Math.abs(bx - ROAD_X);
-  const steps = [];
-  if (vertical) {
-    const dir = by < ROAD_Y ? 1 : -1;
-    for (let y = by; y !== ROAD_Y; y += dir) {
-      if (isRoad(bx, y)) break;
-      steps.push([bx, y, true]);
+/* ---- lane network: buildings connect to the NEAREST point of the
+   existing network (kingsroads OR already-carved lanes), via L-shaped
+   paths that bend and merge into each other at T-junctions ---- */
+function collectLanes(builtIds) {
+  const lanes = new Map(); // 'x,y' -> Set of dirs ('n','s','e','w')
+  const key = (x, y) => x + ',' + y;
+  const isNet = (x, y) => isRoad(x, y) || lanes.has(key(x, y));
+  const addSeg = (x1, y1, x2, y2) => {
+    const d = x2 > x1 ? 'e' : x2 < x1 ? 'w' : y2 > y1 ? 's' : 'n';
+    const od = d === 'e' ? 'w' : d === 'w' ? 'e' : d === 's' ? 'n' : 's';
+    if (!isRoad(x1, y1)) {
+      if (!lanes.has(key(x1, y1))) lanes.set(key(x1, y1), new Set());
+      lanes.get(key(x1, y1)).add(d);
     }
-  } else {
-    const dir = bx < ROAD_X ? 1 : -1;
-    for (let x = bx; x !== ROAD_X; x += dir) {
-      if (isRoad(x, by)) break;
-      steps.push([x, by, false]);
+    if (!isRoad(x2, y2)) {
+      if (!lanes.has(key(x2, y2))) lanes.set(key(x2, y2), new Set());
+      lanes.get(key(x2, y2)).add(od);
+    }
+  };
+
+  for (const id of builtIds) {
+    const plot = PLOTS[id] && PLOTS[id][0];
+    if (!plot) continue;
+    const [bx, by] = plot;
+    /* nearest network point: straight drops to the kingsroads, or any
+       tile of a lane carved earlier. Lane tiles get a distance discount
+       so paths prefer MERGING into each other (bends & T-junctions). */
+    let best = null, bestD = Infinity;
+    const consider = (tx, ty, weight) => {
+      const d = (Math.abs(tx - bx) + Math.abs(ty - by)) * weight;
+      if (d > 0 && d < bestD) { bestD = d; best = [tx, ty]; }
+    };
+    consider(bx, ROAD_Y, 1);
+    consider(ROAD_X, by, 1);
+    for (const k of lanes.keys()) {
+      const [lx, ly] = k.split(',').map(Number);
+      consider(lx, ly, 0.55);
+    }
+    if (!best) continue;
+
+    let cx = bx, cy = by;
+    const walk = (axis, target) => {
+      while ((axis === 'x' ? cx : cy) !== target) {
+        const nx = axis === 'x' ? cx + Math.sign(target - cx) : cx;
+        const ny = axis === 'y' ? cy + Math.sign(target - cy) : cy;
+        addSeg(cx, cy, nx, ny);
+        cx = nx; cy = ny;
+        if (isNet(cx, cy) && isRoad(cx, cy)) return true;    // reached a kingsroad
+        if (lanes.has(key(cx, cy)) && lanes.get(key(cx, cy)).size > 1) return true; // merged into a lane
+      }
+      return false;
+    };
+    /* vary the bend direction per building for organic variety */
+    if ((bx * 31 + by * 17) % 2 === 0) {
+      if (!walk('x', best[0])) walk('y', best[1]);
+    } else {
+      if (!walk('y', best[1])) walk('x', best[0]);
     }
   }
-  for (const [tx, ty, vert] of steps) {
-    const ox = tx * TILE, oy = ty * TILE;
+  return lanes;
+}
+
+function drawLanes(ctx, rnd, lanes) {
+  const rect = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+  for (const [k, dirs] of lanes) {
+    const [tx, ty] = k.split(',').map(Number);
     if (isWater(tx, ty)) continue;
-    if (vert) rect(ox + 5, oy, 6, TILE, MapPal.road);
-    else rect(ox, oy + 5, TILE, 6, MapPal.road);
+    const ox = tx * TILE, oy = ty * TILE;
+    rect(ox + 5, oy + 5, 6, 6, MapPal.road);                   // center pad
+    if (dirs.has('n')) rect(ox + 5, oy, 6, 5, MapPal.road);
+    if (dirs.has('s')) rect(ox + 5, oy + 11, 6, 5, MapPal.road);
+    if (dirs.has('w')) rect(ox, oy + 5, 5, 6, MapPal.road);
+    if (dirs.has('e')) rect(ox + 11, oy + 5, 5, 6, MapPal.road);
     for (let i = 0; i < 3; i++) {
-      const sx = ox + (vert ? 5 + (rnd() * 6 | 0) : (rnd() * 16 | 0));
-      const sy = oy + (vert ? (rnd() * 16 | 0) : 5 + (rnd() * 6 | 0));
       ctx.fillStyle = rnd() < 0.5 ? MapPal.roadDark : MapPal.roadLight;
-      ctx.fillRect(sx, sy, 1, 1);
+      ctx.fillRect(ox + 4 + (rnd() * 8 | 0), oy + 4 + (rnd() * 8 | 0), 1, 1);
     }
   }
 }
@@ -384,11 +432,9 @@ function renderTerrain(canvas, tier, houseCount, ownedKeys, builtIds, era, satTi
     }
   }
 
-  /* side lanes: every standing building connects to the kingsroad */
-  for (const id of (builtIds || [])) {
-    const plot = PLOTS[id] && PLOTS[id][0];
-    if (plot) drawSidePath(ctx, rnd, plot[0], plot[1]);
-  }
+  /* side lanes: a bending network connecting buildings to the
+     kingsroads and to each other */
+  drawLanes(ctx, rnd, collectLanes(builtIds || []));
 
   /* plaza fountain — grows grander with the eras */
   {

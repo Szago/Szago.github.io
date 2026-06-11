@@ -29,6 +29,22 @@ const VILLAGER_COLORS = ['#b5443c', '#3c6ed6', '#7d4ea0', '#e07b39', '#2f8f23', 
 const SKIN = '#f0c8a0';
 
 let lightsCtx = null;
+let glowWarm = null, glowGreen = null;
+let cityGlow = null; // {x, y, r} ambient dome over the city
+
+/* a soft radial glow sprite, drawn smoothly (NOT pixelated) */
+function makeGlow(r, g, b) {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const x = c.getContext('2d');
+  const grad = x.createRadialGradient(32, 32, 2, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(' + r + ',' + g + ',' + b + ',1)');
+  grad.addColorStop(0.4, 'rgba(' + r + ',' + g + ',' + b + ',0.45)');
+  grad.addColorStop(1, 'rgba(' + r + ',' + g + ',' + b + ',0)');
+  x.fillStyle = grad;
+  x.fillRect(0, 0, 64, 64);
+  return c;
+}
 
 function ambientInit() {
   const c = document.getElementById('anim');
@@ -40,7 +56,9 @@ function ambientInit() {
   l.width = MAP_W * TILE;
   l.height = MAP_H * TILE;
   lightsCtx = l.getContext('2d');
-  lightsCtx.imageSmoothingEnabled = false;
+  lightsCtx.imageSmoothingEnabled = true; // smooth, moody light
+  glowWarm = makeGlow(255, 200, 110);
+  glowGreen = makeGlow(190, 255, 130);
   requestAnimationFrame(ambientFrame);
 }
 
@@ -147,6 +165,23 @@ function ambientRebuild() {
       { y: Math.random() * MAP_H * TILE, speed: 5 + Math.random() * 3, sail: '#f2ead8' },
       { y: Math.random() * MAP_H * TILE, speed: 4 + Math.random() * 3, sail: '#c43c3c' },
     ];
+  }
+
+  /* ambient warm dome over the owned city (keeps town bright at night) */
+  {
+    let minX2 = MAP_W, maxX2 = 0, minY2 = MAP_H, maxY2 = 0;
+    for (const key of state.districts) {
+      const [dx, dy] = key.split(',').map(Number);
+      minX2 = Math.min(minX2, dx * DISTRICT_W);
+      maxX2 = Math.max(maxX2, (dx + 1) * DISTRICT_W);
+      minY2 = Math.min(minY2, dy * DISTRICT_H);
+      maxY2 = Math.max(maxY2, (dy + 1) * DISTRICT_H);
+    }
+    cityGlow = {
+      x: (minX2 + maxX2) / 2 * TILE,
+      y: (minY2 + maxY2) / 2 * TILE,
+      r: Math.max(maxX2 - minX2, maxY2 - minY2) * TILE * 0.75,
+    };
   }
 }
 
@@ -314,35 +349,50 @@ function ambientFrame(ts) {
     }
   }
 
-  /* --- night: window glows, street lamps, fireflies ---
-     drawn on the #lights canvas, which sits ABOVE the night tint */
+  /* --- night: REAL light — smooth additive radial glows on the
+     #lights canvas above the tint. The city stays warm and bright. --- */
   if (lightsCtx) {
     const lctx = lightsCtx;
     lctx.clearRect(0, 0, MAP_W * TILE, MAP_H * TILE);
     if (typeof isNight === 'function' && isNight()) {
-      for (const [gx, gy, seed] of ambGlows) {
-        const flick = 0.75 + 0.25 * Math.sin(ts / 600 + seed);
-        lctx.fillStyle = 'rgba(255,200,90,' + (0.16 * flick).toFixed(2) + ')';
-        lctx.fillRect(gx - 4, gy - 4, 11, 11);
-        lctx.fillStyle = 'rgba(255,233,160,' + (0.95 * flick).toFixed(2) + ')';
-        lctx.fillRect(gx, gy, 3, 2);
+      lctx.globalCompositeOperation = 'lighter';
+
+      /* warm ambient dome over the whole city */
+      if (cityGlow) {
+        lctx.globalAlpha = 0.22;
+        lctx.drawImage(glowWarm, cityGlow.x - cityGlow.r, cityGlow.y - cityGlow.r, cityGlow.r * 2, cityGlow.r * 2);
       }
+
+      /* street lamps: pools of light with gentle flicker */
       for (let i = 0; i < LAMP_POINTS.length; i++) {
         const [lx, ly] = LAMP_POINTS[i];
-        const flick = 0.8 + 0.2 * Math.sin(ts / 300 + i * 1.7);
-        lctx.fillStyle = 'rgba(255,190,80,' + (0.16 * flick).toFixed(2) + ')';
-        lctx.fillRect(lx - 6, ly - 6, 15, 15);
-        lctx.fillStyle = 'rgba(255,210,100,' + (0.30 * flick).toFixed(2) + ')';
-        lctx.fillRect(lx - 3, ly - 3, 9, 9);
-        lctx.fillStyle = '#ffe9a0';
-        lctx.fillRect(lx - 1, ly - 1, 4, 4);
+        const flick = 0.85 + 0.15 * Math.sin(ts / 350 + i * 1.7);
+        lctx.globalAlpha = 0.55 * flick;
+        lctx.drawImage(glowWarm, lx - 26, ly - 26, 52, 52);
+        lctx.globalAlpha = 0.9 * flick;
+        lctx.drawImage(glowWarm, lx - 8, ly - 8, 16, 16);
       }
+
+      /* windows: cosy hearth light */
+      for (const [gx, gy, seed] of ambGlows) {
+        const flick = 0.8 + 0.2 * Math.sin(ts / 700 + seed);
+        lctx.globalAlpha = 0.4 * flick;
+        lctx.drawImage(glowWarm, gx - 14, gy - 14, 30, 30);
+        lctx.globalAlpha = 0.85 * flick;
+        lctx.drawImage(glowWarm, gx - 4, gy - 4, 10, 10);
+      }
+
+      /* fireflies: soft green sparks in the wild */
       for (const [fx, fy, seed] of ambFireflies) {
         const blink = Math.sin(ts / 500 + seed * 3);
         if (blink < 0.2) continue;
-        lctx.fillStyle = 'rgba(216,255,122,' + (blink * 0.9).toFixed(2) + ')';
-        lctx.fillRect(fx + Math.round(Math.sin(ts / 700 + seed) * 4), fy + Math.round(Math.cos(ts / 900 + seed) * 3), 1, 1);
+        lctx.globalAlpha = blink * 0.8;
+        const ox2 = Math.sin(ts / 700 + seed) * 4, oy2 = Math.cos(ts / 900 + seed) * 3;
+        lctx.drawImage(glowGreen, fx + ox2 - 5, fy + oy2 - 5, 10, 10);
       }
+
+      lctx.globalAlpha = 1;
+      lctx.globalCompositeOperation = 'source-over';
     }
   }
 }

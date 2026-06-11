@@ -605,6 +605,84 @@ const SPRITES = {
     ],
   },
 
+  portal: {
+    pal: { s: '#8d939c', S: '#5d626b', r: '#cab8d8', p: '#a85ccc', P: '#7d4ea0', m: '#e6ccff', k: '#2a1640', K: '#180b2c' },
+    rows: [
+      '.....rssssr.....',
+      '...ssSSssSSss...',
+      '..sSppppppppSs..',
+      '..sPpPPkkPPpPs..',
+      '.sSpPkKmmKkPpSs.',
+      '.sSpPKmppmKPpSs.',
+      '.sSpPkmpKpmkPpS.',
+      '.sSpPkmpKpmkPpS.',
+      '.sSpPKmppmKPpSs.',
+      '.sSpPkKmmKkPpSs.',
+      '..sPpPPkkPPpPs..',
+      '..sSpp....ppSs..',
+      '..sS........Ss..',
+      '.sSS........SSs.',
+      '.sSs........sSs.',
+    ],
+  },
+
+  tower: {
+    pal: { k: '#1c1622', K: '#332842', s: '#4a3a5b', r: '#ff4a3c', R: '#8d1f1f', y: '#ffd23e', g: '#3f7d2e' },
+    rows: [
+      '.......r........',
+      '.......rr.......',
+      '.......k........',
+      '....KkKkKkK.....',
+      '....KKKKKKK.....',
+      '.....kKKKk......',
+      '.....KsKsK......',
+      '.....KrrrK......',
+      '.....KrRrK......',
+      '.....KsKsK......',
+      '.....kKKKk......',
+      '....KKkKkKK.....',
+      '....KKKKKKK.....',
+      '...kKKsKsKKk....',
+      '...KKKKKKKKK....',
+      'gggggggggggggggg',
+    ],
+  },
+
+  /* the Silver Spire — twin angelic towers, white marble & gold */
+  spire: {
+    pal: { w: '#f2f4fa', s: '#c7cede', S: '#8e98b8', g: '#ffd23e', G: '#b9982f', b: '#9fd4ff', e: '#3f7d2e' },
+    rows: [
+      '...g........g...',
+      '...w........w...',
+      '..sws......sws..',
+      '..www......www..',
+      '..wbw......wbw..',
+      '..www......www..',
+      '..wsw..gg..wsw..',
+      '..www.wwww.www..',
+      '..wbw.wbbw.wbw..',
+      '..www.wbbw.www..',
+      '..wswwwwwwwwsw..',
+      '..wwwwsbbswwww..',
+      '..wbwwwbbwwwbw..',
+      '..wwwSwbbwSwww..',
+      '.SwwwSwwwwSwwwS.',
+      'eeeeeeeeeeeeeeee',
+    ],
+  },
+
+  crown: {
+    pal: { g: '#ffd23e', G: '#b9982f', r: '#e04848', b: '#5fd9ff' },
+    rows: [
+      'g...g...g',
+      'gg..g..gg',
+      'gGgggggGg',
+      'ggrgbgrgg',
+      'ggggggggg',
+      'GGGGGGGGG',
+    ],
+  },
+
   pennant: {
     pal: { p: '#4a2f17', y: '#ffd23e', Y: '#fff0a0' },
     rows: [

@@ -103,6 +103,16 @@
           <div id="amt-toggle">
             <button class="amt-btn active" data-amt="1">x1</button>
             <button class="amt-btn" data-amt="10">x10</button>
+            <button class="amt-btn" data-amt="100">x100</button>
+            <button class="amt-btn" data-amt="max">MAX</button>
+            <button class="amt-btn" data-amt="next10" title="Round up to the next multiple of 10">&#8968;10</button>
+          </div>
+          <div id="shop-filters">
+            <button class="filter-btn active" data-filter="all">ALL</button>
+            <button class="filter-btn" data-filter="gold">GOLD</button>
+            <button class="filter-btn" data-filter="wood">WOOD</button>
+            <button class="filter-btn" data-filter="stone">STONE</button>
+            <button class="filter-btn" data-filter="mana">MANA</button>
           </div>
           <div id="shop-list"></div>
         </div>
@@ -128,13 +138,79 @@
         <button id="close-prestige">X</button>
       </div>
       <div class="modal-sub">
-        Crown Sigils: <b id="sigil-balance">0</b> &nbsp;•&nbsp; Pending on Ascension: <b id="sigil-pending">0</b><br><br>
-        Ascending resets your city, gold, resources, defenses and upgrades — but grants Crown Sigils
-        based on lifetime gold, spent here on permanent advancements. Items are kept.
+        Crown Sigils: <b id="sigil-balance">0</b> &nbsp;•&nbsp; Pending on Ascension: <b id="sigil-pending">0</b>
+        &nbsp;•&nbsp; Drag the star-map to explore. Era rings unlock outward.
+        <div id="node-info">Hover a node to read about it.</div>
       </div>
-      <div id="tree-branches"></div>
+      <div id="tree-map">
+        <div id="tree-world"></div>
+      </div>
       <div class="modal-foot">
         <button id="modal-ascend-btn">ASCEND NOW</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SILVER SPIRE MODAL (slingshot climb gamemode) ============ -->
+  <div id="spire-modal" class="modal hidden">
+    <div class="modal-box spire-box">
+      <div class="modal-head">
+        <h2 id="spire-title">THE SILVER SPIRE</h2>
+        <button id="close-spire">X</button>
+      </div>
+      <div id="sp-hud">
+        <span id="sp-alt">ALT 0m</span>
+        <span id="sp-best">BEST 0m</span>
+        <span id="sp-total">SPIRE 0m</span>
+        <span id="sp-status"></span>
+        <span id="sp-hint">drag &amp; release to LEAP — slingshot style. Ledges are SOLID from below: go around, or bounce off the walls. The CROWN waits at the top.</span>
+      </div>
+      <div id="sp-view">
+        <div id="sp-world"></div>
+        <div id="sp-win" class="hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TOWER OF DOOM MODAL (rhythm boss gamemode) ============ -->
+  <div id="tower-modal" class="modal hidden">
+    <div class="modal-box tower-box">
+      <div class="modal-head">
+        <h2 id="tower-title">THE TOWER OF DOOM</h2>
+        <button id="close-tower">X</button>
+      </div>
+      <div id="tower-body">
+        <div id="tower-lobby" class="scroll"></div>
+        <div id="tower-play" class="hidden">
+          <div id="tw-bosshud"></div>
+          <div id="tw-field"></div>
+          <div id="tw-herohud"></div>
+        </div>
+        <div id="tower-result" class="hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ RIFT PORTAL MODAL (arena gamemode) ============ -->
+  <div id="portal-modal" class="modal hidden">
+    <div class="modal-box portal-box">
+      <div class="modal-head">
+        <h2 id="portal-title">THE RIFT PORTAL</h2>
+        <button id="close-portal">X</button>
+      </div>
+      <div id="portal-body">
+        <div id="portal-lobby" class="scroll"></div>
+        <div id="portal-battle" class="hidden">
+          <div id="pb-stagebar"></div>
+          <div id="pb-field">
+            <div id="pb-allies" class="pb-side"></div>
+            <div id="pb-mid">VS</div>
+            <div id="pb-enemies" class="pb-side"></div>
+          </div>
+          <div id="pb-foot"></div>
+        </div>
+        <div id="portal-result" class="hidden"></div>
+        <div id="portal-cards" class="hidden"></div>
       </div>
     </div>
   </div>
@@ -144,5 +220,8 @@
   <script src="js/map.js"></script>
   <script src="js/ambient.js"></script>
   <script src="js/game.js"></script>
+  <script src="js/portal.js"></script>
+  <script src="js/tower.js"></script>
+  <script src="js/spire.js"></script>
 </body>
 </html>

@@ -176,6 +176,32 @@ const BUILDING_UPGRADES = {
   cathedral: [
     { id: 'cath_relics', name: 'Holy Relics', max: 5, cost: l => ({ gold: 400000 * Math.pow(4, l), mana: 100 * Math.pow(2, l) }),
       info: '+4% ALL gold per level.' },
+    { id: 'cath_blessings', name: 'War Blessings', max: 10, cost: l => ({ gold: 600000 * Math.pow(3, l), mana: 200 * Math.pow(2, l) }),
+      info: 'Clerics +10% damage per level.' },
+  ],
+  armory: [
+    { id: 'armory_master', name: 'Mastercraft Arms', max: 10, cost: l => ({ gold: 120000 * Math.pow(3, l), stone: 300 * Math.pow(2.2, l) }),
+      info: 'Hero click damage +10% per level.' },
+  ],
+  kennels: [
+    { id: 'kennels_alpha', name: 'Alpha Packs', max: 10, cost: l => ({ gold: 2e6 * Math.pow(3, l), wood: 3000 * Math.pow(2.2, l) }),
+      info: 'Archers +10% damage per level.' },
+  ],
+  lodge: [
+    { id: 'lodge_hunters', name: 'Master Hunters', max: 10, cost: l => ({ gold: 1.5e6 * Math.pow(3, l), wood: 2500 * Math.pow(2.2, l) }),
+      info: 'Archers +10% damage per level.' },
+  ],
+  siegeworkshop: [
+    { id: 'siege_counter', name: 'Counterweights', max: 10, cost: l => ({ gold: 700000 * Math.pow(3, l), wood: 2000 * Math.pow(2.2, l) }),
+      info: 'Ballistae & Golem +10% damage per level.' },
+  ],
+  foundry: [
+    { id: 'foundry_runes', name: 'Rune Forges', max: 10, cost: l => ({ gold: 8e6 * Math.pow(3, l), mana: 1500 * Math.pow(2, l) }),
+      info: 'Golem +10% damage per level.' },
+  ],
+  tradeport: [
+    { id: 'trade_mercs', name: 'Mercenary Contracts', max: 5, cost: l => ({ gold: 1e7 * Math.pow(4, l), wood: 5000 * Math.pow(2.5, l) }),
+      info: '+5% ALL unit damage per level.' },
   ],
   deepmine: [
     { id: 'mine_shafts', name: 'Lower Shafts', max: 10, cost: l => ({ gold: 1.5e6 * Math.pow(3, l), wood: 2000 * Math.pow(2.2, l) }),
@@ -188,6 +214,8 @@ const BUILDING_UPGRADES = {
   academy: [
     { id: 'acad_curriculum', name: 'Battle Curriculum', max: 10, cost: l => ({ gold: 800000 * Math.pow(3, l), mana: 200 * Math.pow(2, l) }),
       info: 'Mages +5% damage per level.' },
+    { id: 'acad_roosts', name: 'Dragon Roosts', max: 10, cost: l => ({ gold: 2e7 * Math.pow(3, l), mana: 5000 * Math.pow(2, l) }),
+      info: 'Dragons +10% damage per level.' },
   ],
   timberworks: [
     { id: 'timber_lines', name: 'Log Flumes', max: 10, cost: l => ({ gold: 2.5e6 * Math.pow(3, l), stone: 3000 * Math.pow(2.2, l) }),
@@ -296,12 +324,16 @@ const UNITS = [
 
 /* ---------------- MAGE SKILLS (one-time, cost Mana) ---------------- */
 const SKILLS = [
-  { id: 'fireball', name: 'Fireball',        cost: { mana: 50 },   desc: 'Mage damage x2.' },
-  { id: 'frost',    name: 'Frost Sigil',     cost: { mana: 130 },  desc: '+25% gold from kills.' },
-  { id: 'arcane',   name: 'Arcane Mastery',  cost: { mana: 320 },  desc: 'Mana production +50%.' },
-  { id: 'meteor',   name: 'Meteor Brand',    cost: { mana: 900 },  desc: 'Clicks deal +10% of your idle DPS.' },
-  { id: 'chain',    name: 'Chain Lightning', cost: { mana: 2600 }, desc: 'Mage damage x1.5.' },
-  { id: 'midas',    name: 'Midas Curse',     cost: { mana: 6500 }, desc: '+50% gold from kills.' },
+  { id: 'fireball', name: 'Fireball',        cost: { mana: 50 },     desc: 'Mage damage x2.' },
+  { id: 'frost',    name: 'Frost Sigil',     cost: { mana: 130 },    desc: '+25% gold from kills.' },
+  { id: 'arcane',   name: 'Arcane Mastery',  cost: { mana: 320 },    desc: 'Mana production +50%.' },
+  { id: 'meteor',   name: 'Meteor Brand',    cost: { mana: 900 },    desc: 'Clicks deal +10% of your idle DPS.' },
+  { id: 'chain',    name: 'Chain Lightning', cost: { mana: 2600 },   desc: 'Mage damage x1.5.' },
+  { id: 'midas',    name: 'Midas Curse',     cost: { mana: 6500 },   desc: '+50% gold from kills.' },
+  { id: 'volley',   name: 'Blessed Volley',  cost: { mana: 15000 },  desc: 'Archer damage x2.' },
+  { id: 'ironclad', name: 'Ironclad Rune',   cost: { mana: 40000 },  desc: 'Ballista & Golem damage x1.5.' },
+  { id: 'warhymn',  name: 'War Hymn',        cost: { mana: 100000 }, desc: 'Cleric damage x2.' },
+  { id: 'dragonsoul', name: 'Dragon Soul',   cost: { mana: 250000 }, desc: 'Dragon damage x1.5.' },
 ];
 
 /* ---------------- ITEMS ----------------
@@ -365,9 +397,9 @@ function isCityDistrict(dx, dy) { return dx >= 1 && dx <= 3 && dy >= 1 && dy <= 
 
 function districtCost(nOwnedExtra) {
   return {
-    gold: Math.ceil(25000 * Math.pow(2.2, nOwnedExtra)),
-    wood: Math.ceil(500 * Math.pow(1.8, nOwnedExtra)),
-    stone: Math.ceil(500 * Math.pow(1.8, nOwnedExtra)),
+    gold: Math.ceil(25000 * Math.pow(4, nOwnedExtra)),
+    wood: Math.ceil(500 * Math.pow(2.5, nOwnedExtra)),
+    stone: Math.ceil(500 * Math.pow(2.5, nOwnedExtra)),
   };
 }
 
@@ -559,60 +591,104 @@ function sigilsFromLifetime(lifetimeGold) {
 
 const ERA_NAMES = ['Age of Wood', 'Age of Stone', 'Age of Iron', 'Age of Aether'];
 
-const PRESTIGE_TREE = [
-  /* ============ ERA 1 — AGE OF WOOD ============ */
-  { id: 'eco1', era: 1, branch: 'Economy',   name: 'Royal Treasury',   cost: 1, requires: null,   desc: 'Start each run with 500 Gold, 25 Wood and 25 Stone.' },
-  { id: 'eco2', era: 1, branch: 'Economy',   name: 'Trade Routes',     cost: 2, requires: 'eco1', desc: 'Buildings produce +25% Gold.' },
-  { id: 'eco3', era: 1, branch: 'Economy',   name: 'Tax Reform',       cost: 3, requires: 'eco2', desc: 'All building costs -10%.' },
-  { id: 'eco4', era: 1, branch: 'Economy',   name: 'Golden Age',       cost: 5, requires: 'eco3', desc: '+1% all Gold per Crown Sigil ever earned.' },
-  { id: 'eco5', era: 1, branch: 'Economy',   name: 'Royal Charter',    cost: 8, requires: 'eco4', desc: 'Start each run with 5 Farms, 2 Lumber Mills and 2 Quarries.' },
-  { id: 'war1', era: 1, branch: 'War',       name: 'Sharp Blades',     cost: 1, requires: null,   desc: 'Click damage x2.' },
-  { id: 'war2', era: 1, branch: 'War',       name: 'Veteran Mages',    cost: 2, requires: 'war1', desc: 'Mage damage +50%.' },
-  { id: 'war3', era: 1, branch: 'War',       name: 'Siege Doctrine',   cost: 3, requires: 'war2', desc: 'Ballista & Wall damage +50%.' },
-  { id: 'war4', era: 1, branch: 'War',       name: "Warlord's Banner", cost: 5, requires: 'war3', desc: 'Zone income bonus doubled (2% -> 4% per zone).' },
-  { id: 'war5', era: 1, branch: 'War',       name: 'Crown Marshal',    cost: 8, requires: 'war4', desc: 'ALL unit damage +25%.' },
-  { id: 'mys1', era: 1, branch: 'Mysticism', name: 'Mana Font',        cost: 1, requires: null,   desc: 'Mana production +50%.' },
-  { id: 'mys2', era: 1, branch: 'Mysticism', name: 'Arcane Library',   cost: 2, requires: 'mys1', desc: 'Mage Skills cost 50% less Mana.' },
-  { id: 'mys3', era: 1, branch: 'Mysticism', name: 'Spirit Hands',     cost: 4, requires: 'mys2', desc: 'Ghostly hands click the enemy 2 times per second.' },
-  { id: 'mys4', era: 1, branch: 'Mysticism', name: 'Eternal Flame',    cost: 6, requires: 'mys3', desc: 'Mage damage x2.' },
-  { id: 'mys5', era: 1, branch: 'Mysticism', name: 'Lunar Covenant',   cost: 8, requires: 'mys4', desc: 'Night item-drop bonus doubled (x4) AND Mana production +25%.' },
+/* ---- THE AGES TREE: solar-system layout ----
+   Center = The Crown. FIVE branches radiate outward; eras are
+   concentric rings. Era gates sit ON the ring and act as starter
+   nodes: every branch of that era chains from the gate.          */
+const TREE_BRANCHES = {
+  war:  { name: 'War',        angle: -90 },
+  pros: { name: 'Prosperity', angle: -18 },
+  for:  { name: 'Fortune',    angle: 54 },
+  mys:  { name: 'Mysticism',  angle: 126 },
+  ind:  { name: 'Industry',   angle: 198 },
+};
+const ERA_RING_R = [0, 430, 800, 1170];     // gate ring radius (era 2..4)
+const ERA_NODE_R0 = [150, 530, 900, 1270];  // first node radius per era
+const TREE_NODE_STEP = 105;
 
-  /* ============ GATE + ERA 2 — AGE OF STONE ============ */
-  { id: 'era2', era: 2, branch: 'Ages', gate: true, needNodes: 6, cost: 10, requires: null,
-    name: 'Advance: Age of Stone', desc: '+25% ALL gold. The kingsroads are gravelled. Unlocks Age of Stone advancements. (Requires 6 nodes owned)' },
-  { id: 'eco6', era: 2, branch: 'Economy',   name: 'Stone Granaries',  cost: 8,  requires: null,   desc: 'Buildings produce +30% Gold.' },
-  { id: 'eco7', era: 2, branch: 'Economy',   name: 'Royal Highways',   cost: 12, requires: 'eco6', desc: '+20% ALL gold. Trade moves faster on good roads.' },
-  { id: 'eco8', era: 2, branch: 'Economy',   name: 'Guild Charters',   cost: 16, requires: 'eco7', desc: 'All building costs another -10%.' },
-  { id: 'war6', era: 2, branch: 'War',       name: 'Crossbows',        cost: 8,  requires: null,   desc: 'Archer damage x2.' },
-  { id: 'war7', era: 2, branch: 'War',       name: 'Steel Plate',      cost: 12, requires: 'war6', desc: 'Click damage x2.' },
-  { id: 'war8', era: 2, branch: 'War',       name: 'Siege Foundries',  cost: 16, requires: 'war7', desc: 'Ballista & Golem damage +50%.' },
-  { id: 'mys6', era: 2, branch: 'Mysticism', name: 'Runed Quarries',   cost: 8,  requires: null,   desc: 'Wood & Stone production +50%.' },
-  { id: 'mys7', era: 2, branch: 'Mysticism', name: 'Quality Smithing', cost: 12, requires: 'mys6', desc: '25% of item drops come one tier higher.' },
-  { id: 'mys8', era: 2, branch: 'Mysticism', name: 'Mana Springs',     cost: 16, requires: 'mys7', desc: 'Mana production +50%.' },
+/* node helper: n(id, era, branch, step, name, cost, requiresPrev, desc) */
+const PRESTIGE_TREE = (() => {
+  const T = [];
+  const n = (id, era, branch, step, name, cost, desc) => {
+    const requires = step === 0
+      ? (era === 1 ? null : 'era' + era)
+      : T[T.length - 1].id; // previous node in this chain
+    T.push({ id, era, branch, step, name, cost, requires, desc });
+  };
+  const gate = (id, era, cost, needNodes, name, desc) => {
+    T.push({ id, era, branch: 'gate', gate: true, needNodes, cost, requires: era === 2 ? null : 'era' + (era - 1), name, desc });
+  };
 
-  /* ============ GATE + ERA 3 — AGE OF IRON ============ */
-  { id: 'era3', era: 3, branch: 'Ages', gate: true, needNodes: 16, cost: 25, requires: 'era2',
-    name: 'Advance: Age of Iron', desc: '+50% ALL gold. The kingsroads are cobbled. Unlocks Age of Iron advancements. (Requires 16 nodes owned)' },
-  { id: 'eco10', era: 3, branch: 'Economy',   name: 'Banking Houses',  cost: 25, requires: null,    desc: '+1% all Gold per Crown Sigil ever earned (stacks).' },
-  { id: 'eco11', era: 3, branch: 'Economy',   name: 'Trade Empire',    cost: 35, requires: 'eco10', desc: '+40% ALL gold.' },
-  { id: 'eco12', era: 3, branch: 'Economy',   name: 'Industrial Mills', cost: 50, requires: 'eco11', desc: 'ALL production +25% (Gold, Wood, Stone, Mana).' },
-  { id: 'war10', era: 3, branch: 'War',       name: 'Cannons',         cost: 25, requires: null,    desc: 'Ballista damage x2.' },
-  { id: 'war11', era: 3, branch: 'War',       name: 'Drilled Legions', cost: 35, requires: 'war10', desc: 'ALL unit damage +30%.' },
-  { id: 'war12', era: 3, branch: 'War',       name: 'Heroic Saga',     cost: 50, requires: 'war11', desc: "The Hero's leadership aura is 50% stronger." },
-  { id: 'mys10', era: 3, branch: 'Mysticism', name: 'Astral Clock',    cost: 25, requires: null,    desc: 'Day gold bonus AND night drop bonus +50% stronger.' },
-  { id: 'mys11', era: 3, branch: 'Mysticism', name: 'Mystic Forging',  cost: 35, requires: 'mys10', desc: 'Item drops have a 50% chance to roll a random AFFIX (second effect at half value).' },
-  { id: 'mys12', era: 3, branch: 'Mysticism', name: 'Leyline Network', cost: 50, requires: 'mys11', desc: 'Mana production x2.' },
+  /* ===== ERA 1 — AGE OF WOOD ===== */
+  n('war1', 1, 'war', 0, 'Sharp Blades', 1, 'Click damage x2.');
+  n('war2', 1, 'war', 1, 'Veteran Mages', 2, 'Mage damage +50%.');
+  n('war3', 1, 'war', 2, 'Siege Doctrine', 3, 'Ballista & Wall damage +50%.');
+  n('pros1', 1, 'pros', 0, 'Royal Treasury', 1, 'Start each run with 500 Gold, 25 Wood and 25 Stone. (Granted immediately when bought!)');
+  n('pros2', 1, 'pros', 1, 'Trade Routes', 2, 'Buildings produce +25% Gold.');
+  n('pros3', 1, 'pros', 2, 'Tax Reform', 3, 'All building costs -10%.');
+  n('for1', 1, 'for', 0, 'Keen Eyes', 1, 'Item drop chance +20%.');
+  n('for2', 1, 'for', 1, 'Treasure Maps', 2, 'Chests spawn 25% more often and stay 2s longer.');
+  n('for3', 1, 'for', 2, 'Collector', 3, 'ALL item values +10%.');
+  n('mys1', 1, 'mys', 0, 'Mana Font', 1, 'Mana production +50%.');
+  n('mys2', 1, 'mys', 1, 'Arcane Library', 2, 'Mage Skills cost 50% less Mana.');
+  n('mys3', 1, 'mys', 2, 'Spirit Hands', 4, 'Ghostly hands click the enemy 2 times per second.');
+  n('ind1', 1, 'ind', 0, 'Royal Charter', 1, 'Start each run with 5 Farms, 2 Lumber Mills and 2 Quarries. (Granted immediately when bought!)');
+  n('ind2', 1, 'ind', 1, 'Sturdy Axes', 2, 'Wood production +25%.');
+  n('ind3', 1, 'ind', 2, 'Deep Veins', 3, 'Stone production +25%.');
 
-  /* ============ GATE + ERA 4 — AGE OF AETHER ============ */
-  { id: 'era4', era: 4, branch: 'Ages', gate: true, needNodes: 28, cost: 60, requires: 'era3',
-    name: 'Advance: Age of Aether', desc: '+100% ALL gold. The kingsroads glow with aether. Unlocks the final advancements. (Requires 28 nodes owned)' },
-  { id: 'eco13', era: 4, branch: 'Economy',   name: 'Aether Economy',    cost: 70,  requires: null,    desc: 'ALL gold x1.5.' },
-  { id: 'eco14', era: 4, branch: 'Economy',   name: 'Philosopher Kings', cost: 90,  requires: 'eco13', desc: 'All building costs another -15%.' },
-  { id: 'eco15', era: 4, branch: 'Economy',   name: 'Golden Aeon',       cost: 120, requires: 'eco14', desc: '+2% all Gold per Crown Sigil ever earned (stacks).' },
-  { id: 'war13', era: 4, branch: 'War',       name: 'Aether Weapons',    cost: 70,  requires: null,    desc: 'ALL unit damage x1.5.' },
-  { id: 'war14', era: 4, branch: 'War',       name: 'Storm Callers',     cost: 90,  requires: 'war13', desc: 'Mage damage x2.' },
-  { id: 'war15', era: 4, branch: 'War',       name: 'Avatar of War',     cost: 120, requires: 'war14', desc: 'Clicks deal +25% of your idle DPS (stacks with Meteor Brand).' },
-  { id: 'mys13', era: 4, branch: 'Mysticism', name: 'Star Metal',        cost: 70,  requires: null,    desc: 'ALL item values +25%.' },
-  { id: 'mys14', era: 4, branch: 'Mysticism', name: 'Master Forging',    cost: 90,  requires: 'mys13', desc: 'Affixes are guaranteed on drops and 75% value.' },
-  { id: 'mys15', era: 4, branch: 'Mysticism', name: 'Spirit Legion',     cost: 120, requires: 'mys14', desc: 'Spirit Hands click 6 times per second and can CRIT.' },
-];
+  /* ===== GATE + ERA 2 — AGE OF STONE ===== */
+  gate('era2', 2, 10, 6, 'Age of Stone', '+25% ALL gold. The kingsroads are gravelled. Every Age of Stone branch starts here. (Requires 6 nodes owned)');
+  n('war4', 2, 'war', 0, 'Crossbows', 8, 'Archer damage x2.');
+  n('war5', 2, 'war', 1, 'Steel Plate', 12, 'Click damage x2.');
+  n('war6', 2, 'war', 2, 'Drill Sergeants', 16, 'ALL unit damage +25%.');
+  n('pros4', 2, 'pros', 0, 'Stone Granaries', 8, 'Buildings produce +30% Gold.');
+  n('pros5', 2, 'pros', 1, 'Royal Highways', 12, '+20% ALL gold. Trade moves faster on good roads.');
+  n('pros6', 2, 'pros', 2, 'Guild Charters', 16, 'All building costs another -10%.');
+  n('for4', 2, 'for', 0, 'Quality Smithing', 8, '25% of item drops come one tier higher.');
+  n('for5', 2, 'for', 1, "Magpie's Instinct", 12, 'Item drop chance +30%.');
+  n('for6', 2, 'for', 2, 'Boss Trophies', 16, 'Bosses drop items twice as often.');
+  n('mys4', 2, 'mys', 0, 'Mana Springs', 8, 'Mana production +50%.');
+  n('mys5', 2, 'mys', 1, 'Eternal Flame', 12, 'Mage damage x2.');
+  n('mys6', 2, 'mys', 2, 'Astral Clock', 16, 'Day gold bonus AND night drop bonus +50% stronger.');
+  n('ind4', 2, 'ind', 0, 'Runed Quarries', 8, 'Wood & Stone production +50%.');
+  n('ind5', 2, 'ind', 1, "Sawyers' Guild", 12, 'Wood production +50%.');
+  n('ind6', 2, 'ind', 2, "Masons' Guild", 16, 'Stone production +50%.');
+
+  /* ===== GATE + ERA 3 — AGE OF IRON ===== */
+  gate('era3', 3, 25, 18, 'Age of Iron', '+50% ALL gold. The kingsroads are cobbled. Every Age of Iron branch starts here. (Requires 18 nodes owned)');
+  n('war7', 3, 'war', 0, 'Cannons', 25, 'Ballista damage x2.');
+  n('war8', 3, 'war', 1, 'Holy Crusade', 35, 'Cleric damage x2.');
+  n('war9', 3, 'war', 2, 'Heroic Saga', 50, "The Hero's leadership aura is 50% stronger.");
+  n('pros7', 3, 'pros', 0, 'Banking Houses', 25, 'MASTER: +1% ALL production & bounties per Crown Sigil ever earned.');
+  n('pros8', 3, 'pros', 1, 'Trade Empire', 35, '+40% ALL gold.');
+  n('pros9', 3, 'pros', 2, 'Golden Age', 50, 'MASTER: another +1% ALL production & bounties per Sigil ever earned.');
+  n('for7', 3, 'for', 0, 'Mystic Forging', 25, 'Item drops have a 50% chance to roll a random AFFIX (second effect at half value).');
+  n('for8', 3, 'for', 1, 'Star Metal', 35, 'ALL item values +25%.');
+  n('for9', 3, 'for', 2, 'Master Smith', 50, '50% of item drops come one tier higher.');
+  n('mys7', 3, 'mys', 0, 'Leyline Network', 25, 'Mana production x2.');
+  n('mys8', 3, 'mys', 1, 'Storm Callers', 35, 'Mage damage x2.');
+  n('mys9', 3, 'mys', 2, 'Lunar Covenant', 50, 'Night item-drop bonus doubled AND Mana production +25%.');
+  n('ind7', 3, 'ind', 0, 'Industrial Mills', 25, 'ALL production +25% (Gold, Wood, Stone, Mana).');
+  n('ind8', 3, 'ind', 1, 'Conveyor Carts', 35, 'Wood & Stone production +50%.');
+  n('ind9', 3, 'ind', 2, 'Land Surveys', 50, 'District land deeds cost -25%.');
+
+  /* ===== GATE + ERA 4 — AGE OF AETHER ===== */
+  gate('era4', 4, 60, 34, 'Age of Aether', '+100% ALL gold. The kingsroads glow with aether. The final ring. (Requires 34 nodes owned)');
+  n('war10', 4, 'war', 0, 'Aether Weapons', 70, 'ALL unit damage x1.5.');
+  n('war11', 4, 'war', 1, 'Dragon Lords', 90, 'Dragon damage x2.');
+  n('war12', 4, 'war', 2, 'Avatar of War', 120, 'Clicks deal +25% of your idle DPS (stacks with Meteor Brand).');
+  n('pros10', 4, 'pros', 0, 'Aether Economy', 70, 'ALL gold x1.5.');
+  n('pros11', 4, 'pros', 1, 'Philosopher Kings', 90, 'All building costs another -15%.');
+  n('pros12', 4, 'pros', 2, 'Golden Aeon', 120, 'MASTER: another +2% ALL production & bounties per Sigil ever earned.');
+  n('for10', 4, 'for', 0, 'Master Forging', 70, 'Affixes are guaranteed on drops and 75% value.');
+  n('for11', 4, 'for', 1, 'Twin Drops', 90, 'Item drops have a 25% chance to be doubled.');
+  n('for12', 4, 'for', 2, 'Artificer God', 120, 'ALL item values another +50%.');
+  n('mys10', 4, 'mys', 0, 'Aether Mind', 70, 'Mana production x2.');
+  n('mys11', 4, 'mys', 1, 'Archmage Ascendant', 90, 'Mage damage x2.');
+  n('mys12', 4, 'mys', 2, 'Spirit Legion', 120, 'Spirit Hands click 6 times per second and can CRIT.');
+  n('ind10', 4, 'ind', 0, 'Aether Saws', 70, 'Wood production x2.');
+  n('ind11', 4, 'ind', 1, 'Aether Drills', 90, 'Stone production x2.');
+  n('ind12', 4, 'ind', 2, 'World Engine', 120, 'ALL production another +25%.');
+
+  return T;
+})();

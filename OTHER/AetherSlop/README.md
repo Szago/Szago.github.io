@@ -77,14 +77,15 @@ x2 item drops (x4 with the Lunar Covenant ascension node). The map darkens at ni
   systems (Golden Harvest boosts Farms *and* Markets, Masonry boosts Walls,
   Hero's Rest boosts click damage, Royal Decree boosts everything...).
 - **Ascension (rebirth):** lifetime gold converts to **Crown Sigils**
-  (`floor(sqrt(lifetime / 3e6))`, cumulative). Sigils buy permanent nodes in **THE
-  AGES TREE**: 45 nodes across 4 eras (Wood / Stone / Iron / Aether) x 3 branches
-  (Economy / War / Mysticism), ~1430 sigils to buy out completely. Era gates
-  require owned-node counts, buff all gold, and **visibly upgrade the kingsroads**
-  (dirt -> gravel -> cobblestone -> glowing aether). Era tech includes Crossbows,
-  Cannons, Aether Weapons, Quality Smithing (+1 tier drops), **Mystic/Master
-  Forging (items roll random AFFIXES** — a second effect, e.g. "Rusty Sword II of
-  Luck"), Star Metal (+25% item values) and the Spirit Legion auto-clicker.
+  (`floor(sqrt(lifetime / 3e6))`, cumulative). Sigils are spent on **THE AGES
+  TREE** — a draggable star-map: The Crown at the center, **5 branches**
+  radiating outward (War / Prosperity=gold / Industry=wood+stone / Mysticism /
+  Fortune=items), and 4 era rings (Wood / Stone / Iron / Aether). Era gates sit
+  on the rings, require owned-node counts, buff all gold, **visibly upgrade the
+  kingsroads**, and act as starter nodes for every branch of that era. 63 nodes,
+  ~2256 sigils to buy out completely. Start-grant nodes (Royal Treasury, Royal
+  Charter) apply IMMEDIATELY when bought. The sigil-% nodes (Banking Houses,
+  Golden Age, Golden Aeon) are a MASTER multiplier on ALL production & bounties.
 - **Menu (bottom bar):** full statistics screen + settings with save export/import
   (base64 code, copy or download) and wipe.
 
