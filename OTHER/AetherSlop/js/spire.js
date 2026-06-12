@@ -48,6 +48,17 @@ function spireTotalM() {
   return (SPIRE_H - 24 - 240) / SPIRE_PXM; // floor to the crown's dais
 }
 
+/* ---------------- ascension-tree hooks ----------------
+   Launch power nodes boost the PLAYER's cap only — the map is
+   generated against the base cap so it stays fair & deterministic. */
+function spVcap() {
+  let v = SPIRE_VCAP;
+  if (hasTree('xspire1')) v *= 1.1; // Featherweight
+  if (hasTree('xspire3')) v *= 1.1; // Zephyr Crown
+  return v;
+}
+function spCrownMult() { return hasTree('xspire4') ? 3 : 2; } // Gilded Crown
+
 /* ---------------- the map (deterministic for everyone) ---------------- */
 
 let SPIRE_PLATS = null;
@@ -64,9 +75,12 @@ function spMaxDx(dyUp) {
   return Math.max(40, vx * t * 0.85);
 }
 
+const SPIRE_WALL_M = 46; // clear channel at both walls — room for wall-bounce play
+
 function spirePlats() {
   if (SPIRE_PLATS) return SPIRE_PLATS;
   const rng = mulberry32(20260611);
+  const M = SPIRE_WALL_M;
   const plats = [{ x: 0, y: SPIRE_H - 24, w: SPIRE_W }]; // the floor
   let prev = plats[0];
   while (prev.y > 620) {
@@ -75,16 +89,21 @@ function spirePlats() {
     const ny = prev.y - gap;
     const w = Math.max(33, (130 - 75 * t) * 0.75 + rng() * 15);
     /* every path platform stays inside the physics envelope of the previous;
-       the 22px wall margin always leaves room to slip around the sides */
+       the wall margin always leaves room to slip (or bounce) around the sides */
     const reach = spMaxDx(gap) + (prev.w + w) / 2 - 12;
     const cx = prev.x + prev.w / 2 + (rng() * 2 - 1) * reach;
-    const nx = Math.min(SPIRE_W - w - 22, Math.max(22, cx - w / 2));
+    const nx = Math.min(SPIRE_W - w - M, Math.max(M, cx - w / 2));
     const plat = { x: nx, y: ny, w };
     plats.push(plat);
-    if (rng() < 0.45) {                              // a decoy ledge — now also an OBSTACLE
-      const w2 = Math.max(33, (110 - 60 * t) * 0.75);
-      const x2 = 22 + rng() * (SPIRE_W - w2 - 44);
-      if (Math.abs(x2 - nx) > 110) plats.push({ x: x2, y: ny - 18 - rng() * 30, w: w2 });
+    /* extra ledges — denser air: decoys, perches, even SAME-LEVEL twins */
+    const extras = rng() < 0.85 ? (rng() < 0.35 ? 2 : 1) : 0;
+    for (let k = 0; k < extras; k++) {
+      const w2 = Math.max(26, (100 - 55 * t) * 0.75 + rng() * 12);
+      const x2 = M + rng() * (SPIRE_W - w2 - 2 * M);
+      const sameLevel = rng() < 0.5;
+      const y2 = sameLevel ? ny : ny - 14 - rng() * 34;
+      /* never butt up against the path platform of this level */
+      if (x2 > nx + w + 26 || x2 + w2 < nx - 26) plats.push({ x: x2, y: y2, w: w2 });
     }
     prev = plat;
   }
@@ -95,7 +114,7 @@ function spirePlats() {
     const reach = spMaxDx(prev.y - ny) + (prev.w + w) / 2 - 12;
     const dir = (SPIRE_W / 2 - (prev.x + prev.w / 2)) > 0 ? 1 : -1;
     const cx = prev.x + prev.w / 2 + dir * Math.min(reach, Math.abs(SPIRE_W / 2 - (prev.x + prev.w / 2)));
-    const nx = Math.min(SPIRE_W - w - 22, Math.max(22, cx - w / 2));
+    const nx = Math.min(SPIRE_W - w - M, Math.max(M, cx - w / 2));
     const plat = { x: nx, y: ny, w };
     plats.push(plat);
     prev = plat;
@@ -148,13 +167,26 @@ function buildSpireWorld() {
     el.style.width = p.w + 'px';
     world.appendChild(el);
   }
+  /* Angelic Waystones: dashed save lines every 50m */
+  if (hasTree('xspire2')) {
+    const total = spireTotalM();
+    for (let alt = 50; alt < total; alt += 50) {
+      const wy = SPIRE_H - 24 - SPIRE_PH - alt * SPIRE_PXM;
+      const way = document.createElement('div');
+      way.className = 'sp-way';
+      way.style.top = wy + 'px';
+      way.innerHTML = '<span>⚐ ' + alt + 'm</span>';
+      world.appendChild(way);
+    }
+  }
+
   const crown = document.createElement('div');
   crown.id = 'sp-crown';
   crown.className = state.spire.crowned ? 'claimed' : '';
   crown.style.left = SPIRE_CROWN.x + 'px';
   crown.style.top = SPIRE_CROWN.y + 'px';
-  crown.title = state.spire.crowned ? 'The crown is yours. Gold x2, forever.' :
-    'The Crown of the Silver Spire: permanent x2 gold production!';
+  crown.title = state.spire.crowned ? 'The crown is yours. Gold x' + spCrownMult() + ', forever.' :
+    'The Crown of the Silver Spire: permanent x' + spCrownMult() + ' gold production!';
   crown.appendChild(spriteCanvas('crown', 6));
   world.appendChild(crown);
 
@@ -199,7 +231,8 @@ function spireStep(dt) {
           const cx = nx + SPIRE_PW / 2;
           if (cx >= p.x - 2 && cx <= p.x + p.w + 2) {
             ny = p.y - SPIRE_PH;
-            spLand(ny);
+            const tp = spLand(ny); // Angelic Waystones may catch a plummet
+            if (tp) { nx = tp.x; ny = tp.y; }
             break;
           }
         }
@@ -215,12 +248,37 @@ function spireStep(dt) {
   }
 }
 
+/* the path platform standing closest above the given altitude */
+function spWaystonePlat(wayAlt) {
+  let best = null, bestAlt = Infinity;
+  for (const p of spirePlats()) {
+    const alt = spireAltM(p.y - SPIRE_PH);
+    if (alt >= wayAlt && alt < bestAlt) { best = p; bestAlt = alt; }
+  }
+  return best;
+}
+
+/* returns a {x, y} teleport when a waystone catches the fall, else nothing */
 function spLand(ny) {
   const S = state.spire;
   sp.vy = 0; sp.vx = 0;
   sp.grounded = true;
   const gained = sp.jumpY - ny;
   if (gained < -500) {
+    /* Angelic Waystones: a long fall stops at the last 50m line you passed */
+    if (hasTree('xspire2')) {
+      const wayAlt = Math.floor(spireAltM(sp.jumpY) / 50) * 50;
+      if (wayAlt > 0 && spireAltM(ny) < wayAlt) {
+        const p = spWaystonePlat(wayAlt);
+        if (p) {
+          const tx = p.x + p.w / 2 - SPIRE_PW / 2;
+          const ty = p.y - SPIRE_PH;
+          toast('⚐ An angelic waystone catches you at ' + Math.round(spireAltM(ty)) + 'm!');
+          sp.jumpY = ty; sp.peakY = ty;
+          return { x: tx, y: ty };
+        }
+      }
+    }
     S.falls++;
     toast('You plummet ' + Math.round(-gained / SPIRE_PXM) + 'm down the Spire...');
   }
@@ -242,10 +300,11 @@ function spDragMove(x, y) {
 
 function spDragVec() {
   const d = sp.drag;
+  const cap = spVcap();
   let vx = (d.sx - d.cx) * SPIRE_DRAG_K, vy = (d.sy - d.cy) * SPIRE_DRAG_K;
   const mag = Math.hypot(vx, vy);
-  if (mag > SPIRE_VCAP) { vx *= SPIRE_VCAP / mag; vy *= SPIRE_VCAP / mag; }
-  return { vx, vy, mag: Math.min(mag, SPIRE_VCAP) };
+  if (mag > cap) { vx *= cap / mag; vy *= cap / mag; }
+  return { vx, vy, mag: Math.min(mag, cap) };
 }
 
 function spDragEnd() {
@@ -290,7 +349,7 @@ function spRender() {
   if (sp.drag && sp.grounded) {
     const v = spDragVec();
     if (v.mag > SPIRE_MIN_DRAG * SPIRE_DRAG_K) {
-      const len = 14 + (v.mag / SPIRE_VCAP) * (SPIRE_ARROW_MAX - 14);
+      const len = 14 + (v.mag / spVcap()) * (SPIRE_ARROW_MAX - 14);
       const ang = Math.atan2(v.vy, v.vx) * 180 / Math.PI;
       const a = sp.arrowEl;
       a.classList.remove('hidden');
@@ -310,7 +369,7 @@ function spUpdateHud() {
   $('sp-alt').textContent = 'ALT ' + spireAltM(S.y).toFixed(1) + 'm';
   $('sp-best').textContent = 'BEST ' + S.bestM.toFixed(1) + 'm';
   $('sp-total').textContent = 'SPIRE ' + spireTotalM().toFixed(0) + 'm';
-  $('sp-status').innerHTML = S.crowned ? '👑 <b>CROWNED — GOLD x2</b>' : '👑 uncrowned';
+  $('sp-status').innerHTML = S.crowned ? '👑 <b>CROWNED — GOLD x' + spCrownMult() + '</b>' : '👑 uncrowned';
 }
 
 /* ---------------- the crown ---------------- */
@@ -319,11 +378,11 @@ function spireCrown() {
   state.spire.crowned = true;
   const c = $('sp-crown');
   if (c) c.classList.add('claimed');
-  toast('👑 THE CROWN OF THE SILVER SPIRE! Gold production x2 — permanently, through every Ascension!');
+  toast('👑 THE CROWN OF THE SILVER SPIRE! Gold production x' + spCrownMult() + ' — permanently, through every Ascension!');
   const win = $('sp-win');
   win.innerHTML = '<div class="pr-title win">👑 CROWNED 👑</div>' +
     '<div class="pr-lines">You conquered the Silver Spire.<br>' +
-    '<span class="gold">ALL GOLD PRODUCTION IS DOUBLED — FOREVER.</span><br>' +
+    '<span class="gold">ALL GOLD PRODUCTION IS ' + (spCrownMult() === 3 ? 'TRIPLED' : 'DOUBLED') + ' — FOREVER.</span><br>' +
     '<span class="dim">This blessing survives every Ascension. There is nothing above the sky.</span></div>';
   const btn = document.createElement('button');
   btn.className = 'pr-btn';

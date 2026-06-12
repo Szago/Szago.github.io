@@ -17,7 +17,8 @@ function defaultRunState() {
     gold: 0, wood: 0, stone: 0, mana: 0,
     runGold: 0,                       // gold earned this run (for unlock reveals)
     buildings: {},                    // id -> count
-    sword: 0, archer: 0, mage: 0, magePower: 0, turret: 0, cleric: 0, golem: 0, dragon: 0, walls: 0,
+    sword: 0, archer: 0, mage: 0, magePower: 0, turret: 0, cleric: 0, golem: 0, dragon: 0,
+    knight: 0, plague: 0, valkyrie: 0, walls: 0,
     skills: {},                       // skill id -> true
     unitUp: {},                       // sub-upgrade id -> level
     bUp: {},                          // building upgrade id -> level
@@ -45,6 +46,8 @@ let state = {
   totalKills: 0,
   sigils: 0,                          // unspent
   sigilsEver: 0,                      // total earned (Golden Age scales off this)
+  totalBuildingsBought: 0,            // lifetime — cosmetic city density (every 100 adds props)
+  totalUnitsBought: 0,                // lifetime — cosmetic NPC density (every 100 adds wanderers)
   ascensions: 0,
   tree: {},                           // node id -> true
   inv: {},                            // "type:tier" -> count (persists ascension)
@@ -59,6 +62,9 @@ function ensureShape(s) {
   const run = defaultRunState();
   for (const k in run) if (s[k] === undefined) s[k] = run[k];
   if (!s.inv) s.inv = {};
+  /* lifetime cosmetic counters (drive city density / wandering NPCs) */
+  if (typeof s.totalBuildingsBought !== 'number') s.totalBuildingsBought = 0;
+  if (typeof s.totalUnitsBought !== 'number') s.totalUnitsBought = 0;
   if (!s.stats) s.stats = defaultStats();
   const st = defaultStats();
   for (const k in st) if (s.stats[k] === undefined) s.stats[k] = st[k];
@@ -68,17 +74,26 @@ function ensureShape(s) {
     if (!Array.isArray(s.equip[u.id])) s.equip[u.id] = eq[u.id];
     /* Satchel Charms from the Rift Portal grant permanent extra slots */
     const slotPlus = (s.portal && s.portal.slotPlus && s.portal.slotPlus[u.id]) || 0;
-    while (s.equip[u.id].length < u.slots + Math.min(2, slotPlus)) s.equip[u.id].push(null);
+    const treeSlots = (u.id === 'hero' && s.tree && s.tree.xfor6) ? 1 : 0; // Reliquary Straps
+    while (s.equip[u.id].length < u.slots + Math.min(2, slotPlus) + treeSlots) s.equip[u.id].push(null);
   }
   if (!s.unitUp) s.unitUp = {};
   if (!s.bUp) s.bUp = {};
   if (!s.tree) s.tree = {};
+  /* automation toggles (the 8th branch) */
+  if (!s.autoOn) s.autoOn = {};
+  for (const k of ['bup', 'uup', 'build', 'skill', 'forge'])
+    if (s.autoOn[k] === undefined) s.autoOn[k] = false;
+  /* buy amounts are gated by Automation nodes — reset locked modes */
+  const amtLocked = v => (String(v) === '10' && !s.tree.auto1) ||
+    (['100', 'max', 'next10'].includes(String(v)) && !s.tree.auto2);
+  if (amtLocked(s.buyAmount)) s.buyAmount = 1;
   /* tree rework migration: if any owned node no longer exists,
      wipe the tree and refund ALL sigils (free respec) */
   const validNodes = new Set(PRESTIGE_TREE.map(n => n.id));
   if (Object.keys(s.tree).some(id => !validNodes.has(id))) {
     s.tree = {};
-    s.sigils = s.sigilsEver || 0;
+    s.sigils = (s.sigilsEver || 0) + (s.bonusSigils || 0);
     s._respecced = true;
   }
   /* districts must form a valid prefix of DISTRICT_ORDER */
@@ -148,16 +163,23 @@ function effItemValue(t, tier) {
   let m = 1;
   if (hasTree('for3')) m *= 1.10;   // Collector
   if (hasTree('for8')) m *= 1.25;   // Star Metal
-  if (hasTree('for12')) m *= 1.5;   // Artificer God
+  if (hasTree('forg1')) m *= 1.30;  // Gilded Loot
+  if (hasTree('fora2')) m *= 1.5;   // Artificer God
   return itemValue(t, tier) * m;
 }
 
 function affixFactor() {
-  return hasTree('for10') ? 0.75 : 0.5;
+  return hasTree('fors3') ? 1 : hasTree('fora1') ? 0.75 : 0.5;
 }
 
+/* an item can carry multiple affixes ("a+b" in keys) after Affix Fusion */
+function affixList(a) { return a ? String(a).split('+') : []; }
+function affixKey(list) { return list.slice().sort().join('+'); }
+
 function itemName(t, tier, a) {
-  return ITEMS[t].name + ' ' + tierName(tier) + (a ? ' of ' + AFFIX_NAMES[a] : '');
+  const list = affixList(a);
+  return ITEMS[t].name + ' ' + tierName(tier) +
+    (list.length ? ' of ' + list.map(x => AFFIX_NAMES[x]).join(' & ') : '');
 }
 
 /* a unit's items only work if the unit actually exists.
@@ -171,13 +193,14 @@ function unitActive(uid) {
 }
 
 function equipBonus() {
-  const E = { click: 0, archer: 0, mage: 0, turret: 0, cleric: 0, golem: 0, dragon: 0, bounty: 0, gold: 0, res: 0, mana: 0, luck: 0, boss: 0 };
+  const E = { click: 0, archer: 0, mage: 0, turret: 0, cleric: 0, golem: 0, dragon: 0, knight: 0, plague: 0, valkyrie: 0, bounty: 0, gold: 0, res: 0, mana: 0, luck: 0, boss: 0 };
   for (const uid in state.equip) {
     if (!unitActive(uid)) continue; // unrecruited units give nothing
     for (const it of state.equip[uid]) {
       if (!it) continue;
       E[ITEMS[it.t].eff] += effItemValue(it.t, it.tier);
-      if (it.a && ITEMS[it.a]) E[ITEMS[it.a].eff] += effItemValue(it.a, it.tier) * affixFactor();
+      for (const a of affixList(it.a))
+        if (ITEMS[a]) E[ITEMS[a].eff] += effItemValue(a, it.tier) * affixFactor();
     }
   }
   return E;
@@ -198,47 +221,94 @@ function calc() {
     for (const it of state.equip.hero) if (it) heroAura += effItemValue(it.t, it.tier) * auraFactor;
   c.heroAura = heroAura;
   const auraMult = 1 + heroAura / 100;
-  c.enemyHpMult = Math.max(0.6, 1 - heroAura / 200); // enemies spawn weaker, cap -40%
+  let enemyHpMult = Math.max(0.6, 1 - heroAura / 200); // enemies spawn weaker, cap -40%
+  if (hasTree('xspirit2')) enemyHpMult *= 0.9;         // Cold Spots
+  c.enemyHpMult = enemyHpMult;
 
   // bonus applied to every unit's damage (incl. clicks)
   let allUnit = (1 + 0.05 * decree) * (1 + 0.05 * bCount('barracks')) *
     (1 + 0.02 * bUp('barracks_drill')) * (1 + 0.05 * uUp('horn')) *
     (1 + 0.05 * bUp('trade_mercs')) * auraMult;
   allUnit *= 1 + 0.03 * (bCount('armory') + bCount('warcollege'));
+  allUnit *= 1 + 0.03 * bUp('college_officers') + 0.03 * bUp('granary_rations') +
+    0.05 * bUp('bank_bonds') + 0.10 * bUp('wonder_heroes');
   if (hasTree('war6')) allUnit *= 1.25;   // Drill Sergeants
-  if (hasTree('war10')) allUnit *= 1.5;   // Aether Weapons
+  if (hasTree('warg1')) allUnit *= 1.5;   // Gilded Arms
+  if (hasTree('wars1')) allUnit *= 1.5;   // Storm Blades
+  if (hasTree('wara1')) allUnit *= 1.5;   // Aether Weapons
+  if (hasTree('xwar2'))                   // Quartermasters
+    allUnit *= 1 + 0.01 * (bCount('barracks') + bCount('armory') + bCount('warcollege') + bCount('siegeworkshop'));
+  if (hasTree('xwar4')) allUnit *= 1 + Math.min(1, 0.01 * invTotal()); // Gilded Armory
+  if (hasTree('xwar5') && night) allUnit *= 1.3;                      // Thunderhead
+  if (hasTree('xwar6'))                   // Pantheon of War
+    allUnit *= 1 + 0.10 * UNITS.filter(u => state[u.statKey] >= 100).length;
+  if (hasTree('xwar8') && momentum.until > Date.now()) // Momentum
+    allUnit *= 1 + 0.02 * momentum.stacks;
 
-  // SIGIL MASTER MULTIPLIER: final factor on ALL production & bounties
+  // CROWN MASTER MULTIPLIER: final factor on ALL production & bounties
+  // (the Sovereignty branch — scales off Crown Sigils in every form)
   let sigilPct = 0;
-  if (hasTree('pros7')) sigilPct += 0.01;
-  if (hasTree('pros9')) sigilPct += 0.01;
-  if (hasTree('pros12')) sigilPct += 0.02;
-  const sigilMaster = 1 + sigilPct * state.sigilsEver;
+  if (hasTree('crown4')) sigilPct += 0.01;   // Banking Houses
+  if (hasTree('crown7')) sigilPct += 0.01;   // Golden Age
+  if (hasTree('crown10')) sigilPct += 0.02;  // Golden Aeon
+  if (hasTree('crown13')) sigilPct += 0.03;  // Eternal Throne
+  if (hasTree('crown16')) sigilPct += 0.05;  // Apotheosis
+  if (hasTree('crown6')) sigilPct *= 1.25;   // Sigil Polish
+  if (hasTree('crown14')) sigilPct *= 1.5;   // Crown of Crowns
+  let sigilMaster = 1 + sigilPct * state.sigilsEver * (hasTree('xcrown5') ? 1.2 : 1); // Census of Storms
+  const titheCap = hasTree('crown8') ? 2 : 1;                        // Twin Tithes
+  if (hasTree('crown2')) sigilMaster *= 1 + Math.min(1 * titheCap, 0.005 * state.sigils);
+  if (hasTree('crown9')) sigilMaster *= 1 + 0.002 * Math.max(0, state.sigilsEver - state.sigils);
+  if (hasTree('crown18')) sigilMaster *= 2;                          // Sovereign of Ages
+  if (hasTree('xcrown6')) sigilMaster *= 1 + 0.01 * ownedNodeCount(); // Throne of Ages
   c.sigilMaster = sigilMaster;
 
   // global gold multiplier (applies to buildings AND kill bounties)
   const zoneBonus = ZONE_INCOME_BONUS * (state.zone - 1);
   let goldMult = (1 + zoneBonus) *
     (1 + 0.02 * bCount('temple') + 0.03 * bCount('cathedral') + 0.01 * bCount('harbor') +
-      0.02 * bCount('lighthouse') + 0.05 * bCount('bank') + 0.10 * bCount('wonder'));
+      0.02 * bCount('lighthouse') + 0.05 * bCount('bank') + 0.10 * bCount('wonder') +
+      0.01 * bCount('market') + 0.05 * bCount('keep') + 0.01 * bCount('wharf') +
+      0.02 * bCount('tradeport') + 0.02 * bCount('beekeeper') + 0.02 * bCount('groves') +
+      0.02 * bCount('granary'));
   goldMult *= 1 + 0.03 * bUp('temple_favor');
   goldMult *= 1 + 0.04 * bUp('cath_relics');
   goldMult *= 1 + 0.01 * bUp('market_guilds');
   goldMult *= (1 + 0.05 * decree) * (1 + 0.05 * bUp('mint_standard'));
   goldMult *= 1 + DISTRICT_GOLD_BONUS * (state.districts.length - 1);
   goldMult *= 1 + E.gold / 100;
-  if (state.spire && state.spire.crowned) goldMult *= 2; // Crown of the Silver Spire — forever
-  /* era gates & era prosperity nodes */
-  if (hasTree('era2')) goldMult *= 1.25;
-  if (hasTree('era3')) goldMult *= 1.5;
-  if (hasTree('era4')) goldMult *= 2;
+  if (state.spire && state.spire.crowned) goldMult *= hasTree('xspire4') ? 3 : 2; // Crown of the Silver Spire — forever (Gilded Crown: x3)
+  /* era gates (Imperial Decree doubles their bonus part) */
+  const gateBoost = hasTree('crown11') ? 2 : 1;
+  const gateBonus = [0, 0, 0.25, 0.5, 0.75, 1, 1.5]; // by era
+  let gatesOwned = 0;
+  for (let e = 2; e <= 6; e++) if (hasTree('era' + e)) {
+    gatesOwned++;
+    goldMult *= 1 + gateBonus[e] * gateBoost;
+  }
+  /* prosperity & crown gold nodes */
   if (hasTree('pros5')) goldMult *= 1.2;
   if (hasTree('pros8')) goldMult *= 1.4;
-  if (hasTree('pros10')) goldMult *= 1.5;
-  /* day bonus: Shrines of Dawn + Astral Clock */
-  let dayBonus = (DAY_GOLD_BONUS + 0.03 * bCount('shrine')) * (hasTree('mys6') ? 1.5 : 1);
+  if (hasTree('prosi1')) goldMult *= 1.3;   // Caravan Network
+  if (hasTree('prosg1')) goldMult *= 1.5;   // Gold Standard
+  if (hasTree('pross1')) goldMult *= 1.5;   // Storm Markets
+  if (hasTree('prosa1')) goldMult *= 2;     // Aether Economy
+  if (hasTree('prosa2')) goldMult *= 2;     // Infinite Vaults
+  if (hasTree('crown1')) goldMult *= 1 + 0.02 * state.ascensions;  // Royal Ledger
+  if (hasTree('crown12')) goldMult *= 1 + 0.05 * state.ascensions; // Dynasty
+  if (hasTree('crown3')) goldMult *= 1 + 0.15 * gatesOwned;        // Crown Authority
+  if (hasTree('crown5')) goldMult *= 1 + Math.min(1.5 * titheCap, 0.03 * pendingSigils()); // Pending Glory
+  if (hasTree('xcrown1')) goldMult *= 1 + 0.02 * state.districts.length; // Royal Census
+  if (hasTree('xpros4')) goldMult *= 1 + Math.min(1.5, 0.03 * (bCount('mint') + bCount('bank'))); // Counting Houses
+  if (hasTree('xmys6')) goldMult *= 1 + Math.min(1, state.mana / 100000); // Aether Tide
+  if (hasTree('xspirit5') && night) goldMult *= 1.25; // Spirit Lanterns
+  /* day bonus: Shrines of Dawn + Astral Clock + Sun Sigils */
+  let dayBonus = (DAY_GOLD_BONUS + 0.03 * bCount('shrine')) *
+    (hasTree('mys6') ? 1.5 : 1) * (hasTree('mysg2') ? 2 : 1);
   c.dayBonus = dayBonus;
-  if (!night) goldMult *= 1 + dayBonus;
+  /* Long Dusk: the day bonus lingers through the first 60s of night */
+  const duskLinger = hasTree('xmys8') && night && (state.cycleSec % CYCLE_SEC) < DAY_SEC + 60;
+  if (!night || duskLinger) goldMult *= 1 + dayBonus;
   c.goldMult = goldMult;
 
   // per-building production multipliers from building upgrades & synergies
@@ -261,23 +331,43 @@ function calc() {
     timberworks: 1 + 0.20 * bUp('timber_lines'),
     crystalmine: 1 + 0.20 * bUp('crystal_resonance'),
     worldtree: 1 + 0.20 * bUp('tree_blessing'),
+    fishmarket: 1 + 0.20 * bUp('fishmarket_provisions'),
+    beekeeper: 1 + 0.20 * bUp('beekeeper_apiary'),
   };
+  if (hasTree('xpros1')) { // Market Day
+    prodMult.tavern = (prodMult.tavern || 1) * 2;
+    prodMult.market = (prodMult.market || 1) * 2;
+  }
+  if (hasTree('xpros2')) // Caravanserai
+    for (const id of ['market', 'fishmarket', 'harbor', 'tradeport'])
+      prodMult[id] = (prodMult[id] || 1) * 1.75;
   c.prodMult = prodMult;
 
   const prod = { gold: 0, wood: 0, stone: 0, mana: 0 };
   for (const b of BUILDINGS) {
     const n = bCount(b.id);
     if (!n) continue;
-    const m = prodMult[b.id] || 1;
+    let m = prodMult[b.id] || 1;
+    if (hasTree('xind4')) m *= 1 + 0.10 * satTierFor(n); // Boomtowns
+    if (hasTree('xind8') && n >= 100) m *= 2;            // Genesis Engines
     for (const res in b.prod) prod[res] += b.prod[res] * n * m;
   }
   let manaMult = 1;
   if (hasSkill('arcane')) manaMult *= 1.5;
   if (hasTree('mys1')) manaMult *= 1.5;   // Mana Font
+  if (hasTree('mysn1')) manaMult *= 1.5;  // Rune Wards
   if (hasTree('mys4')) manaMult *= 1.5;   // Mana Springs
   if (hasTree('mys7')) manaMult *= 2;     // Leyline Network
   if (hasTree('mys9')) manaMult *= 1.25;  // Lunar Covenant
-  if (hasTree('mys10')) manaMult *= 2;    // Aether Mind
+  if (hasTree('mysg1')) manaMult *= 2;    // Gold-Threaded Robes
+  if (hasTree('myss1')) manaMult *= 2;    // Storm Mana
+  if (hasTree('mysa1')) manaMult *= 2;    // Aether Mind
+  if (hasTree('mysa3')) manaMult *= 3;    // Mana Singularity
+  if (hasTree('xmys1') && night) manaMult *= 1.5;       // Moonlit Font
+  if (hasTree('xmys3')) manaMult *= 1 + 0.01 * state.walls; // Attuned Walls
+  if (hasTree('xmys4'))                   // Scholarly Circle
+    manaMult *= 1 + 0.03 * Object.keys(state.skills).filter(k => state.skills[k]).length;
+  if (hasTree('xmys5')) manaMult *= 1 + 0.03 * (state.zone - 1); // Charged Air
   manaMult *= 1 + E.mana / 100;
   /* Industry branch: wood & stone separately */
   let woodMult = 1 + E.res / 100;
@@ -288,35 +378,62 @@ function calc() {
   if (hasTree('ind5')) woodMult *= 1.5;
   if (hasTree('ind6')) stoneMult *= 1.5;
   if (hasTree('ind8')) { woodMult *= 1.5; stoneMult *= 1.5; }
-  if (hasTree('ind10')) woodMult *= 2;
-  if (hasTree('ind11')) stoneMult *= 2;
+  if (hasTree('indg1')) { woodMult *= 1.75; stoneMult *= 1.75; } // Golden Mills
+  if (hasTree('indg2')) woodMult *= 2;    // Gilded Lumber
+  if (hasTree('indg3')) stoneMult *= 2;   // Marble Quarries
+  if (hasTree('inds2')) woodMult *= 2;    // Lightning Saws
+  if (hasTree('inds3')) stoneMult *= 2;   // Thunder Drills
+  if (hasTree('inda1')) woodMult *= 2;    // Aether Saws
+  if (hasTree('inda2')) stoneMult *= 2;   // Aether Drills
+  if (hasTree('xind3')) {                 // Mule Trains
+    const dm = 1 + 0.05 * state.districts.length;
+    woodMult *= dm; stoneMult *= dm;
+  }
   let goldProd = goldMult * (hasTree('pros2') ? 1.25 : 1);
   if (hasTree('pros4')) goldProd *= 1.3;  // Stone Granaries
   let industrial = hasTree('ind7') ? 1.25 : 1;
-  if (hasTree('ind12')) industrial *= 1.25;
+  if (hasTree('prosg2')) industrial *= 1.25;  // World's Fair
+  if (hasTree('pross3')) industrial *= 1.3;   // Tempest Trade
+  if (hasTree('inds1')) industrial *= 1.25;   // Storm Engines
+  if (hasTree('prosa3')) industrial *= 1.5;   // Economy of Light
+  if (hasTree('inda3')) industrial *= 1.25;   // World Engine
+  if (hasTree('xind2') && night) industrial *= 1.2;  // Night Shifts
+  if (hasTree('xind5'))                       // Automated Looms
+    industrial *= 1 + 0.005 * Object.values(state.bUp).reduce((a, b) => a + b, 0);
+  if (hasTree('xind6')) industrial *= 1 + Math.min(1, 0.25 * bCount('wonder')); // Wonder Engines
+  if (hasTree('xcrown2')) industrial *= 1 + 0.10 * gatesOwned; // Jubilees
+  if (hasTree('auto12')) industrial *= 1.15;  // Brass Foremen
+  if (hasTree('auto18')) industrial *= 1.25;  // The Grand Automaton
   /* per-resource global factors (also used by the shop's per-each display).
      sigilMaster is the FINAL multiplier on everything. */
+  const twBless = (state.tower && state.tower.resMult) || {}; // Tower of Doom blessings (tower.js)
   c.prodFactors = {
     gold: goldProd * auraMult * industrial * sigilMaster,
-    wood: woodMult * auraMult * industrial * sigilMaster,
-    stone: stoneMult * auraMult * industrial * sigilMaster,
-    mana: manaMult * auraMult * industrial * sigilMaster,
+    wood: woodMult * auraMult * industrial * sigilMaster * (twBless.wood || 1),
+    stone: stoneMult * auraMult * industrial * sigilMaster * (twBless.stone || 1),
+    mana: manaMult * auraMult * industrial * sigilMaster * (twBless.mana || 1),
   };
   for (const res of RESOURCES) prod[res] *= c.prodFactors[res];
   c.prod = prod;
 
   // ---- idle DPS per unit ----
   let archerDps = state.archer * 1 * Math.pow(1.15, uUp('longbows')) * (1 + 0.10 * uUp('poison'));
+  archerDps *= Math.pow(1.25, uUp('windlore'));        // Wind Lore training
   archerDps *= 1 + 0.02 * state.walls;                 // wall synergy
   archerDps *= 1 + 0.10 * bUp('tavern_tales');
-  archerDps *= 1 + 0.05 * bCount('kennels');
+  archerDps *= 1 + 0.05 * bCount('kennels') + 0.05 * bCount('lodge');
   archerDps *= 1 + 0.10 * bUp('kennels_alpha') + 0.10 * bUp('lodge_hunters');
+  archerDps *= 1 + 0.05 * bUp('tan_saddles') + 0.05 * bUp('light_signals') + 0.10 * bUp('groves_feasts');
   if (hasSkill('volley')) archerDps *= 2;
+  if (hasSkill('hawk')) archerDps *= 1 + 0.02 * (state.zone - 1);   // Hawk Companions
   if (hasTree('war4')) archerDps *= 2;                 // Crossbows
+  if (hasTree('warg2')) archerDps *= 2;                // Golden Legions
+  if (hasTree('xwar1')) archerDps *= 1 + 0.02 * (state.zone - 1); // Hunting Parties
   archerDps *= (1 + E.archer / 100) * allUnit;
 
   let mageDps = state.mage * 2 * Math.pow(1.25, state.magePower);
   mageDps *= 1 + 0.10 * bCount('magetower') + 0.10 * bCount('academy') + 0.03 * bCount('library') + 0.05 * bCount('monastery');
+  mageDps *= 1 + 0.03 * bCount('manawell') + 0.03 * bCount('scriptorium') + 0.05 * bCount('worldtree') + 0.03 * bCount('crystalmine');
   mageDps *= 1 + 0.05 * bUp('magetower_focus') + 0.05 * bUp('acad_curriculum') + 0.01 * bUp('lib_archives');
   if (hasSkill('fireball')) mageDps *= 2;
   if (hasSkill('chain')) mageDps *= 1.5;
@@ -324,44 +441,104 @@ function calc() {
   if (hasTree('war2')) mageDps *= 1.5;                 // Veteran Mages
   if (hasTree('mys5')) mageDps *= 2;                   // Eternal Flame
   if (hasTree('mys8')) mageDps *= 2;                   // Storm Callers
-  if (hasTree('mys11')) mageDps *= 2;                  // Archmage Ascendant
+  if (hasTree('myss2')) mageDps *= 2;                  // Maelstrom
+  if (hasTree('mysa2')) mageDps *= 2;                  // Archmage Ascendant
+  if (hasTree('xmys2') && night) mageDps *= 1.5;       // Starfall Hours
   mageDps *= (1 + E.mage / 100) * allUnit;
 
   let turretDps = state.turret * 6 * (1 + 0.10 * bCount('smith') + 0.10 * bCount('siegeworkshop'));
+  turretDps *= 1 + Math.min(0.5, 0.01 * bCount('lumber')) + 0.02 * bCount('sawmill') + 0.03 * bCount('timberworks');
   turretDps *= 1 + 0.15 * uUp('bolts');
+  turretDps *= Math.pow(1.25, uUp('siegecraft'));      // Siegecraft training
   if (uUp('twin')) turretDps *= 1.5;
   if (bUp('lumber_war')) turretDps *= 1.15;
   turretDps *= 1 + 0.05 * bUp('smith_forge') + 0.10 * bUp('siege_counter');
+  turretDps *= 1 + 0.10 * bUp('harbor_ballistae') + 0.05 * bUp('light_signals');
   if (hasSkill('ironclad')) turretDps *= 1.5;
+  if (hasSkill('warmachine')) turretDps *= 1 + 0.005 * totalBuildings(); // War Machine
   if (hasTree('war3')) turretDps *= 1.5;               // Siege Doctrine
   if (hasTree('war7')) turretDps *= 2;                 // Cannons
+  if (hasTree('warg2')) turretDps *= 2;                // Golden Legions
   turretDps *= (1 + E.turret / 100) * allUnit;
 
   let clericDps = state.cleric * 60 * Math.pow(1.15, uUp('litanies'));
+  clericDps *= Math.pow(1.25, uUp('hymnal'));          // Deeper Litanies training
   if (uUp('consecration')) clericDps *= 1.5;
   clericDps *= 1 + 0.05 * bCount('cathedral');
-  clericDps *= 1 + 0.10 * bUp('cath_blessings');
+  clericDps *= 1 + 0.10 * bUp('cath_blessings') + 0.10 * bUp('mona_chants') + 0.10 * bUp('shrine_dawn');
   if (hasSkill('warhymn')) clericDps *= 2;
+  if (hasSkill('masshymn'))                            // Mass Hymns
+    clericDps *= 1 + 0.03 * (bCount('temple') + bCount('monastery') + bCount('cathedral') + bCount('shrine'));
   if (hasTree('war8')) clericDps *= 2;                 // Holy Crusade
+  if (hasTree('wars2')) clericDps *= 2;                // Thunder Choir
   clericDps *= (1 + E.cleric / 100) * allUnit;
 
   let golemDps = state.golem * 25 * (1 + 0.10 * bCount('smith') + 0.10 * bCount('siegeworkshop') + 0.10 * bCount('foundry'));
   golemDps *= 1 + 0.15 * uUp('plating');
+  golemDps *= Math.pow(1.25, uUp('attunement'));       // Core Attunement training
   if (uUp('molten')) golemDps *= 1.5;
   golemDps *= 1 + 0.10 * bUp('siege_counter') + 0.10 * bUp('foundry_runes');
+  golemDps *= 1 + 0.10 * bUp('scrip_warglyphs') + 0.05 * bUp('druid_wild');
   if (hasSkill('ironclad')) golemDps *= 1.5;
+  if (hasSkill('stonechoir'))                          // Stone Choir
+    golemDps *= 1 + 0.02 * (bCount('quarry') + bCount('stonecutter') + bCount('deepmine') + bCount('crystalmine'));
+  if (hasTree('wars2')) golemDps *= 2;                 // Thunder Choir
   golemDps *= (1 + E.golem / 100) * allUnit;
 
   let dragonDps = state.dragon * 500 * Math.pow(1.15, uUp('dragonfire'));
+  dragonDps *= Math.pow(1.25, uUp('skymastery'));      // Sky Mastery training
   if (uUp('bond')) dragonDps *= 1.5;
-  dragonDps *= 1 + 0.05 * bCount('academy');
-  dragonDps *= 1 + 0.10 * bUp('acad_roosts');
+  dragonDps *= 1 + 0.05 * bCount('academy') + 0.03 * bCount('druid');
+  dragonDps *= 1 + 0.10 * bUp('acad_roosts') + 0.10 * bUp('obs_charts') +
+    0.05 * bUp('tan_saddles') + 0.05 * bUp('druid_wild');
   if (hasSkill('dragonsoul')) dragonDps *= 1.5;
-  if (hasTree('war11')) dragonDps *= 2;                // Dragon Lords
+  if (hasSkill('wyrmpact') && night) dragonDps *= 2;   // Wyrm Pact
+  if (hasTree('wara2')) dragonDps *= 2;                // Dragon Lords
   dragonDps *= (1 + E.dragon / 100) * allUnit;
 
+  let knightDps = state.knight * 14 * Math.pow(1.15, uUp('lances'));
+  knightDps *= Math.pow(1.25, uUp('barding'));         // Warhorse Barding training
+  if (uUp('charge')) knightDps *= 1.5;
+  knightDps *= 1 + 0.05 * bUp('tan_saddles') + 0.10 * bUp('fishmarket_provisions');
+  knightDps *= 1 + 0.03 * bCount('armory');            // armory synergy
+  knightDps *= 1 + 0.02 * bCount('tannery') + 0.03 * bCount('fishmarket');
+  if (hasSkill('cavalcade')) knightDps *= 2;           // Royal Cavalcade
+  if (hasSkill('lancewall'))                           // Wall of Lances
+    knightDps *= 1 + 0.03 * (bCount('barracks') + bCount('armory') + bCount('warcollege') + bCount('siegeworkshop'));
+  if (hasTree('xwar10')) knightDps *= 2;               // Knightly Orders
+  if (hasTree('xwar12')) knightDps *= 1.75;            // Cavalier Banners
+  if (hasTree('xwar13')) knightDps *= 2;               // The New Legions
+  knightDps *= (1 + E.knight / 100) * allUnit;
+
+  let plagueDps = state.plague * 120 * Math.pow(1.15, uUp('toxins'));
+  plagueDps *= Math.pow(1.25, uUp('miasma'));          // Spreading Miasma training
+  if (uUp('catalyst')) plagueDps *= 1.5;
+  plagueDps *= 1 + 0.05 * bCount('alchemist') + 0.05 * bCount('enchanter');
+  plagueDps *= 1 + 0.10 * bUp('alch_warbrew') + 0.10 * bUp('beekeeper_apiary');
+  if (hasSkill('pandemic')) plagueDps *= 2;            // Pandemic
+  if (hasSkill('corrosion'))                           // Corrosion
+    plagueDps *= 1 + 0.02 * (bCount('alchemist') + bCount('enchanter') + bCount('scriptorium') + bCount('beekeeper') + bCount('druid'));
+  if (hasTree('xmys10')) plagueDps *= 2;               // Plague Covens
+  if (hasTree('xmys11')) plagueDps *= 2;               // Alchemy of War
+  if (hasTree('xwar13')) plagueDps *= 2;               // The New Legions
+  plagueDps *= (1 + E.plague / 100) * allUnit;
+
+  let valkyrieDps = state.valkyrie * 800 * Math.pow(1.15, uUp('glaives'));
+  valkyrieDps *= Math.pow(1.25, uUp('tempest'));       // Tempest Wings training
+  if (uUp('valor')) valkyrieDps *= 1.5;
+  valkyrieDps *= 1 + 0.05 * bCount('observatory') + 0.03 * bCount('cathedral');
+  valkyrieDps *= 1 + 0.10 * bUp('obs_charts') + 0.05 * bUp('light_signals');
+  if (hasSkill('ragnarok')) valkyrieDps *= 1.5;        // Ragnarok
+  if (hasSkill('stormcall') && night) valkyrieDps *= 2; // Stormcall
+  if (hasTree('xwar11')) valkyrieDps *= 2;             // Stormhost
+  if (hasTree('xwar12')) valkyrieDps *= 1.75;          // Cavalier Banners
+  if (hasTree('xwar13')) valkyrieDps *= 2;             // The New Legions
+  valkyrieDps *= (1 + E.valkyrie / 100) * allUnit;
+
   let wallDps = state.walls * 2;
+  wallDps *= 1 + Math.min(0.5, 0.01 * bCount('quarry')) + 0.02 * bCount('stonecutter') + 0.03 * bCount('deepmine');
   wallDps *= 1 + 0.05 * uUp('moat');
+  wallDps *= Math.pow(1.2, uUp('garrison'));           // Garrison Drills training
   if (bUp('quarry_masonry')) wallDps *= 1.25;
   if (hasTree('war3')) wallDps *= 1.5;
   wallDps *= allUnit;
@@ -374,6 +551,9 @@ function calc() {
     if (portalUnitDead('cleric')) clericDps = 0;
     if (portalUnitDead('golem')) golemDps = 0;
     if (portalUnitDead('dragon')) dragonDps = 0;
+    if (portalUnitDead('knight')) knightDps = 0;
+    if (portalUnitDead('plague')) plagueDps = 0;
+    if (portalUnitDead('valkyrie')) valkyrieDps = 0;
     if (portalUnitDead('walls')) wallDps = 0;
   }
 
@@ -383,40 +563,92 @@ function calc() {
   c.clericDps = clericDps;
   c.golemDps = golemDps;
   c.dragonDps = dragonDps;
+  c.knightDps = knightDps;
+  c.plagueDps = plagueDps;
+  c.valkyrieDps = valkyrieDps;
   c.wallDps = wallDps;
-  c.dps = archerDps + mageDps + turretDps + clericDps + golemDps + dragonDps + wallDps;
+  c.dps = archerDps + mageDps + turretDps + clericDps + golemDps + dragonDps +
+    knightDps + plagueDps + valkyrieDps + wallDps;
 
   // click damage
   let click = (1 + state.sword) * Math.pow(2, Math.floor(state.sword / 25));
   if (hasTree('war1')) click *= 2;                     // Sharp Blades
   if (hasTree('war5')) click *= 2;                     // Steel Plate
+  if (hasTree('warg3')) click *= 2;                    // Champion of Gold
   click *= 1 + 0.10 * bUp('tavern_rest');
+  click *= 1 + Math.min(0.5, 0.005 * bCount('farm')) + Math.min(0.5, 0.01 * bCount('tavern')) + 0.03 * bCount('winery');
   click *= 1 + 0.10 * uUp('fury');
-  click *= 1 + 0.10 * bUp('armory_master');
+  click *= Math.pow(1.2, uUp('innerfire'));            // Inner Fire training
+  click *= 1 + 0.10 * bUp('armory_master') + 0.10 * bUp('ench_blades') + 0.10 * bUp('winery_courage');
   click *= (1 + E.click / 100) * allUnit;
   if (hasSkill('meteor')) click += c.dps * 0.10;
-  if (hasTree('war12')) click += c.dps * 0.25;         // Avatar of War
-  if (typeof portalUnitDead === 'function' && portalUnitDead('hero')) click = 1; // slain hero: feeble pokes only
+  if (hasTree('wara3')) click += c.dps * 0.25;         // Avatar of War
+  c.critChance = Math.min(0.6, 0.02 * uUp('crit') + (hasTree('wars3') ? 0.10 : 0) + (hasTree('xwar3') ? 0.05 : 0)); // Iron Resolve
+  c.critMult = hasTree('wars3') ? 4 : 3;               // Eye of the Storm
+
+  // ---- SPIRIT HANDS (the Spirit branch): passive ghost-clicks ----
+  let spiritRate = 0;
+  if (hasTree('spirit1')) {
+    spiritRate = 2;
+    if (hasTree('spirit2')) spiritRate += 1;
+    if (hasTree('spirit4')) spiritRate += 2;
+    if (hasTree('spirit7')) spiritRate += 3;
+    if (hasTree('spiritg1')) spiritRate += 4;
+    if (hasTree('spirits1')) spiritRate += 6;
+    if (hasTree('spirita1')) spiritRate *= 2;          // Legion Eternal
+    if (hasTree('spirit9') && night) spiritRate *= 2;  // Restless Night
+  }
+  let spiritMult = 1;
+  if (hasTree('spirit3')) spiritMult *= 1.5;
+  if (hasTree('spirit6')) spiritMult *= 1.5;
+  if (hasTree('spirit8')) spiritMult *= 2;
+  if (hasTree('spiritg2')) spiritMult *= 2.5;
+  if (hasTree('spirita2')) spiritMult *= 4;
+  if (hasTree('xspirit1')) spiritMult *= 1 + 0.01 * ownedNodeCount(); // Helpful Haunts
+  if (hasTree('xspirit6')) spiritMult *= 1 + 0.03 * state.ascensions; // Eternal Procession
+  c.spiritRate = spiritRate;
+  c.spiritDmg = click * spiritMult + (hasTree('spirits2') ? c.dps * 0.10 : 0); // Spirit Avatar
+  c.spiritCritChance = hasTree('spirit5') ? Math.min(0.75, c.critChance + (hasTree('spirits3') ? 0.15 : 0)) : 0;
+  c.spiritCritMult = hasTree('spiritg3') ? 5 : c.critMult;  // Soul Harvest
+  c.spiritDps = spiritRate * c.spiritDmg * (1 + c.spiritCritChance * (c.spiritCritMult - 1)) *
+    (hasTree('xspirit4') ? 1.15 : 1); // Twin Hauntings
+  if (hasTree('spirita3')) click *= spiritMult;        // One With the Ghosts
+
+  if (typeof portalUnitDead === 'function' && portalUnitDead('hero')) {
+    click = 1; // slain hero: feeble pokes only
+    c.spiritRate = 0; c.spiritDmg = 0; c.spiritDps = 0; // his ghosts mourn with him
+  }
   c.click = click;
-  c.critChance = Math.min(0.5, 0.02 * uUp('crit'));
 
   // kill bounty multiplier (on top of monster base gold)
   let killMult = goldMult * (1 + 0.05 * state.walls) * (1 + 0.03 * uUp('banners') + 0.02 * uUp('moat'));
   killMult *= 1 + 0.05 * bCount('mint');
   if (hasSkill('frost')) killMult *= 1.25;
   if (hasSkill('midas')) killMult *= 1.5;
+  if (hasSkill('kingsbanner')) killMult *= 1 + 0.01 * state.walls; // Banner of Kings
+  if (hasTree('prosg3')) killMult *= 1.5;              // Royal Bounties
+  if (hasTree('xpros3')) killMult *= 1 + 0.03 * (state.zone - 1); // War Profiteers
+  if (hasTree('xpros5')) killMult *= 1 + 0.02 * state.walls;      // Storm Levies
+  if (hasTree('xpros6')) killMult *= 2;                           // Aether Bounties
   killMult *= 1 + E.bounty / 100;
   killMult *= sigilMaster;                             // master multiplier
   c.killMult = killMult;
+  /* Night's Embrace: night bounty bonus +50% stronger */
+  c.nightBountyMult = 1 + (NIGHT_BOUNTY_MULT - 1) * (hasTree('myss3') ? 1.5 : 1);
 
   // item drop chance multiplier
   let dropMult = (1 + E.luck / 100) * auraMult;
   dropMult *= 1 + 0.02 * bCount('observatory');
   if (hasTree('for1')) dropMult *= 1.2;                // Keen Eyes
   if (hasTree('for5')) dropMult *= 1.3;                // Magpie's Instinct
+  if (hasTree('forg3')) dropMult *= 1.4;               // Deep Pockets
+  if (hasTree('xfor4')) dropMult *= 1 + 0.10 * gatesOwned; // Hoard Sense
+  if (hasTree('xcrown3')) dropMult *= 1 + Math.min(0.6, 0.02 * pendingSigils()); // Tribute Fleets
   if (night) {
     let nightMult = hasTree('mys9') ? NIGHT_DROP_MULT * 2 : NIGHT_DROP_MULT;
     if (hasTree('mys6')) nightMult *= 1.5;             // Astral Clock
+    if (hasTree('myss3')) nightMult *= 1.5;            // Night's Embrace
+    if (hasTree('xfor5')) nightMult *= 1.5;            // Lightning Luck
     dropMult *= nightMult;
   }
   c.dropMult = dropMult;
@@ -435,6 +667,9 @@ function unitDpsValue(uid) {
     case 'cleric': return C.clericDps;
     case 'golem': return C.golemDps;
     case 'dragon': return C.dragonDps;
+    case 'knight': return C.knightDps;
+    case 'plague': return C.plagueDps;
+    case 'valkyrie': return C.valkyrieDps;
     default: return C.wallDps;
   }
 }
@@ -448,16 +683,24 @@ function unitUnlocked(u) {
 function costDisc() {
   let disc = hasTree('pros3') ? 0.9 : 1;
   if (hasTree('pros6')) disc *= 0.9;    // Guild Charters
-  if (hasTree('pros11')) disc *= 0.85;  // Philosopher Kings
+  if (hasTree('prosi2')) disc *= 0.9;   // Royal Monopoly
+  if (hasTree('pross2')) disc *= 0.85;  // Philosopher Kings
+  if (hasTree('inda3')) disc *= 0.9;    // World Engine
   return disc;
+}
+
+/* Blueprints: building cost growth eases from x1.15 to x1.14 per owned */
+function costGrowth() {
+  return hasTree('xind7') ? 1.14 : COST_GROWTH;
 }
 
 function buildingCost(b, owned, amount) {
   const disc = costDisc();
+  const g = costGrowth();
   const total = {};
   for (const res in b.cost) {
     let sum = 0;
-    for (let k = 0; k < amount; k++) sum += b.cost[res] * Math.pow(COST_GROWTH, owned + k);
+    for (let k = 0; k < amount; k++) sum += b.cost[res] * Math.pow(g, owned + k);
     total[res] = Math.ceil(sum * disc);
   }
   return total;
@@ -488,16 +731,18 @@ function earnGold(amount) {
 function maxAffordable(b) {
   const owned = bCount(b.id);
   const disc = costDisc();
+  const g = costGrowth();
   const sums = {};
   for (const r in b.cost) sums[r] = 0;
   let n = 0;
-  while (n < 1000) {
+  const lim = hasTree('auto10') ? 5000 : 1000; // Court of Cogs
+  while (n < lim) {
     let ok = true;
     for (const r in b.cost) {
-      if (Math.ceil((sums[r] + b.cost[r] * Math.pow(COST_GROWTH, owned + n)) * disc) > state[r]) { ok = false; break; }
+      if (Math.ceil((sums[r] + b.cost[r] * Math.pow(g, owned + n)) * disc) > state[r]) { ok = false; break; }
     }
     if (!ok) break;
-    for (const r in b.cost) sums[r] += b.cost[r] * Math.pow(COST_GROWTH, owned + n);
+    for (const r in b.cost) sums[r] += b.cost[r] * Math.pow(g, owned + n);
     n++;
   }
   return n;
@@ -523,6 +768,7 @@ function buyBuilding(id) {
   if (!canAfford(cost)) return;
   pay(cost);
   state.buildings[id] = bCount(id) + amt;
+  state.totalBuildingsBought += amt;
   toast(b.name + ' built! (x' + bCount(id) + ')');
   renderCity();
   refreshShop();
@@ -535,52 +781,265 @@ function buyBuildingOne(id) {
   if (!canAfford(cost)) return;
   pay(cost);
   state.buildings[id] = bCount(id) + 1;
+  state.totalBuildingsBought++;
   renderCity();
   invDirty = true; // counts/costs update live — no panel rebuild (no flicker)
 }
 
-function buyBuildingUpgrade(bid, upId) {
+/* buy ONE level of a building upgrade (greedy loops use this) */
+function buyBuildingUpgradeStep(bid, upId) {
   const up = (BUILDING_UPGRADES[bid] || []).find(u => u.id === upId);
   const lvl = bUp(upId);
-  if (lvl >= up.max) return;
+  if (lvl >= up.max || bCount(bid) < 1) return false;
   const cost = ceilCost(up.cost(lvl));
-  if (!canAfford(cost)) return;
+  if (!canAfford(cost)) return false;
   pay(cost);
   state.bUp[upId] = lvl + 1;
-  toast(up.name + ' Lv.' + state.bUp[upId] + '!');
   if (state.bUp[upId] >= up.max) renderCity(); // maybe earn the golden pennant
   invDirty = true; // live updaters handle the rest — no panel rebuild
+  return true;
+}
+
+function buyBuildingUpgrade(bid, upId) {
+  const up = (BUILDING_UPGRADES[bid] || []).find(u => u.id === upId);
+  const batch = subBatch(up.cost, bUp(upId), up.max);
+  if (!batch.n || !canAfford(batch.cost)) return;
+  let n = 0;
+  while (n < batch.n && buyBuildingUpgradeStep(bid, upId)) n++;
+  if (n) toast(up.name + ' Lv.' + bUp(upId) + '!');
 }
 
 function buyUnitMain(unitId) {
   const u = UNITS.find(x => x.id === unitId);
   if (!unitUnlocked(u)) return;
-  const cost = ceilCost(u.main.cost(state[u.statKey]));
-  if (!canAfford(cost)) return;
-  pay(cost);
-  state[u.statKey]++;
+  const mode = state.buyAmount;
+  let want;
+  if (mode === 'max') want = 1000;
+  else if (mode === 'next10') { const rem = state[u.statKey] % 10; want = rem === 0 ? 10 : 10 - rem; }
+  else want = Number(mode) || 1;
+  let bought = 0;
+  while (bought < want) {
+    const cost = ceilCost(u.main.cost(state[u.statKey]));
+    if (!canAfford(cost)) break;
+    pay(cost);
+    state[u.statKey]++;
+    bought++;
+  }
+  if (!bought) return;
+  state.totalUnitsBought += bought;
   if (typeof ambientRebuild === 'function') ambientRebuild(); // patrols reflect the army
   invDirty = true;
+}
+
+/* buy ONE level of a unit sub-upgrade */
+function buyUnitSubStep(unitId, subId) {
+  const u = UNITS.find(x => x.id === unitId);
+  const sub = u.subs.find(s => s.id === subId);
+  const lvl = subLvl(sub);
+  if (lvl >= sub.max) return false;
+  const cost = ceilCost(sub.cost(lvl));
+  if (!canAfford(cost)) return false;
+  pay(cost);
+  if (sub.statKey) state[sub.statKey]++;
+  else state.unitUp[sub.id] = lvl + 1;
+  invDirty = true;
+  return true;
 }
 
 function buyUnitSub(unitId, subId) {
   const u = UNITS.find(x => x.id === unitId);
   const sub = u.subs.find(s => s.id === subId);
-  const lvl = subLvl(sub);
-  if (lvl >= sub.max) return;
-  const cost = ceilCost(sub.cost(lvl));
-  if (!canAfford(cost)) return;
-  pay(cost);
-  if (sub.statKey) state[sub.statKey]++;
-  else state.unitUp[sub.id] = lvl + 1;
-  invDirty = true;
+  const batch = subBatch(sub.cost, subLvl(sub), sub.max);
+  if (!batch.n || !canAfford(batch.cost)) return;
+  let n = 0;
+  while (n < batch.n && buyUnitSubStep(unitId, subId)) n++;
+}
+
+/* ---- BUY ALL: greedy cheapest-first until the coffers run dry ---- */
+
+function buyAllUnitUpgradesFor(unitId) {
+  const u = UNITS.find(x => x.id === unitId);
+  let total = 0, guard = 0;
+  while (guard++ < 300) {
+    let best = null;
+    for (const sub of u.subs) {
+      const lvl = subLvl(sub);
+      if (lvl >= sub.max) continue;
+      const cost = ceilCost(sub.cost(lvl));
+      if (!canAfford(cost)) continue;
+      const s = costScore(cost);
+      if (!best || s < best.s) best = { sid: sub.id, s };
+    }
+    if (!best || !buyUnitSubStep(unitId, best.sid)) break;
+    total++;
+  }
+  toast(total ? u.name + ': bought ' + total + ' upgrade level(s)!' : 'No affordable upgrades.');
+}
+
+function buyAllBuildingUpgradesFor(bid) {
+  const ups = BUILDING_UPGRADES[bid] || [];
+  let total = 0, guard = 0;
+  while (guard++ < 300) {
+    let best = null;
+    for (const up of ups) {
+      const lvl = bUp(up.id);
+      if (lvl >= up.max) continue;
+      const cost = ceilCost(up.cost(lvl));
+      if (!canAfford(cost)) continue;
+      const s = costScore(cost);
+      if (!best || s < best.s) best = { uid: up.id, s };
+    }
+    if (!best || !buyBuildingUpgradeStep(bid, best.uid)) break;
+    total++;
+  }
+  const b = BUILDINGS.find(x => x.id === bid);
+  toast(total ? b.name + ': bought ' + total + ' upgrade level(s)!' : 'No affordable upgrades.');
+}
+
+function buyAllBuildingUpgrades() {
+  let total = 0, guard = 0;
+  while (guard++ < 500) {
+    let best = null;
+    for (const bid in BUILDING_UPGRADES) {
+      if (bCount(bid) < 1) continue;
+      for (const up of BUILDING_UPGRADES[bid]) {
+        const lvl = bUp(up.id);
+        if (lvl >= up.max) continue;
+        const cost = ceilCost(up.cost(lvl));
+        if (!canAfford(cost)) continue;
+        const s = costScore(cost);
+        if (!best || s < best.s) best = { bid, uid: up.id, s };
+      }
+    }
+    if (!best || !buyBuildingUpgradeStep(best.bid, best.uid)) break;
+    total++;
+  }
+  toast(total ? 'ROYAL WORKS: bought ' + total + ' upgrade level(s)!' : 'No affordable building upgrades.');
+  if (rightTab === 'upgr' && !currentDetail) syncRightPanel();
+}
+
+/* ---------------- AUTOMATION (the 8th branch) ----------------
+   Lategame toggles: silent greedy buyers run on a timer.
+   Batches are small so a tick never stalls the frame.           */
+
+function autoToggleBtn(flag, nodeId, label, title) {
+  if (!hasTree(nodeId)) return null;
+  const btn = document.createElement('button');
+  const paint = () => {
+    btn.className = 'menu-btn auto-toggle' + (state.autoOn[flag] ? ' on' : '');
+    btn.textContent = (state.autoOn[flag] ? '⚙ ON · ' : '⚙ OFF · ') + label;
+  };
+  btn.title = title;
+  btn.onclick = () => { state.autoOn[flag] = !state.autoOn[flag]; paint(); save(); };
+  paint();
+  return btn;
+}
+
+function autoBuyBuildingUpgrades() {
+  let guard = 0;
+  while (guard++ < 40) {
+    let best = null;
+    for (const bid in BUILDING_UPGRADES) {
+      if (bCount(bid) < 1) continue;
+      for (const up of BUILDING_UPGRADES[bid]) {
+        const lvl = bUp(up.id);
+        if (lvl >= up.max) continue;
+        const cost = ceilCost(up.cost(lvl));
+        if (!canAfford(cost)) continue;
+        const s = costScore(cost);
+        if (!best || s < best.s) best = { bid, uid: up.id, s };
+      }
+    }
+    if (!best || !buyBuildingUpgradeStep(best.bid, best.uid)) break;
+  }
+}
+
+function autoBuyUnitUpgrades() {
+  let guard = 0;
+  while (guard++ < 40) {
+    let best = null;
+    for (const u of UNITS) {
+      if (!unitUnlocked(u)) continue;
+      if (u.id !== 'hero' && state[u.statKey] < 1) continue;
+      for (const sub of u.subs) {
+        const lvl = subLvl(sub);
+        if (lvl >= sub.max) continue;
+        const cost = ceilCost(sub.cost(lvl));
+        if (!canAfford(cost)) continue;
+        const s = costScore(cost);
+        if (!best || s < best.s) best = { uid: u.id, sid: sub.id, s };
+      }
+    }
+    if (!best || !buyUnitSubStep(best.uid, best.sid)) break;
+  }
+}
+
+function autoBuyBuildings() {
+  let bought = 0;
+  for (let i = 0; i < 5; i++) {
+    let best = null;
+    for (const b of BUILDINGS) {
+      if (!districtOwnedFor(b.id)) continue;
+      const cost = buildingCost(b, bCount(b.id), 1);
+      if (!canAfford(cost)) continue;
+      const s = costScore(cost);
+      if (!best || s < best.s) best = { b, cost, s };
+    }
+    if (!best) break;
+    pay(best.cost);
+    state.buildings[best.b.id] = bCount(best.b.id) + 1;
+    state.totalBuildingsBought++;
+    bought++;
+  }
+  if (bought) { renderCity(); invDirty = true; }
+}
+
+function autoLearnSkills() {
+  for (const s of SKILLS) {
+    if (hasSkill(s.id)) continue;
+    if (canAfford({ mana: Math.ceil(s.cost.mana * skillCostMult()) })) buySkill(s.id);
+  }
+}
+
+let autoAcc = 0, autoRuns = 0;
+function runAutomations(dt) {
+  const a = state.autoOn;
+  if (!a) return;
+  autoAcc += dt;
+  const period = hasTree('auto18') ? 1 : 5; // the Grand Automaton never rests
+  if (autoAcc < period) return;
+  autoAcc = 0;
+  autoRuns++;
+  if (a.bup && hasTree('auto13')) autoBuyBuildingUpgrades();
+  if (a.uup && hasTree('auto14')) autoBuyUnitUpgrades();
+  if (a.build && hasTree('auto15')) autoBuyBuildings();
+  if (a.skill && hasTree('auto16')) autoLearnSkills();
+  if (a.forge && hasTree('auto17') && autoRuns % 2 === 0) forgeAll(true);
+}
+
+/* Animated Armory: a dropped item slips into the first empty fitting slot */
+function autoEquipDrop(t, tier, a) {
+  if (!hasTree('auto9')) return;
+  const units = ITEMS[t].units || UNITS.map(u => u.id);
+  for (const uid of units) {
+    if (!unitActive(uid) || !state.equip[uid]) continue;
+    const i = state.equip[uid].indexOf(null);
+    if (i === -1) continue;
+    invAdd(t, tier, -1, a);
+    state.equip[uid][i] = { t, tier, a: a || null };
+    toast('AUTO-EQUIP: ' + itemName(t, tier, a) + ' → ' + UNITS.find(u => u.id === uid).name);
+    return;
+  }
+}
+
+function skillCostMult() {
+  return (hasTree('mys2') ? 0.5 : 1) * (hasTree('mysg3') ? 0.5 : 1);
 }
 
 function buySkill(id) {
   const s = SKILLS.find(x => x.id === id);
   if (hasSkill(id)) return;
-  const mult = hasTree('mys2') ? 0.5 : 1;
-  const cost = { mana: Math.ceil(s.cost.mana * mult) };
+  const cost = { mana: Math.ceil(s.cost.mana * skillCostMult()) };
   if (!canAfford(cost)) return;
   pay(cost);
   state.skills[id] = true;
@@ -616,10 +1075,13 @@ function invTotal() {
 function rollDrop() {
   const types = Object.keys(ITEMS);
   const t = types[Math.floor(Math.random() * types.length)];
+  let tier = 1;
   const upChance = hasTree('for9') ? 0.5 : hasTree('for4') ? 0.25 : 0;
-  const tier = Math.random() < upChance ? 2 : 1;
+  if (Math.random() < upChance) tier += 1;
+  if (hasTree('fors1') && Math.random() < 0.2) tier += 2;  // Storm Salvage
+  if (hasTree('fora3')) tier += 1;                         // Aether Reliquary
   let a = null;
-  const affixChance = hasTree('for10') ? 1 : hasTree('for7') ? 0.5 : 0;
+  const affixChance = hasTree('fora1') ? 1 : hasTree('for7') ? 0.5 : 0;
   if (Math.random() < affixChance) {
     const others = types.filter(x => x !== t);
     a = others[Math.floor(Math.random() * others.length)];
@@ -633,11 +1095,13 @@ function dropItem(isBoss) {
   state.stats.itemsFound++;
   toast('LOOT: ' + itemName(d.t, d.tier, d.a) + (isBoss ? ' (boss)' : '') + '!');
   spawnFloater('ITEM!', 'item');
-  if (hasTree('for11') && Math.random() < 0.25) {     // Twin Drops
+  autoEquipDrop(d.t, d.tier, d.a); // Animated Armory
+  if (hasTree('fors2') && Math.random() < 0.25) {     // Twin Drops
     const d2 = rollDrop();
     invAdd(d2.t, d2.tier, 1, d2.a);
     state.stats.itemsFound++;
     toast('TWIN DROP: ' + itemName(d2.t, d2.tier, d2.a) + '!');
+    autoEquipDrop(d2.t, d2.tier, d2.a);
   }
 }
 
@@ -647,6 +1111,41 @@ function combineItem(t, tier, a) {
   invAdd(t, tier + 1, 1, a);
   state.stats.itemsCombined++;
   toast('Forged: ' + itemName(t, tier + 1, a) + '!');
+  rebuildDetail();
+}
+
+/* AFFIX FUSION (Ages Tree: Affix Fusion node) — two same-type same-tier
+   items with DIFFERENT single affixes fuse into ONE carrying both. */
+function fuseItems(t, tier, a1, a2) {
+  if (!hasTree('forg2')) return;
+  if (a1 === a2 || invCount(t, tier, a1) < 1 || invCount(t, tier, a2) < 1) return;
+  invAdd(t, tier, -1, a1);
+  invAdd(t, tier, -1, a2);
+  const fused = affixKey([...affixList(a1), ...affixList(a2)]);
+  invAdd(t, tier, 1, fused);
+  state.stats.itemsCombined++;
+  toast('FUSED: ' + itemName(t, tier, fused) + '!');
+  fuseSel = null;
+  rebuildDetail();
+}
+
+/* cross-forge: a double-affix item + a matching single-affix item of the
+   same type & tier forge UP a tier — the 3-effect loadout survives. */
+function crossForgePartner(t, tier, a) {
+  const pair = affixList(a);
+  if (pair.length !== 2) return null;
+  for (const sub of pair) if (invCount(t, tier, sub) > 0) return sub;
+  return null;
+}
+
+function crossForge(t, tier, a) {
+  const partner = crossForgePartner(t, tier, a);
+  if (!partner || invCount(t, tier, a) < 1) return;
+  invAdd(t, tier, -1, a);
+  invAdd(t, tier, -1, partner);
+  invAdd(t, tier + 1, 1, a);
+  state.stats.itemsCombined++;
+  toast('Forged: ' + itemName(t, tier + 1, a) + ' (mixed pair)!');
   rebuildDetail();
 }
 
@@ -678,7 +1177,7 @@ function spawnMonster() {
   const m = monsterFor(state.zone, state.killIdx);
   if (isNight()) {
     m.hp = Math.ceil(m.hp * NIGHT_HP_MULT);
-    m.gold *= NIGHT_BOUNTY_MULT;
+    m.gold *= (C && C.nightBountyMult) || NIGHT_BOUNTY_MULT;
     m.night = true;
   }
   if (C && C.enemyHpMult < 1) m.hp = Math.ceil(m.hp * C.enemyHpMult); // hero aura
@@ -693,6 +1192,8 @@ function damageMonster(dmg, fromClick) {
   const m = state.monster;
   if (!m) return;
   m.hp -= dmg;
+  /* Executioner: non-boss monsters below 15% HP are slain outright */
+  if (hasTree('xwar9') && !m.isBoss && m.hp > 0 && m.hp < m.maxHp * 0.15) m.hp = 0;
   if (fromClick) {
     const area = $('monster-area');
     area.classList.remove('hit');
@@ -702,17 +1203,38 @@ function damageMonster(dmg, fromClick) {
   if (m.hp <= 0) killMonster();
 }
 
+/* Momentum (xwar8): kill streak buff, runtime only */
+const momentum = { stacks: 0, until: 0 };
+let overkillDepth = 0;
+
 function killMonster() {
   const m = state.monster;
+  const overflow = hasTree('xwar7') ? -m.hp : 0; // Overkill: m.hp is the negative remainder
+  if (hasTree('xwar8')) {                        // Momentum
+    if (Date.now() > momentum.until) momentum.stacks = 0;
+    momentum.stacks = Math.min(25, momentum.stacks + 1);
+    momentum.until = Date.now() + 10000;
+  }
   let bounty = m.gold * C.killMult;
   if (m.isBoss) bounty *= 1 + (C.equip.boss || 0) / 100;
+  if (m.isBoss && hasTree('xfor1')) bounty *= 1.5; // Giantslayer Purse
   earnGold(bounty);
   state.totalKills++;
   if (m.isBoss) state.stats.bossKills++;
   spawnFloater('+' + fmt(bounty) + ' gold', 'gold');
 
   let base = (m.isBoss ? BOSS_DROP_CHANCE * (hasTree('for6') ? 2 : 1) : DROP_CHANCE) + (bUp('alch_phil') ? 0.005 : 0);
-  if (Math.random() < Math.min(0.75, base * C.dropMult)) dropItem(m.isBoss);
+  let dropped = false;
+  if (m.isBoss && hasTree('xfor3')) dropped = true; // Trophy Cases: bosses always drop
+  else if (Math.random() < Math.min(0.75, base * C.dropMult)) dropped = true;
+  if (hasTree('xfor7') && !dropped) {              // Pity of the Gods
+    state.dryKills = (state.dryKills || 0) + 1;
+    if (state.dryKills >= 30) dropped = true;
+  }
+  if (dropped) {
+    state.dryKills = 0;
+    dropItem(m.isBoss);
+  }
 
   state.killIdx++;
   if (state.killIdx > KILLS_PER_ZONE) {
@@ -722,25 +1244,41 @@ function killMonster() {
     toast('Zone ' + state.zone + ' — ' + zoneName(state.zone) + '! City income +2%');
   }
   spawnMonster();
+  /* Overkill: the excess blow lands on the freshly spawned monster
+     (depth-capped so one huge hit can't stall the frame) */
+  if (overflow > 0 && overkillDepth < 30) {
+    overkillDepth++;
+    damageMonster(overflow, false);
+    overkillDepth--;
+  }
 }
 
 function onMonsterClick() {
   state.stats.clicks++;
   let dmg = C.click;
   if (Math.random() < C.critChance) {
-    dmg *= 3;
+    dmg *= C.critMult;
     state.stats.crits++;
     spawnFloater('CRIT -' + fmt(dmg), 'crit');
   } else {
     spawnFloater('-' + fmt(dmg), 'dmg');
   }
+  /* Golden Touch: clicks plunder gold at the monster's bounty rate */
+  const m = state.monster;
+  if (hasTree('xpros7') && m && m.maxHp > 0)
+    earnGold(Math.min(dmg, Math.max(0, m.hp)) * 0.10 * (m.gold / m.maxHp) * C.killMult);
   damageMonster(dmg, true);
+  if (hasSkill('echo') && Math.random() < 0.2) {       // Echo Strike
+    spawnFloater('ECHO -' + fmt(dmg), 'crit');
+    damageMonster(dmg, false);
+  }
 }
 
 /* ---------------- ascension ---------------- */
 
 function pendingSigils() {
-  return Math.max(0, sigilsFromLifetime(state.lifetimeGold) - state.sigilsEver);
+  const lifetime = state.lifetimeGold * (hasTree('crown15') ? 1.25 : 1); // Auric Memory
+  return Math.max(0, sigilsFromLifetime(lifetime) - state.sigilsEver);
 }
 
 function ascend() {
@@ -752,19 +1290,30 @@ function ascend() {
   state.sigilsEver += gain;
   state.ascensions++;
 
+  /* Coronation Largesse: bonus Sigils per gate — spendable, but they don't
+     count as "earned" (that would eat into future pending Sigils) */
+  let largesse = 0;
+  if (hasTree('xcrown7')) {
+    for (let e = 2; e <= 6; e++) if (hasTree('era' + e)) largesse++;
+    state.sigils += largesse;
+    state.bonusSigils = (state.bonusSigils || 0) + largesse;
+  }
+
   const keep = {
     lifetimeGold: state.lifetimeGold, highestZone: state.highestZone, totalKills: state.totalKills,
     sigils: state.sigils, sigilsEver: state.sigilsEver, ascensions: state.ascensions,
+    bonusSigils: state.bonusSigils || 0,
     tree: state.tree, inv: state.inv, equip: state.equip, stats: state.stats,
-    buyAmount: state.buyAmount, lastSave: Date.now(),
+    buyAmount: state.buyAmount, autoOn: state.autoOn, lastSave: Date.now(),
     /* Rift Portal: stages, cards and deaths reset — permanent
        upgrades (elixirs, satchel slots) and supplies are kept */
     portal: { ...(state.portal || {}), stage: 0, cards: [], deadUntil: {}, team: [], flaskArmed: false },
-    /* Tower of Doom: floors reset, lifetime best kept */
-    tower: { ...(state.tower || {}), floor: 0 },
+    /* Tower of Doom: NOTHING resets — the climb is once per save */
+    tower: state.tower,
     /* Silver Spire: NOTHING resets — the climb (and the Crown) are forever */
     spire: state.spire,
   };
+  if (hasTree('crown17')) keep.gold = state.gold * 0.01; // The Crown Remembers
   state = ensureShape({ ...defaultRunState(), ...keep });
   applyTreeStarts();
 
@@ -777,7 +1326,8 @@ function ascend() {
   closeDetail();
   closePrestige();
   invDirty = true;
-  toast('Ascension ' + state.ascensions + '! +' + gain + ' Crown Sigils');
+  toast('Ascension ' + state.ascensions + '! +' + gain + ' Crown Sigils' +
+    (largesse ? ' (+' + largesse + ' Coronation bonus)' : ''));
   save();
 }
 
@@ -787,6 +1337,12 @@ function applyTreeStarts() {
     state.buildings.farm = (state.buildings.farm || 0) + 5;
     state.buildings.lumber = (state.buildings.lumber || 0) + 2;
     state.buildings.quarry = (state.buildings.quarry || 0) + 2;
+  }
+  if (hasTree('xind1')) { state.wood += 250; state.stone += 250; } // Stockpiles
+  if (hasTree('xcrown4') && state.zone < 5) { // Regent's Writ
+    state.zone = 5;
+    state.killIdx = 1;
+    if (state.highestZone < 5) state.highestZone = 5;
   }
 }
 
@@ -803,6 +1359,21 @@ function applyNodeInstant(id) {
     toast('Royal Charter: 5 Farms, 2 Lumber Mills and 2 Quarries granted!');
     renderCity();
   }
+  if (id === 'xind1') {
+    state.wood += 250; state.stone += 250;
+    toast('Stockpiles: +250 Wood, +250 Stone!');
+  }
+  if (id === 'xfor6') {
+    state.equip.hero.push(null);
+    toast('Reliquary Straps: the Hero can carry one more item!');
+  }
+  /* Automation unlocks change buttons all over the UI — rebuild it */
+  if (id.startsWith('auto')) {
+    buildShop();
+    buildUnitCards();
+    syncRightPanel();
+    refreshAmtLocks();
+  }
 }
 
 function ownedNodeCount() {
@@ -813,9 +1384,15 @@ function eraUnlocked(era) {
   return era === 1 || hasTree('era' + era);
 }
 
+/* a node's requirements as a list (requires may be an id or an array) */
+function nodeReqs(node) {
+  if (!node.requires) return [];
+  return Array.isArray(node.requires) ? node.requires : [node.requires];
+}
+
 function nodeAvailable(node) {
   if (hasTree(node.id)) return false;
-  if (node.requires && !hasTree(node.requires)) return false;
+  if (nodeReqs(node).some(r => !hasTree(r))) return false;
   if (node.gate) {
     if (ownedNodeCount() < node.needNodes) return false;
   } else if (!eraUnlocked(node.era)) {
@@ -861,11 +1438,13 @@ function load() {
 function offlineProgress() {
   const elapsed = (Date.now() - (state.lastSave || Date.now())) / 1000;
   if (elapsed < 60) return;
-  const secs = Math.min(elapsed, 8 * 3600); // cap 8h
+  const capH = hasTree('auto8') ? 16 : 8;            // Tireless Scribes
+  const rate = hasTree('auto7') ? 0.75 : 0.5;        // Counting Engines
+  const secs = Math.min(elapsed, capH * 3600);
   const c = calc();
   const gains = [];
   for (const res of RESOURCES) {
-    const amt = c.prod[res] * secs * 0.5; // offline at 50% rate
+    const amt = c.prod[res] * secs * rate;
     if (amt <= 0) continue;
     if (res === 'gold') earnGold(amt); else state[res] += amt;
     gains.push(fmt(amt) + ' ' + RES_META[res].name);
@@ -927,11 +1506,107 @@ function toast(text) {
 /* ---------------- UI: cost line ---------------- */
 
 function costHtml(cost) {
-  return Object.entries(cost).map(([res, amt]) => {
+  const parts = Object.entries(cost).map(([res, amt]) => {
     const ok = state[res] >= amt;
     return '<span class="cost-res ' + (ok ? 'ok' : 'no') + '" style="--rc:' + RES_META[res].color + '">' +
       fmt(amt) + ' ' + RES_META[res].name + '</span>';
-  }).join(' ');
+  });
+  /* multi-resource costs read better one per line */
+  return parts.join(parts.length > 1 ? '<br>' : ' ');
+}
+
+/* ---------------- buy amount (shared by shop, units & details) ---------------- */
+
+/* buy amounts beyond x1 are unlocked by the Automation branch */
+function amtUnlocked(v) {
+  if (String(v) === '1') return true;
+  if (String(v) === '10') return hasTree('auto1');
+  return hasTree('auto2'); // 100 / max / next10
+}
+
+function setBuyAmount(v) {
+  if (!amtUnlocked(v)) return;
+  state.buyAmount = isNaN(Number(v)) ? v : Number(v);
+  for (const b of document.querySelectorAll('.amt-btn'))
+    b.classList.toggle('active', String(state.buyAmount) === b.dataset.amt);
+  refreshShop();
+}
+
+/* apply Automation-branch locks to every buy-amount button in the DOM
+   (covers the static #amt-toggle strip in the building shop too) */
+function refreshAmtLocks() {
+  for (const btn of document.querySelectorAll('.amt-btn')) {
+    if (!btn.dataset.label) btn.dataset.label = btn.textContent.replace('🔒', '');
+    const locked = !amtUnlocked(btn.dataset.amt);
+    btn.disabled = locked;
+    btn.textContent = (locked ? '🔒' : '') + btn.dataset.label;
+    btn.title = locked
+      ? 'Unlock in the Ascension tree — Automation branch (' +
+        (btn.dataset.amt === '10' ? 'Buying Ledgers' : 'Procurement Office') + ').'
+      : (btn.dataset.amt === 'next10' ? 'Round up to the next multiple of 10' : '');
+  }
+}
+
+/* a compact x1/x10/x100/MAX strip, used in the left panel and detail pages */
+function makeAmtToggle() {
+  const box = document.createElement('div');
+  box.className = 'amt-inline';
+  for (const v of ['1', '10', '100', 'max', 'next10']) {
+    const btn = document.createElement('button');
+    btn.className = 'amt-btn';
+    btn.dataset.amt = v;
+    const label = v === 'max' ? 'MAX' : v === 'next10' ? '⌖10' : 'x' + v;
+    if (amtUnlocked(v)) {
+      btn.textContent = label;
+      if (v === 'next10') btn.title = 'Round up to the next multiple of 10';
+      btn.onclick = () => setBuyAmount(v);
+      btn.classList.toggle('active', String(state.buyAmount) === v);
+    } else {
+      btn.textContent = '🔒' + label;
+      btn.disabled = true;
+      btn.title = 'Unlock in the Ascension tree — Automation branch (' +
+        (v === '10' ? 'Buying Ledgers' : 'Procurement Office') + ').';
+    }
+    box.appendChild(btn);
+  }
+  return box;
+}
+
+/* how many levels of a leveled upgrade to buy at the current mode, and
+   the summed cost. costFn(level) -> cost obj; respects maxLvl & wallet for MAX */
+function subBatch(costFn, lvl, maxLvl) {
+  const mode = state.buyAmount;
+  let want;
+  if (mode === 'max') want = 200;
+  else if (mode === 'next10') { const rem = lvl % 10; want = rem === 0 ? 10 : 10 - rem; }
+  else want = Number(mode) || 1;
+  want = Math.min(want, (isFinite(maxLvl) ? maxLvl : Infinity) - lvl);
+  if (want <= 0) return { n: 0, cost: null };
+  const total = {};
+  const left = { ...state };
+  let n = 0;
+  for (let k = 0; k < want; k++) {
+    const c = ceilCost(costFn(lvl + k));
+    if (mode === 'max') {
+      let ok = true;
+      for (const r in c) if ((left[r] || 0) < c[r]) { ok = false; break; }
+      if (!ok) break;
+      for (const r in c) left[r] -= c[r];
+    }
+    for (const r in c) total[r] = (total[r] || 0) + c[r];
+    n++;
+  }
+  if (mode === 'max' && n === 0) { // can't afford any: show the next single level
+    return { n: 1, cost: ceilCost(costFn(lvl)) };
+  }
+  return { n, cost: total };
+}
+
+/* "how big a bite out of my wallet" score — used to sort & greedy-buy upgrades */
+function costScore(cost) {
+  let s = 0;
+  for (const r in cost) s += cost[r] / Math.max(1, state[r]);
+  return s;
 }
 
 /* ============================================================
@@ -1047,15 +1722,18 @@ function initMapView() {
    RIGHT PANEL — tabs (BUILD / BAG) + detail views
    ============================================================ */
 
-let rightTab = 'build';          // 'build' | 'bag'
+let rightTab = 'build';          // 'build' | 'upgr' | 'bag'
 let currentDetail = null;        // {kind:'unit'|'building', id}
 let picker = null;               // {unitId, slot} equip picker open in unit detail
+let pickerMaxOnly = false;       // picker filter: only the highest tier of each kind
+let fuseSel = null;              // {t,tier,a} item armed for Affix Fusion in the bag
 let viewUpdaters = [];           // per-tick updaters for the open detail/bag
 
 function setRightTab(tab) {
   rightTab = tab;
   currentDetail = null;
   picker = null;
+  fuseSel = null;
   syncRightPanel();
 }
 
@@ -1097,11 +1775,14 @@ function rebuildDetail() {
 function syncRightPanel() {
   viewUpdaters = [];
   const showShop = !currentDetail && rightTab === 'build';
+  const showUpgr = !currentDetail && rightTab === 'upgr';
   const showBag = !currentDetail && rightTab === 'bag';
   $('view-shop').classList.toggle('hidden', !showShop);
+  $('view-upgr').classList.toggle('hidden', !showUpgr);
   $('view-bag').classList.toggle('hidden', !showBag);
   $('view-detail').classList.toggle('hidden', !currentDetail);
   $('tab-build').classList.toggle('active', rightTab === 'build' && !currentDetail);
+  $('tab-upgr').classList.toggle('active', rightTab === 'upgr' && !currentDetail);
   $('tab-bag').classList.toggle('active', rightTab === 'bag' && !currentDetail);
 
   if (currentDetail) {
@@ -1112,8 +1793,76 @@ function syncRightPanel() {
   } else if (showBag) {
     renderBag();
     $('right-title').textContent = 'INVENTORY';
+  } else if (showUpgr) {
+    renderUpgradesTab();
+    $('right-title').textContent = 'ROYAL WORKS';
   } else {
     $('right-title').textContent = 'ROYAL BUILDER';
+  }
+}
+
+/* ---------------- UPGRADES tab: every building upgrade, cheapest first ---------------- */
+
+function renderUpgradesTab() {
+  const list = $('upgr-list');
+  list.innerHTML = '';
+
+  const actions = document.createElement('div');
+  actions.className = 'bag-actions';
+  const allBtn = document.createElement('button');
+  allBtn.className = 'menu-btn';
+  if (hasTree('auto3')) {
+    allBtn.textContent = '💰 BUY AS MUCH AS POSSIBLE';
+    allBtn.title = 'Buy the cheapest available upgrades over and over until the resources run out';
+    allBtn.onclick = buyAllBuildingUpgrades;
+  } else {
+    allBtn.textContent = '🔒 BUY AS MUCH AS POSSIBLE';
+    allBtn.title = 'Unlock in the Ascension tree — Automation branch (Steward of Works).';
+    allBtn.disabled = true;
+  }
+  actions.appendChild(allBtn);
+  /* automation toggles (Age of Storms/Aether nodes) */
+  for (const t of [
+    ['bup', 'auto13', 'AUTO UPGRADES', 'The Brass Steward buys building upgrades for you.'],
+    ['uup', 'auto14', 'AUTO UNITS', 'The Iron Quartermaster buys unit upgrades for you.'],
+    ['build', 'auto15', 'AUTO BUILD', 'The Clockwork Architect builds the cheapest buildings for you.'],
+    ['skill', 'auto16', 'AUTO SKILLS', 'The Arcane Vizier learns affordable Arcane Skills for you.'],
+  ]) {
+    const btn = autoToggleBtn(t[0], t[1], t[2], t[3]);
+    if (btn) actions.appendChild(btn);
+  }
+  list.appendChild(actions);
+
+  /* every upgrade of every built building, sorted by how affordable it is */
+  const entries = [];
+  for (const bid in BUILDING_UPGRADES) {
+    const b = BUILDINGS.find(x => x.id === bid);
+    for (const up of BUILDING_UPGRADES[bid]) {
+      if (bUp(up.id) >= up.max) continue;
+      entries.push({ bid, b, up, score: bCount(bid) < 1 ? Infinity : costScore(ceilCost(up.cost(bUp(up.id)))) });
+    }
+  }
+  entries.sort((a, b) => a.score - b.score);
+
+  if (!entries.length) {
+    const empty = document.createElement('div');
+    empty.className = 'picker-empty';
+    empty.textContent = 'Every single upgrade is maxed. The Royal Works stand idle in awe.';
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const e of entries.slice(0, 60)) {
+    const locked = bCount(e.bid) < 1;
+    upgradeRow(list, {
+      name: e.up.name + ' <span class="upgr-bname">· ' + e.b.name + '</span>',
+      info: e.up.info + (locked ? ' <span class="lock-note">— build a ' + e.b.name + ' first</span>' : ''),
+      lvlText: () => e.up.max === 1 ? '' : 'Lv.' + bUp(e.up.id) + '/' + e.up.max,
+      cost: () => bUp(e.up.id) >= e.up.max ? null : ceilCost(e.up.cost(bUp(e.up.id))),
+      onBuy: () => { buyBuildingUpgradeStep(e.bid, e.up.id) && toast(e.up.name + ' Lv.' + bUp(e.up.id) + '!'); },
+      disabled: () => bCount(e.bid) < 1,
+      doneText: e.up.max === 1 ? 'BUILT' : 'MAX',
+    });
   }
 }
 
@@ -1143,7 +1892,7 @@ function upgradeRow(parent, opts) {
       row.classList.remove('afford');
       return;
     }
-    const html = costHtml(cost);
+    const html = (opts.costPrefix ? opts.costPrefix() : '') + costHtml(cost);
     if (cache.cost !== html) { cache.cost = html; costEl.innerHTML = html; }
     const ok = canAfford(cost) && !(opts.disabled && opts.disabled());
     if (row.disabled !== !ok) row.disabled = !ok;
@@ -1180,9 +1929,14 @@ function buildUnitDetail(unitId) {
     if (u.id === 'hero') {
       lines.push(['Blade level', lvl]);
       lines.push(['Click damage', fmt(C.click)]);
-      lines.push(['Crit chance', Math.round(C.critChance * 100) + '% (x3 dmg)']);
+      lines.push(['Crit chance', Math.round(C.critChance * 100) + '% (x' + C.critMult + ' dmg)']);
       lines.push(['Leadership aura', '+' + C.heroAura.toFixed(1) + '% units, income & drops']);
       lines.push(['Enemy HP', '-' + Math.round((1 - C.enemyHpMult) * 100) + '% on spawn']);
+      if (C.spiritRate > 0) {
+        lines.push(['Spirit Hands', C.spiritRate + ' clicks/s · ' + fmt(C.spiritDmg) + ' each']);
+        const share = C.spiritDps / Math.max(1e-9, C.dps + C.spiritDps) * 100;
+        lines.push(['Spirit DPS', fmt(C.spiritDps) + ' (' + share.toFixed(1) + '% of all damage)']);
+      }
     } else if (u.id === 'archer') {
       lines.push(['Archers', lvl]);
       lines.push(['Archer DPS', fmt(C.archerDps)]);
@@ -1207,6 +1961,18 @@ function buildUnitDetail(unitId) {
       lines.push(['Golem level', lvl]);
       lines.push(['Golem DPS', fmt(C.golemDps)]);
       lines.push(['Blacksmith bonus', '+' + (bCount('smith') * 10) + '%']);
+    } else if (u.id === 'knight') {
+      lines.push(['Knights', lvl]);
+      lines.push(['Cavalry DPS', fmt(C.knightDps)]);
+      lines.push(['Saddle bonus', '+' + (bUp('tan_saddles') * 5 + bUp('fishmarket_provisions') * 10) + '%']);
+    } else if (u.id === 'plague') {
+      lines.push(['Alchemists', lvl]);
+      lines.push(['Toxin DPS', fmt(C.plagueDps)]);
+      lines.push(['Alchemy bonus', '+' + ((bCount('alchemist') + bCount('enchanter')) * 5) + '%']);
+    } else if (u.id === 'valkyrie') {
+      lines.push(['Valkyries', lvl]);
+      lines.push(['Storm DPS', fmt(C.valkyrieDps)]);
+      lines.push(['Observatory bonus', '+' + (bCount('observatory') * 5) + '%']);
     } else {
       lines.push(['Wall level', lvl]);
       lines.push(['Wall DPS', fmt(C.wallDps)]);
@@ -1215,32 +1981,48 @@ function buildUnitDetail(unitId) {
     statsEl.innerHTML = lines.map(l => '<div class="stat-row"><span>' + l[0] + '</span><b>' + l[1] + '</b></div>').join('');
   });
 
-  // main upgrade
+  // main upgrade (respects the buy-amount toggle)
   sectionTitle(box, 'UPGRADES');
+  box.appendChild(makeAmtToggle());
   upgradeRow(box, {
     name: u.main.name,
     info: unitUnlocked(u) ? u.main.info : 'LOCKED — reach Zone ' + (u.unlock ? u.unlock.zone : 0) + ' to recruit. ' + u.main.info,
     lvlText: () => 'Lv.' + state[u.statKey],
-    cost: () => ceilCost(u.main.cost(state[u.statKey])),
+    cost: () => subBatch(u.main.cost, state[u.statKey], Infinity).cost,
+    costPrefix: () => 'Buy x' + subBatch(u.main.cost, state[u.statKey], Infinity).n + ': ',
     onBuy: () => buyUnitMain(u.id),
     disabled: () => !unitUnlocked(u),
   });
 
-  // sub upgrades
+  // sub upgrades (also batched by the toggle)
   for (const sub of u.subs) {
     upgradeRow(box, {
       name: sub.name,
       info: sub.info,
       lvlText: () => 'Lv.' + subLvl(sub) + (isFinite(sub.max) ? '/' + sub.max : ''),
-      cost: () => subLvl(sub) >= sub.max ? null : ceilCost(sub.cost(subLvl(sub))),
+      cost: () => subLvl(sub) >= sub.max ? null : subBatch(sub.cost, subLvl(sub), sub.max).cost,
+      costPrefix: () => 'Buy x' + subBatch(sub.cost, subLvl(sub), sub.max).n + ': ',
       onBuy: () => buyUnitSub(u.id, sub.id),
     });
   }
+  const uAll = document.createElement('button');
+  uAll.className = 'menu-btn detail-buyall';
+  if (hasTree('auto3')) {
+    uAll.textContent = '💰 BUY ALL UPGRADES';
+    uAll.title = 'Buy the cheapest of this unit\'s upgrades over and over until the resources run out';
+    uAll.onclick = () => buyAllUnitUpgradesFor(u.id);
+  } else {
+    uAll.textContent = '🔒 BUY ALL UPGRADES';
+    uAll.title = 'Unlock in the Ascension tree — Automation branch (Steward of Works).';
+    uAll.disabled = true;
+  }
+  box.appendChild(uAll);
 
-  // mage skills
-  if (u.skills) {
-    sectionTitle(box, 'MAGE SKILLS');
-    for (const s of SKILLS) {
+  // arcane skills — every unit has its own now
+  const mySkills = SKILLS.filter(s => s.unit === u.id);
+  if (mySkills.length) {
+    sectionTitle(box, 'ARCANE SKILLS');
+    for (const s of mySkills) {
       const row = document.createElement('button');
       row.className = 'skill-row';
       row.onclick = () => buySkill(s.id);
@@ -1254,7 +2036,7 @@ function buildUnitDetail(unitId) {
           costEl.textContent = 'LEARNED';
           return;
         }
-        const cost = { mana: Math.ceil(s.cost.mana * (hasTree('mys2') ? 0.5 : 1)) };
+        const cost = { mana: Math.ceil(s.cost.mana * skillCostMult()) };
         costEl.innerHTML = costHtml(cost);
         row.disabled = !canAfford(cost);
         row.classList.toggle('afford', canAfford(cost));
@@ -1287,10 +2069,10 @@ function buildUnitDetail(unitId) {
       slot.appendChild(spriteCanvas(ITEMS[it.t].icon, 3));
       const tier = document.createElement('span');
       tier.className = 'slot-tier';
-      tier.textContent = tierName(it.tier) + (it.a ? '+' : '');
+      tier.textContent = tierName(it.tier) + '+'.repeat(affixList(it.a).length);
       slot.appendChild(tier);
       slot.title = itemName(it.t, it.tier, it.a) + ' — +' + effItemValue(it.t, it.tier).toFixed(1) + '% ' + ITEMS[it.t].txt +
-        (it.a ? ' & +' + (effItemValue(it.a, it.tier) * affixFactor()).toFixed(1) + '% ' + ITEMS[it.a].txt : '') +
+        affixList(it.a).map(a => ' & +' + (effItemValue(a, it.tier) * affixFactor()).toFixed(1) + '% ' + ITEMS[a].txt).join('') +
         ' (click to unequip)';
       slot.onclick = () => unequipItem(u.id, i);
     } else {
@@ -1310,12 +2092,21 @@ function buildUnitDetail(unitId) {
   if (picker && picker.unitId === u.id) {
     const pick = document.createElement('div');
     pick.className = 'picker';
-    pick.innerHTML = '<div class="picker-title">CHOOSE AN ITEM <button class="picker-cancel">cancel</button></div>';
+    pick.innerHTML = '<div class="picker-title">CHOOSE AN ITEM ' +
+      '<button class="picker-filter' + (pickerMaxOnly ? ' on' : '') + '">TOP TIER ONLY: ' + (pickerMaxOnly ? 'ON' : 'OFF') + '</button>' +
+      '<button class="picker-cancel">cancel</button></div>';
     pick.querySelector('.picker-cancel').onclick = () => { picker = null; syncRightPanel(); };
-    const entries = Object.entries(state.inv)
+    pick.querySelector('.picker-filter').onclick = () => { pickerMaxOnly = !pickerMaxOnly; rebuildDetail(); };
+    let entries = Object.entries(state.inv)
       .map(([k, n]) => Object.assign(invParse(k), { n }))
       .filter(e => e.n > 0 && itemAllowed(e.t, u.id))
       .sort((a, b) => a.t === b.t ? b.tier - a.tier : a.t.localeCompare(b.t));
+    if (pickerMaxOnly) {
+      /* keep only the highest available tier of each kind */
+      const maxTier = {};
+      for (const e of entries) maxTier[e.t] = Math.max(maxTier[e.t] || 0, e.tier);
+      entries = entries.filter(e => e.tier === maxTier[e.t]);
+    }
     if (!entries.length) {
       const none = document.createElement('div');
       none.className = 'picker-empty';
@@ -1330,7 +2121,7 @@ function buildUnitDetail(unitId) {
       body.className = 'buy-body';
       body.innerHTML = '<div class="buy-top"><span class="buy-name">' + itemName(e.t, e.tier, e.a) + '</span><span class="buy-owned">x' + e.n + '</span></div>' +
         '<div class="buy-prod">+' + effItemValue(e.t, e.tier).toFixed(1) + '% ' + ITEMS[e.t].txt +
-        (e.a ? ' • +' + (effItemValue(e.a, e.tier) * affixFactor()).toFixed(1) + '% ' + ITEMS[e.a].txt : '') + '</div>';
+        affixList(e.a).map(a => ' • +' + (effItemValue(a, e.tier) * affixFactor()).toFixed(1) + '% ' + ITEMS[a].txt).join('') + '</div>';
       row.appendChild(body);
       row.onclick = () => equipItem(u.id, picker.slot, e.t, e.tier, e.a);
       pick.appendChild(row);
@@ -1373,13 +2164,15 @@ function buildBuildingDetail(bid) {
   });
 
   sectionTitle(box, 'CONSTRUCTION');
+  box.appendChild(makeAmtToggle());
   upgradeRow(box, {
     name: 'Build ' + b.name,
     info: districtOwnedFor(bid) ? null : 'Requires the ' + DISTRICT_NAMES[BUILDING_DISTRICT[bid]] + ' district.',
     lvlText: () => 'x' + bCount(bid),
-    cost: () => buildingCost(b, bCount(bid), 1),
-    onBuy: () => buyBuildingOne(bid),
-    disabled: () => !districtOwnedFor(bid),
+    cost: () => buildingCost(b, bCount(bid), resolveAmount(b)),
+    costPrefix: () => 'Buy x' + resolveAmount(b) + ': ',
+    onBuy: () => buyBuilding(bid),
+    disabled: () => !districtOwnedFor(bid) || (state.buyAmount === 'max' && maxAffordable(b) < 1),
   });
 
   const ups = BUILDING_UPGRADES[bid] || [];
@@ -1390,12 +2183,25 @@ function buildBuildingDetail(bid) {
         name: up.name,
         info: up.info,
         lvlText: () => up.max === 1 ? '' : 'Lv.' + bUp(up.id) + '/' + up.max,
-        cost: () => bUp(up.id) >= up.max ? null : ceilCost(up.cost(bUp(up.id))),
+        cost: () => bUp(up.id) >= up.max ? null : subBatch(up.cost, bUp(up.id), up.max).cost,
+        costPrefix: () => 'Buy x' + subBatch(up.cost, bUp(up.id), up.max).n + ': ',
         onBuy: () => buyBuildingUpgrade(bid, up.id),
         disabled: () => bCount(bid) < 1,
         doneText: up.max === 1 ? 'BUILT' : 'MAX',
       });
     }
+    const bAll = document.createElement('button');
+    bAll.className = 'menu-btn detail-buyall';
+    if (hasTree('auto3')) {
+      bAll.textContent = '💰 BUY ALL UPGRADES';
+      bAll.title = 'Buy the cheapest of this building\'s upgrades over and over until the resources run out';
+      bAll.onclick = () => buyAllBuildingUpgradesFor(bid);
+    } else {
+      bAll.textContent = '🔒 BUY ALL UPGRADES';
+      bAll.title = 'Unlock in the Ascension tree — Automation branch (Steward of Works).';
+      bAll.disabled = true;
+    }
+    box.appendChild(bAll);
     const note = document.createElement('div');
     note.className = 'detail-note';
     note.textContent = 'Upgrades require at least one ' + b.name + '.';
@@ -1425,8 +2231,9 @@ function unequipAll() {
   if (n) { toast('Unequipped ' + n + ' item(s).'); rebuildDetail(); }
 }
 
-/* cascade-forge everything: 4x T1 -> 2x T2 -> 1x T3 ... */
-function forgeAll() {
+/* cascade-forge everything: 4x T1 -> 2x T2 -> 1x T3 ...
+   quiet = the Phantom Smith automaton: no toasts, no empty-bag nagging */
+function forgeAll(quiet) {
   let total = 0, changed = true;
   while (changed) {
     changed = false;
@@ -1442,9 +2249,11 @@ function forgeAll() {
   }
   if (total) {
     state.stats.itemsCombined += total;
-    toast('FORGE ALL: ' + total + ' combination(s) made!');
-    rebuildDetail();
-  } else {
+    if (!quiet) {
+      toast('FORGE ALL: ' + total + ' combination(s) made!');
+      rebuildDetail();
+    }
+  } else if (!quiet) {
     toast('Nothing to forge — need 2 identical items.');
   }
 }
@@ -1459,9 +2268,17 @@ function renderBag() {
   actions.className = 'bag-actions';
   const forgeBtn = document.createElement('button');
   forgeBtn.className = 'menu-btn';
-  forgeBtn.textContent = 'FORGE ALL';
-  forgeBtn.title = 'Combine every pair of identical items, cascading to higher tiers';
-  forgeBtn.onclick = forgeAll;
+  if (hasTree('auto4')) {
+    forgeBtn.textContent = 'FORGE ALL';
+    forgeBtn.title = 'Combine every pair of identical items, cascading to higher tiers';
+    forgeBtn.onclick = () => forgeAll();
+  } else {
+    forgeBtn.textContent = '🔒 FORGE ALL';
+    forgeBtn.title = 'Unlock in the Ascension tree — Automation branch (Bellows Engines).';
+    forgeBtn.disabled = true;
+  }
+  const smithBtn = autoToggleBtn('forge', 'auto17', 'AUTO FORGE', 'The Phantom Smith forges your bag every 10s.');
+  if (smithBtn) actions.appendChild(smithBtn);
   const unequipBtn = document.createElement('button');
   unequipBtn.className = 'menu-btn';
   unequipBtn.textContent = 'UNEQUIP ALL';
@@ -1488,8 +2305,22 @@ function renderBag() {
     return;
   }
 
+  /* fusion banner while an item is armed */
+  if (fuseSel) {
+    const note = document.createElement('div');
+    note.className = 'detail-note fuse-note';
+    note.innerHTML = '⚗ FUSING: <b>' + itemName(fuseSel.t, fuseSel.tier, fuseSel.a) + '</b> — pick a partner of the same type & tier with a DIFFERENT affix. ';
+    const cancel = document.createElement('button');
+    cancel.className = 'combine-btn';
+    cancel.textContent = 'CANCEL';
+    cancel.onclick = () => { fuseSel = null; rebuildDetail(); };
+    note.appendChild(cancel);
+    list.appendChild(note);
+  }
+
   for (const e of entries) {
     const def = ITEMS[e.t];
+    const affs = affixList(e.a);
     const row = document.createElement('div');
     row.className = 'inv-row static clickable';
     const targetUnit = def.units ? def.units[0] : 'hero';
@@ -1502,9 +2333,10 @@ function renderBag() {
     body.innerHTML =
       '<div class="buy-top"><span class="buy-name">' + itemName(e.t, e.tier, e.a) + '</span><span class="buy-owned">x' + e.n + '</span></div>' +
       '<div class="buy-prod">+' + effItemValue(e.t, e.tier).toFixed(1) + '% ' + def.txt +
-      (e.a ? ' • +' + (effItemValue(e.a, e.tier) * affixFactor()).toFixed(1) + '% ' + ITEMS[e.a].txt : '') +
+      affs.map(a => ' • +' + (effItemValue(a, e.tier) * affixFactor()).toFixed(1) + '% ' + ITEMS[a].txt).join('') +
       ' • Fits: ' + who + '</div>';
     row.appendChild(body);
+
     const comb = document.createElement('button');
     comb.className = 'combine-btn';
     comb.textContent = 'FORGE 2>1';
@@ -1512,6 +2344,44 @@ function renderBag() {
     comb.disabled = e.n < 2;
     comb.onclick = (ev) => { ev.stopPropagation(); combineItem(e.t, e.tier, e.a); };
     row.appendChild(comb);
+
+    /* Affix Fusion (needs the tree node) */
+    if (hasTree('forg2')) {
+      if (fuseSel) {
+        const isSel = fuseSel.t === e.t && fuseSel.tier === e.tier && fuseSel.a === e.a;
+        const eligible = !isSel && fuseSel.t === e.t && fuseSel.tier === e.tier &&
+          affs.length === 1 && fuseSel.a !== e.a;
+        if (eligible) {
+          const fb = document.createElement('button');
+          fb.className = 'combine-btn fuse';
+          fb.textContent = '⚗ FUSE WITH';
+          fb.title = 'Fuse into ' + itemName(e.t, e.tier, affixKey([fuseSel.a, e.a]));
+          fb.onclick = (ev) => { ev.stopPropagation(); fuseItems(e.t, e.tier, fuseSel.a, e.a); };
+          row.appendChild(fb);
+          row.classList.add('fuse-target');
+        } else if (isSel) {
+          row.classList.add('fuse-armed');
+        }
+      } else if (affs.length === 1) {
+        const fb = document.createElement('button');
+        fb.className = 'combine-btn fuse';
+        fb.textContent = '⚗ FUSE';
+        fb.title = 'Affix Fusion: pick another ' + def.name + ' ' + tierName(e.tier) + ' with a different affix — the result carries BOTH affixes.';
+        fb.onclick = (ev) => { ev.stopPropagation(); fuseSel = { t: e.t, tier: e.tier, a: e.a }; rebuildDetail(); };
+        row.appendChild(fb);
+      } else if (affs.length === 2) {
+        const partner = crossForgePartner(e.t, e.tier, e.a);
+        const fb = document.createElement('button');
+        fb.className = 'combine-btn fuse';
+        fb.textContent = 'FORGE↑ PAIR';
+        fb.title = partner
+          ? 'Forge UP using 1x ' + itemName(e.t, e.tier, partner) + ': result is ' + itemName(e.t, e.tier + 1, e.a) + ' — all 3 effects kept.'
+          : 'Needs a ' + def.name + ' ' + tierName(e.tier) + ' carrying ONE of these affixes.';
+        fb.disabled = !partner;
+        fb.onclick = (ev) => { ev.stopPropagation(); crossForge(e.t, e.tier, e.a); };
+        row.appendChild(fb);
+      }
+    }
     list.appendChild(row);
   }
   invDirty = false;
@@ -1852,7 +2722,7 @@ function renderDistrictOverlays() {
 let terrainKey = '';
 
 function eraLevel() {
-  return hasTree('era4') ? 3 : hasTree('era3') ? 2 : hasTree('era2') ? 1 : 0;
+  return hasTree('era6') ? 3 : hasTree('era3') ? 2 : hasTree('era2') ? 1 : 0;
 }
 
 function maybeTerrain(force) {
@@ -1862,11 +2732,12 @@ function maybeTerrain(force) {
   const era = eraLevel();
   const satTiers = {};
   for (const id of builtIds) satTiers[id] = satTierFor(bCount(id));
+  const propTier = propTierFor(state.totalBuildingsBought);
   const key = tier + '|' + houses + '|' + state.districts.join(';') + '|' +
-    builtIds.map(id => id + ':' + satTiers[id]).join(';') + '|' + era;
+    builtIds.map(id => id + ':' + satTiers[id]).join(';') + '|' + era + '|' + propTier;
   if (force || key !== terrainKey) {
     terrainKey = key;
-    renderTerrain($('terrain'), tier, houses, state.districts, builtIds, era, satTiers);
+    renderTerrain($('terrain'), tier, houses, state.districts, builtIds, era, satTiers, propTier);
     if (typeof ambientRebuild === 'function') ambientRebuild();
   }
 }
@@ -1899,7 +2770,8 @@ function removeChest() {
   if (!activeChest) return;
   activeChest.el.remove();
   activeChest = null;
-  const wait = (8000 + Math.random() * 6000) * (hasTree('for2') ? 0.75 : 1); // Treasure Maps
+  let wait = (8000 + Math.random() * 6000) * (hasTree('for2') ? 0.75 : 1); // Treasure Maps
+  if (hasTree('auto6')) wait *= 0.5; // Punctual Couriers
   nextChestAt = Date.now() + wait;
 }
 
@@ -1908,26 +2780,30 @@ function lootChest() {
   state.stats.chestsFound++;
   const m = state.monster;
   const r = Math.random();
+  const jackpot = hasTree('xfor8') && Math.random() < 0.10; // Jackpot Chests
+  const chestMult = (hasTree('xfor2') ? 2 : 1) * (jackpot ? 10 : 1);
+  if (jackpot) toast('💰 JACKPOT CHEST!');
   if (r < 0.25) {
     const d = rollDrop();
-    if (Math.random() < 0.12 && d.tier === 1) d.tier = 2; // chests skew higher
+    if (Math.random() < (hasTree('xfor2') ? 0.35 : 0.12) && d.tier === 1) d.tier = 2; // chests skew higher
+    if (jackpot) d.tier += 2;
     invAdd(d.t, d.tier, 1, d.a);
     state.stats.itemsFound++;
     toast('CHEST: ' + itemName(d.t, d.tier, d.a) + '!');
   } else if (r < 0.55) {
-    const amt = Math.max(25, C.prod.gold * 30 + (m ? m.gold * C.killMult * 3 : 0));
+    const amt = Math.max(25, C.prod.gold * 30 + (m ? m.gold * C.killMult * 3 : 0)) * chestMult;
     earnGold(amt);
     toast('CHEST: +' + fmt(amt) + ' Gold!');
   } else if (r < 0.72) {
-    const amt = Math.max(15, C.prod.wood * 40);
+    const amt = Math.max(15, C.prod.wood * 40) * chestMult;
     state.wood += amt;
     toast('CHEST: +' + fmt(amt) + ' Wood!');
   } else if (r < 0.88) {
-    const amt = Math.max(10, C.prod.stone * 40);
+    const amt = Math.max(10, C.prod.stone * 40) * chestMult;
     state.stone += amt;
     toast('CHEST: +' + fmt(amt) + ' Stone!');
   } else {
-    const amt = Math.max(5, C.prod.mana * 40);
+    const amt = Math.max(5, C.prod.mana * 40) * chestMult;
     state.mana += amt;
     toast('CHEST: +' + fmt(amt) + ' Mana!');
   }
@@ -1937,7 +2813,10 @@ function lootChest() {
 function tickChests() {
   const now = Date.now();
   if (activeChest) {
-    if (now > activeChest.expireAt) removeChest();
+    if (now > activeChest.expireAt) {
+      if (hasTree('xspirit7')) lootChest(); // Grave Robbers: spirits grab what you missed
+      else removeChest();
+    }
   } else if (now >= nextChestAt) {
     spawnChest();
   }
@@ -2000,8 +2879,8 @@ function closePrestige() {
 
 /* ---- solar-system tree rendering ---- */
 
-const TREE_WORLD = 3000;                 // world px, center at 1500
-const treePan = { x: 0, y: 0, init: false };
+const TREE_WORLD = 4600;                 // world px, center at 2300
+const treePan = { x: 0, y: 0, z: 1, min: 0.12, max: 1.6, init: false };
 
 function treeNodePos(node) {
   const cx = TREE_WORLD / 2, cy = TREE_WORLD / 2;
@@ -2011,8 +2890,14 @@ function treeNodePos(node) {
     return [cx, cy - r];
   }
   const a = TREE_BRANCHES[node.branch].angle * Math.PI / 180;
-  const r = ERA_NODE_R0[node.era - 1] + node.step * TREE_NODE_STEP;
-  return [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
+  const r = ERA_NODE_R0[node.era - 1] + node.step * TREE_NODE_STEP +
+    (node.side ? TREE_SIDE_OUT : 0);
+  let x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+  if (node.side) {
+    x += Math.cos(a + Math.PI / 2) * TREE_SIDE_OFF * node.side;
+    y += Math.sin(a + Math.PI / 2) * TREE_SIDE_OFF * node.side;
+  }
+  return [x, y];
 }
 
 function renderPrestige() {
@@ -2041,19 +2926,16 @@ function renderPrestige() {
   };
   for (const node of PRESTIGE_TREE) {
     const [x, y] = treeNodePos(node);
-    let from;
-    if (node.requires) {
-      const req = PRESTIGE_TREE.find(n => n.id === node.requires);
-      from = treeNodePos(req);
-    } else {
-      from = [cx, cy]; // chains from The Crown
-    }
-    line(from[0], from[1], x, y, hasTree(node.id));
+    const reqs = nodeReqs(node);
+    const froms = reqs.length
+      ? reqs.map(id => treeNodePos(PRESTIGE_TREE.find(n => n.id === id)))
+      : [[cx, cy]]; // chains from The Crown
+    for (const from of froms) line(from[0], from[1], x, y, hasTree(node.id));
   }
   world.appendChild(svg);
 
   /* era rings */
-  for (let era = 2; era <= 4; era++) {
+  for (let era = 2; era <= 6; era++) {
     const r = ERA_RING_R[era - 1];
     const ring = document.createElement('div');
     ring.className = 'era-ring' + (eraUnlocked(era) ? ' unlocked' : '');
@@ -2116,15 +2998,33 @@ function renderPrestige() {
     const vp = $('tree-map').getBoundingClientRect();
     if (vp.width > 50 && vp.height > 50) { // only when the modal is actually visible
       treePan.init = true;
-      treePan.x = vp.width / 2 - cx;
-      treePan.y = vp.height / 2 - cy;
+      treePan.x = vp.width / 2 - cx * treePan.z;
+      treePan.y = vp.height / 2 - cy * treePan.z;
     }
   }
   applyTreePan();
 }
 
 function applyTreePan() {
-  $('tree-world').style.transform = 'translate(' + treePan.x + 'px,' + treePan.y + 'px)';
+  $('tree-world').style.transform =
+    'translate(' + treePan.x + 'px,' + treePan.y + 'px) scale(' + treePan.z + ')';
+}
+
+function clampTreePan() {
+  const r = $('tree-map').getBoundingClientRect();
+  const w = TREE_WORLD * treePan.z, h = TREE_WORLD * treePan.z;
+  treePan.x = w < r.width ? (r.width - w) / 2 : Math.min(400, Math.max(r.width - w - 400, treePan.x));
+  treePan.y = h < r.height ? (r.height - h) / 2 : Math.min(400, Math.max(r.height - h - 400, treePan.y));
+}
+
+function zoomTreeAt(cx, cy, factor) {
+  const z0 = treePan.z;
+  const z = Math.min(treePan.max, Math.max(treePan.min, z0 * factor));
+  treePan.x = cx - (cx - treePan.x) * (z / z0);
+  treePan.y = cy - (cy - treePan.y) * (z / z0);
+  treePan.z = z;
+  clampTreePan();
+  applyTreePan();
 }
 
 let treeDragged = false;
@@ -2146,15 +3046,22 @@ function initTreePan() {
     }
     lastX = e.clientX; lastY = e.clientY;
     if (treeDragged) {
-      const r = vp.getBoundingClientRect();
-      treePan.x = Math.min(400, Math.max(r.width - TREE_WORLD - 400, treePan.x + dx));
-      treePan.y = Math.min(400, Math.max(r.height - TREE_WORLD - 400, treePan.y + dy));
+      treePan.x += dx;
+      treePan.y += dy;
+      clampTreePan();
       applyTreePan();
     }
   });
   const end = () => { dragging = false; };
   vp.addEventListener('pointerup', end);
   vp.addEventListener('pointercancel', end);
+
+  /* wheel to zoom — just like the city map */
+  vp.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = vp.getBoundingClientRect();
+    zoomTreeAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.18 : 1 / 1.18);
+  }, { passive: false });
 }
 
 /* ---------------- UI: menu overlay (stats / settings) ---------------- */
@@ -2198,8 +3105,10 @@ function renderMenu() {
         ['Click damage', () => fmt(C.click)],
         ['Crit chance', () => Math.round(C.critChance * 100) + '%'],
         ['Idle DPS (total)', () => fmt(C.dps)],
+        ['Spirit Hands DPS', () => C.spiritRate > 0 ? fmt(C.spiritDps) + ' (' + C.spiritRate + '/s)' : '—'],
         ['— Archers / Mages / Clerics', () => fmt(C.archerDps) + ' / ' + fmt(C.mageDps) + ' / ' + fmt(C.clericDps)],
         ['— Ballistae / Golem / Dragons / Walls', () => fmt(C.turretDps) + ' / ' + fmt(C.golemDps) + ' / ' + fmt(C.dragonDps) + ' / ' + fmt(C.wallDps)],
+        ['— Knights / Alchemists / Valkyries', () => fmt(C.knightDps) + ' / ' + fmt(C.plagueDps) + ' / ' + fmt(C.valkyrieDps)],
         ['Kill bounty multiplier', () => 'x' + C.killMult.toFixed(2)],
         ['Monsters slain', () => state.totalKills],
         ['Bosses slain', () => state.stats.bossKills],
@@ -2209,7 +3118,8 @@ function renderMenu() {
       ['DAY & NIGHT', [
         ['Current phase', () => (isNight() ? 'NIGHT ☽' : 'DAY ☀') + ' (' + fmtClock(cycleRemaining()) + ' left)'],
         ['Day bonus', () => '+' + Math.round(C.dayBonus * 100) + '% gold production & bounty'],
-        ['Night effects', () => '+50% mob HP, +50% bounty, x' + ((hasTree('mys9') ? NIGHT_DROP_MULT * 2 : NIGHT_DROP_MULT) * (hasTree('mys6') ? 1.5 : 1)) + ' drops'],
+        ['Night effects', () => '+50% mob HP, +' + Math.round((C.nightBountyMult - 1) * 100) + '% bounty, x' +
+          ((hasTree('mys9') ? NIGHT_DROP_MULT * 2 : NIGHT_DROP_MULT) * (hasTree('mys6') ? 1.5 : 1) * (hasTree('myss3') ? 1.5 : 1)) + ' drops'],
       ]],
       ['ITEMS', [
         ['Items found', () => state.stats.itemsFound],
@@ -2224,6 +3134,8 @@ function renderMenu() {
       ]],
       ['THE CROWN', [
         ['Buildings standing', () => totalBuildings()],
+        ['Buildings built (lifetime)', () => fmt(state.totalBuildingsBought)],
+        ['Units raised (lifetime)', () => fmt(state.totalUnitsBought)],
         ['Districts owned', () => state.districts.length + ' / 9 (+' + Math.round(DISTRICT_GOLD_BONUS * 100 * (state.districts.length - 1)) + '% gold)'],
         ['Ascensions', () => state.ascensions],
         ['Crown Sigils (held / ever)', () => state.sigils + ' / ' + state.sigilsEver],
@@ -2337,9 +3249,10 @@ function updateHud() {
   const ascBtn = $('ascend-btn');
   ascBtn.textContent = 'ASCEND (+' + pending + ' Sigils)';
   ascBtn.classList.toggle('ready', pending >= 1);
-  const nextAt = SIGIL_BASE * Math.pow(state.sigilsEver + pending + 1, 2);
+  const nextAt = SIGIL_BASE * Math.pow(state.sigilsEver + pending + 1, 1 / SIGIL_EXP) /
+    (hasTree('crown15') ? 1.25 : 1);
   ascBtn.title = 'ASCENSION — the rebirth mechanic.\n' +
-    'Crown Sigils = floor(sqrt(lifetime gold / ' + fmt(SIGIL_BASE) + ')).\n' +
+    'Crown Sigils = floor((lifetime gold / ' + fmt(SIGIL_BASE) + ') ^ ' + SIGIL_EXP + ').\n' +
     'Lifetime gold earned: ' + fmt(state.lifetimeGold) + '\n' +
     'Next Sigil at: ' + fmt(nextAt) + ' lifetime gold\n' +
     (pending >= 1
@@ -2364,20 +3277,26 @@ function tick() {
     toast(isNight()
       ? '☽ Night falls... monsters grow bold (+50% HP & bounty, x2 item drops).'
       : '☀ Dawn breaks over Aetherholm! (+25% gold production)');
+    if (!isNight() && hasTree('xmys7') && C) { // Witching Hour
+      const surge = C.prod.mana * 120;
+      state.mana += surge;
+      toast('🜍 Witching Hour: the dawn surge grants +' + fmt(surge) + ' Mana!');
+    }
   }
 
   C = calc();
 
   if (C.dps > 0) damageMonster(C.dps / TICKS_PER_SEC, false);
 
-  if (hasTree('mys3')) {
-    const rate = hasTree('mys12') ? 6 : 2; // Spirit Legion
-    autoClickAcc += rate / TICKS_PER_SEC;
+  if (C.spiritRate > 0) {
+    autoClickAcc += C.spiritRate / TICKS_PER_SEC;
     while (autoClickAcc >= 1) {
       autoClickAcc -= 1;
-      let dmg = C.click;
-      if (hasTree('mys12') && Math.random() < C.critChance) dmg *= 3;
+      let dmg = C.spiritDmg;
+      if (Math.random() < C.spiritCritChance) dmg *= C.spiritCritMult;
       damageMonster(dmg, false);
+      if (hasTree('xspirit4') && Math.random() < 0.15) damageMonster(dmg, false); // Twin Hauntings
+      if (hasTree('xspirit3')) state.mana += 0.5; // Soul Tithe
     }
   }
 
@@ -2387,8 +3306,13 @@ function tick() {
     if (res === 'gold') earnGold(amt); else state[res] += amt;
   }
 
+  /* Compound Interest: the treasury works for you, capped at production rate */
+  if (hasTree('xpros8') && state.gold > 0)
+    earnGold(Math.min(C.prod.gold, 0.005 * state.gold) / TICKS_PER_SEC);
+
   state.stats.playSec += TICK_MS / 1000;
 
+  runAutomations(TICK_MS / 1000);
   tickChests();
   updateHud();
   refreshShop();
@@ -2431,19 +3355,20 @@ function init() {
   $('menu-tab-stats').onclick = () => { menuTab = 'stats'; renderMenu(); };
   $('menu-tab-settings').onclick = () => { menuTab = 'settings'; renderMenu(); };
   $('tab-build').onclick = () => setRightTab('build');
+  $('tab-upgr').onclick = () => setRightTab('upgr');
   $('tab-bag').onclick = () => setRightTab('bag');
   $('detail-back').onclick = closeDetail;
   initTreePan();
 
-  for (const btn of document.querySelectorAll('.amt-btn')) {
-    btn.onclick = () => {
-      const v = btn.dataset.amt;
-      state.buyAmount = isNaN(Number(v)) ? v : Number(v);
-      for (const b of document.querySelectorAll('.amt-btn')) b.classList.toggle('active', b === btn);
-      refreshShop();
-    };
+  for (const btn of document.querySelectorAll('#amt-toggle .amt-btn')) {
+    btn.onclick = () => setBuyAmount(btn.dataset.amt);
     btn.classList.toggle('active', String(state.buyAmount) === btn.dataset.amt);
   }
+
+  /* left panel: buy-amount strip for recruiting */
+  const ua = $('unit-amt');
+  if (ua) ua.appendChild(makeAmtToggle());
+  refreshAmtLocks();
 
   for (const btn of document.querySelectorAll('.filter-btn')) {
     btn.onclick = () => {

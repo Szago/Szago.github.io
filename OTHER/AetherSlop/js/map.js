@@ -113,6 +113,76 @@ function drawSatellite(ctx, rnd, kind, tx, ty, era) {
   }
 }
 
+/* ---- cosmetic city props: small decorations that fill out a busy ward ---- */
+function drawProp(ctx, rnd, kind, tx, ty, era) {
+  const ox = tx * TILE, oy = ty * TILE;
+  const rect = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+  switch (kind) {
+    case 'well':
+      rect(ox + 4, oy + 7, 8, 6, MapPal.rock);            // stone ring
+      rect(ox + 5, oy + 8, 6, 4, '#24489a');              // water
+      rect(ox + 3, oy + 12, 10, 2, MapPal.rockDark);
+      rect(ox + 4, oy + 1, 1, 6, MapPal.houseTimber);     // posts
+      rect(ox + 11, oy + 1, 1, 6, MapPal.houseTimber);
+      rect(ox + 3, oy - 1, 10, 3, MapPal.houseRoof);      // little roof
+      break;
+    case 'stall': {
+      const awn = era >= 3 ? '#5fd9ff' : era >= 2 ? '#7d4ea0' : MapPal.banner;
+      rect(ox + 2, oy + 8, 12, 5, MapPal.plank);          // counter
+      rect(ox + 2, oy + 12, 12, 2, MapPal.plankDark);
+      rect(ox + 1, oy + 3, 14, 4, awn);                   // striped awning
+      for (let s = 1; s < 14; s += 4) rect(ox + s, oy + 3, 2, 4, '#f2ead8');
+      rect(ox + 2, oy + 6, 1, 7, MapPal.houseTimber);     // posts
+      rect(ox + 13, oy + 6, 1, 7, MapPal.houseTimber);
+      break;
+    }
+    case 'cart':
+      rect(ox + 2, oy + 6, 11, 4, MapPal.plank);          // bed
+      rect(ox + 2, oy + 5, 11, 1, MapPal.plankDark);
+      rect(ox + 4, oy + 3, 6, 3, era >= 3 ? '#5fd9ff' : '#8a5a2b'); // load
+      rect(ox + 3, oy + 10, 3, 3, '#3a3e46');             // wheels
+      rect(ox + 10, oy + 10, 3, 3, '#3a3e46');
+      rect(ox + 4, oy + 11, 1, 1, '#7a7a84');
+      rect(ox + 11, oy + 11, 1, 1, '#7a7a84');
+      break;
+    case 'barrels':
+      rect(ox + 3, oy + 6, 5, 7, MapPal.plank);
+      rect(ox + 3, oy + 8, 5, 1, MapPal.plankDark);
+      rect(ox + 3, oy + 11, 5, 1, MapPal.plankDark);
+      rect(ox + 9, oy + 7, 4, 6, MapPal.plankDark);
+      rect(ox + 9, oy + 9, 4, 1, '#4a2f17');
+      break;
+    case 'planter':
+      rect(ox + 3, oy + 9, 10, 4, MapPal.houseTimber);    // box
+      rect(ox + 3, oy + 8, 10, 1, MapPal.plank);
+      for (let i = 0; i < 7; i++) {
+        ctx.fillStyle = MapPal.flower[(rnd() * 4) | 0];
+        ctx.fillRect(ox + 3 + (rnd() * 9 | 0), oy + 5 + (rnd() * 3 | 0), 1, 2);
+      }
+      break;
+    case 'haystack':
+      rect(ox + 3, oy + 6, 10, 7, MapPal.wheat);
+      rect(ox + 4, oy + 4, 8, 2, MapPal.wheat);
+      rect(ox + 6, oy + 2, 4, 2, MapPal.wheatDark);
+      for (let i = 0; i < 4; i++) rect(ox + 4 + (rnd() * 8 | 0), oy + 6 + (rnd() * 6 | 0), 1, 1, MapPal.wheatDark);
+      break;
+    case 'brazier':
+      rect(ox + 6, oy + 7, 4, 6, era >= 2 ? '#3a3e46' : MapPal.houseTimber); // post
+      rect(ox + 4, oy + 12, 8, 2, MapPal.rockDark);                          // base
+      rect(ox + 5, oy + 4, 6, 3, era >= 3 ? '#5fd9ff' : '#ff8c2e');          // flame
+      rect(ox + 6, oy + 2, 4, 2, era >= 3 ? '#d8f6ff' : '#ffd23e');
+      break;
+    case 'crates':
+    default:
+      rect(ox + 2, oy + 6, 7, 7, '#8a5a2b');
+      rect(ox + 3, oy + 7, 5, 5, '#6e4720');
+      rect(ox + 10, oy + 5, 5, 8, '#6e4720');
+      rect(ox + 10, oy + 8, 5, 1, '#4a2f17');
+      break;
+  }
+  rect(ox + 3, oy + 13, 9, 1, 'rgba(0,0,0,0.2)');         // soft shadow
+}
+
 /* era-styled cottages: thatch -> stone-footed -> brick two-story -> aether */
 function drawHouse(ctx, tx, ty, era) {
   const ox = tx * TILE + 2, oy = ty * TILE + 1;
@@ -341,10 +411,12 @@ function drawLanes(ctx, rnd, lanes) {
    tier = wall tier, houseCount = cottages shown, ownedKeys = district keys,
    builtIds = building ids that exist (each gets a lane to the kingsroad),
    era = 0..3 — ascension Ages upgrade the kingsroads visually,
-   satTiers = {id: 0..5} — density satellites per built building */
-function renderTerrain(canvas, tier, houseCount, ownedKeys, builtIds, era, satTiers) {
+   satTiers = {id: 0..5} — density satellites per built building,
+   propTier = 0..28 — extra cosmetic props per owned district (lifetime buildings/100) */
+function renderTerrain(canvas, tier, houseCount, ownedKeys, builtIds, era, satTiers, propTier) {
   era = era || 0;
   satTiers = satTiers || {};
+  propTier = propTier || 0;
   canvas.width = MAP_W * TILE;
   canvas.height = MAP_H * TILE;
   const ctx = canvas.getContext('2d');
@@ -434,7 +506,8 @@ function renderTerrain(canvas, tier, houseCount, ownedKeys, builtIds, era, satTi
 
   /* side lanes: a bending network connecting buildings to the
      kingsroads and to each other */
-  drawLanes(ctx, rnd, collectLanes(builtIds || []));
+  const lanes = collectLanes(builtIds || []);
+  drawLanes(ctx, rnd, lanes);
 
   /* plaza fountain — grows grander with the eras */
   {
@@ -479,9 +552,11 @@ function renderTerrain(canvas, tier, houseCount, ownedKeys, builtIds, era, satTi
   drawLamps(ctx, ownedKeys, era);
 
   /* --- pass 3: trees (per-district biomes) --- */
+  const treeTiles = new Set();
   for (let dy = 0; dy < DISTRICT_GRID; dy++) {
     for (let dx = 0; dx < DISTRICT_GRID; dx++) {
       for (const [tx, ty] of districtTrees(dx, dy, ownedKeys)) {
+        treeTiles.add(tx + ',' + ty);
         const ox = tx * TILE, oy = ty * TILE;
         rect(ox + 7, oy + 10, 3, 5, MapPal.trunk);
         const widths = [4, 8, 12, 14, 14, 12, 8];
@@ -499,6 +574,36 @@ function renderTerrain(canvas, tier, houseCount, ownedKeys, builtIds, era, satTi
   for (let h = 0; h < Math.min(houseCount, slots.length); h++) {
     const [tx, ty] = slots[h];
     drawHouse(ctx, tx, ty, era);
+  }
+
+  /* --- pass 4b: cosmetic city props (lifetime density) ---
+     The more buildings ever raised, the busier each owned ward looks:
+     wells, market stalls, carts, extra cottages… purely decorative. */
+  if (propTier > 0) {
+    const occupied = new Set(ALL_PLOT_TILES);
+    for (const [tx, ty] of slots.slice(0, houseCount)) occupied.add(tx + ',' + ty);
+    for (const t of treeTiles) occupied.add(t);
+    for (const dk of ownedKeys) {
+      const [dx, dy] = dk.split(',').map(Number);
+      const prnd = mulberry32(50021 + dx * 131 + dy * 977 + propTier * 19);
+      let placed = 0, attempts = propTier * 6;
+      while (placed < propTier && attempts-- > 0) {
+        const tx = dx * DISTRICT_W + 1 + Math.floor(prnd() * (DISTRICT_W - 2));
+        const ty = dy * DISTRICT_H + 1 + Math.floor(prnd() * (DISTRICT_H - 2));
+        const k = tx + ',' + ty;
+        if (occupied.has(k) || lanes.has(k)) continue;
+        if (isWater(tx, ty) || isRoad(tx, ty) || isRoad(tx, ty + 1)) continue;
+        if (inField(tx, ty) || inHills(tx, ty)) continue;
+        /* keep district edges clear for the walls */
+        const ex = tx % DISTRICT_W, ey = ty % DISTRICT_H;
+        if (ex <= 0 || ex >= DISTRICT_W - 1 || ey <= 0 || ey >= DISTRICT_H - 1) continue;
+        const kind = CITY_PROPS[(prnd() * CITY_PROPS.length) | 0];
+        if (kind === 'cottage') drawHouse(ctx, tx, ty, era);
+        else drawProp(ctx, prnd, kind, tx, ty, era);
+        occupied.add(k);
+        placed++;
+      }
+    }
   }
 
   /* --- pass 5: city walls around the owned union --- */

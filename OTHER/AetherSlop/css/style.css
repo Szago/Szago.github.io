@@ -542,8 +542,14 @@ body.night #cycle-chip { color: #9fb4d8; }
 #amt-toggle {
   display: flex;
   gap: 6px;
-  padding: 8px 10px 2px;
+  padding: 8px 10px 6px;
   justify-content: flex-end;
+  /* stays put while the building list scrolls */
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: var(--panel);
+  box-shadow: 0 4px 8px rgba(20, 16, 30, 0.85);
 }
 .amt-btn {
   background: var(--panel2);
@@ -555,6 +561,48 @@ body.night #cycle-chip { color: #9fb4d8; }
   cursor: pointer;
 }
 .amt-btn.active { border-color: var(--gold); color: var(--gold); }
+
+/* compact buy-amount strips (left panel & detail pages) */
+.amt-inline {
+  display: flex;
+  gap: 4px;
+  padding: 4px 10px 6px;
+  flex-wrap: wrap;
+}
+#unit-amt {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: var(--panel);
+  box-shadow: 0 4px 8px rgba(20, 16, 30, 0.85);
+}
+.detail-buyall {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 4px 10px 8px;
+}
+
+/* UPGRADES tab */
+.upgr-bname { color: var(--dim); font-size: 7px; }
+#upgr-list .bag-actions { padding: 8px 10px 4px; }
+
+/* affix fusion in the bag */
+.combine-btn.fuse { border-color: var(--mana); color: var(--mana); }
+.combine-btn.fuse:disabled { opacity: 0.45; }
+.inv-row.fuse-armed { outline: 2px dashed var(--mana); }
+.inv-row.fuse-target { outline: 2px solid var(--mana); }
+.fuse-note { margin: 6px 10px; }
+.picker-filter {
+  background: var(--panel2);
+  border: 2px solid var(--border);
+  color: var(--dim);
+  font-family: inherit;
+  font-size: 7px;
+  padding: 3px 6px;
+  cursor: pointer;
+  margin-left: 6px;
+}
+.picker-filter.on { border-color: var(--gold); color: var(--gold); }
 
 /* ================= PRESTIGE MODAL ================= */
 
@@ -620,6 +668,7 @@ body.night #cycle-chip { color: #9fb4d8; }
   position: absolute;
   top: 0; left: 0;
   will-change: transform;
+  transform-origin: 0 0; /* pan+zoom math assumes top-left origin */
 }
 #tree-edges { position: absolute; top: 0; left: 0; }
 
@@ -1148,6 +1197,8 @@ body.night #cycle-chip { color: #9fb4d8; }
   font-family: inherit; font-size: 6px; padding: 4px 7px; cursor: pointer; margin: 2px;
 }
 .pl-btn:hover { background: #3a2058; border-color: var(--gold); color: var(--gold); }
+.pl-btn.on { border-color: var(--gold); color: var(--gold); }
+#pl-autobtn { font-size: 8px; padding: 6px 10px; margin-left: 8px; }
 .pl-btnrow { margin-top: 4px; }
 
 /* ---- battle ---- */
@@ -1471,6 +1522,25 @@ body.night #cycle-chip { color: #9fb4d8; }
   position: absolute; right: -5px; top: -4px;
   border: 6px solid transparent;
   border-left: 8px solid #fff;
+}
+.auto-toggle { opacity: 0.75; }
+.auto-toggle.on {
+  opacity: 1;
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.sp-way {
+  position: absolute;
+  left: 0; right: 0;
+  border-top: 2px dashed rgba(95, 217, 255, 0.35);
+  pointer-events: none;
+}
+.sp-way > span {
+  position: absolute;
+  right: 4px; top: -14px;
+  font-size: 8px;
+  color: rgba(95, 217, 255, 0.6);
 }
 #sp-crown {
   position: absolute;

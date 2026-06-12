@@ -66,10 +66,11 @@ x2 item drops (x4 with the Lunar Covenant ascension node). The map darkens at ni
   Each zone: monster HP x1.6, bounty x1.5. Unlosable — there is no player HP.
 - **Economy:** Buildings produce Gold and the special resources **Wood / Stone / Mana**,
   which gate higher buildings *and* unit upgrades.
-- **Units:** 8 of them — Hero (clicks), Archers (+2%/Wall level), Mages, Ballistae,
-  **War Clerics** (unlock at Zone 12), War Golem, **Dragon Riders** (Zone 25), Walls.
-  Each has a main upgrade + 2-3 sub-upgrades, 2-3 equipment slots; the Mages carry
-  the 6 one-time skills.
+- **Units:** 11 of them — Hero (clicks), Archers (+2%/Wall level), Mages, Ballistae,
+  **Royal Knights** (Zone 8), **War Clerics** (Zone 12), **Plague Alchemists** (Zone 14),
+  War Golem, **Storm Valkyries** (Zone 22), **Dragon Riders** (Zone 25), Walls.
+  Each has a main upgrade + 2-3 sub-upgrades, 2-3 equipment slots, its own items and
+  one-time arcane skills.
 - **Items:** monsters drop items (1.5%, bosses 12%). Combine 2 identical items to
   forge the next tier at x1.25 stats. Some items are unit-specific, some fit anyone.
   Items survive Ascension.

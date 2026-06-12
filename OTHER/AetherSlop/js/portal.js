@@ -23,9 +23,9 @@ const PORTAL_ROLES = {
 };
 
 const PORTAL_UNIT_ROLE = {
-  hero: 'fighter', golem: 'fighter', walls: 'fighter',
-  archer: 'ranged', turret: 'ranged', dragon: 'ranged',
-  mage: 'aoe', cleric: 'aoe',
+  hero: 'fighter', golem: 'fighter', walls: 'fighter', knight: 'fighter',
+  archer: 'ranged', turret: 'ranged', dragon: 'ranged', valkyrie: 'ranged',
+  mage: 'aoe', cleric: 'aoe', plague: 'aoe',
 };
 
 /* each unit's special — fires automatically when energy reaches its COST
@@ -39,6 +39,9 @@ const PORTAL_SPECIALS = {
   dragon: { name: 'Dragonfire',     cost: 130, desc: 'x1.5 damage to ALL enemies.' },
   mage:   { name: 'Meteor Nova',    cost: 100, desc: 'x2.2 damage to ALL enemies.' },
   cleric: { name: 'Healing Hymn',   cost: 80,  desc: 'Heals all allies for 25% of their max HP.' },
+  knight: { name: 'Lance Charge',   cost: 110, desc: 'x3 damage to its front-row target.' },
+  plague: { name: 'Toxic Cloud',    cost: 100, desc: 'x2.2 damage to ALL enemies.' },
+  valkyrie: { name: 'Thunder Dive', cost: 120, desc: 'x1.6 damage to ALL enemies.' },
 };
 
 /* enemy specials, by role — shown on their cards so you know what's coming */
@@ -106,6 +109,8 @@ function portalEnsure(s) {
   /* deployment: 4 grid slots — 0,1 = FRONT row, 2,3 = BACK row */
   p.team = normalizePortalTeam(Array.isArray(p.team) ? p.team : []);
   if (p.flaskArmed === undefined) p.flaskArmed = false; // Aether Flask queued for next battle
+  if (p.auto === undefined) p.auto = false;             // auto-continue after victories
+  if (p.auto && !(s.tree && s.tree.auto5)) p.auto = false; // gated by Rift Standing Orders
   return s;
 }
 
@@ -148,11 +153,12 @@ function portalUnitStats(uid) {
   const cardDmg = 1 + 0.15 * portalCardCount(
     role === 'fighter' ? 'c_fighter' : role === 'ranged' ? 'c_ranged' : 'c_aoe');
   const cardHp = 1 + 0.12 * portalCardCount('c_hp');
+  const banners = hasTree('xrift1') ? 1.2 : 1; // Riftward Banners
   const P = portalUnitPower(uid);
   return {
     role,
-    hp: Math.ceil(P * r.hpM * perm * cardHp),
-    dmg: Math.max(1, P * r.dmgM * perm * cardDmg),
+    hp: Math.ceil(P * r.hpM * perm * cardHp * banners),
+    dmg: Math.max(1, P * r.dmgM * perm * cardDmg * banners),
     spd: r.spd,
   };
 }
@@ -194,6 +200,7 @@ function portalEnemyTeam(stageN) {
 
 let portalTimer = null;
 let portalScreen = 'lobby';
+let portalAutoToken = 0;   // cancels stale auto-continue timers
 let portalNext = null;     // pre-rolled enemy team for the coming stage
 let portalTeam = [];       // selected unit ids (max 4)
 let battle = null;         // live battle object
@@ -468,6 +475,21 @@ function renderPortalLobby() {
   start.onclick = portalStartBattle;
   secT.appendChild(start);
 
+  const auto = document.createElement('button');
+  auto.id = 'pl-autobtn';
+  if (hasTree('auto5')) {
+    auto.className = 'pl-btn' + (p.auto ? ' on' : '');
+    auto.textContent = p.auto ? '♻ AUTO MODE: ON' : '♻ AUTO MODE: OFF';
+    auto.title = 'After each victory the next battle starts by itself. Card picks still wait for you; a defeat stops the chain.';
+    auto.onclick = () => { p.auto = !p.auto; renderPortalLobby(); };
+  } else {
+    auto.className = 'pl-btn';
+    auto.textContent = '🔒 AUTO MODE';
+    auto.title = 'Unlock in the Ascension tree — Automation branch (Rift Standing Orders).';
+    auto.disabled = true;
+  }
+  secT.appendChild(auto);
+
   const note = document.createElement('div');
   note.className = 'pl-note';
   note.innerHTML = 'Positions LOCK when combat begins. Units auto-attack and fire their SPECIAL when ' +
@@ -732,6 +754,9 @@ function doSpecial(c, team, foes, isAlly) {
       case 'turret': hitOne(aliveFoes.slice().sort((a, b) => a.hp - b.hp)[0], 3); break;
       case 'dragon': hitMany(aliveFoes, 1.5); break;
       case 'mage': hitMany(aliveFoes, 2.2); break;
+      case 'knight': hitOne(pickTargets(c, foes)[0], 3); break;
+      case 'plague': hitMany(aliveFoes, 2.2); break;
+      case 'valkyrie': hitMany(aliveFoes, 1.6); break;
       case 'cleric':
         for (const a of team) healC(a, a.maxHp * 0.25);
         break;
@@ -809,7 +834,8 @@ function portalWin() {
 
   const lines = [];
   const g = Math.pow(ZONE_GOLD_GROWTH, stageN - 1);
-  const goldGain = 6 * g * 25 * (C ? C.killMult : 1) * (1 + 0.25 * portalCardCount('c_gold')) * (bossStage ? 3 : 1);
+  const goldGain = 6 * g * 25 * (C ? C.killMult : 1) * (1 + 0.25 * portalCardCount('c_gold')) * (bossStage ? 3 : 1) *
+    (hasTree('xrift2') ? 1.5 : 1); // Rift Plunder
   earnGold(goldGain);
   lines.push('<span class="gold">+' + fmt(goldGain) + ' Gold</span>');
 
@@ -820,7 +846,8 @@ function portalWin() {
     lines.push('+' + fmt(wood) + ' Wood · +' + fmt(stone) + ' Stone');
   }
 
-  const dropC = Math.min(0.95, (bossStage ? 1 : 0.4) * (C ? C.dropMult : 1) * (1 + 0.20 * portalCardCount('c_drop')));
+  const dropC = Math.min(0.95, (bossStage ? 1 : 0.4) * (C ? C.dropMult : 1) * (1 + 0.20 * portalCardCount('c_drop')) *
+    (hasTree('xrift2') ? 1.25 : 1)); // Rift Plunder
   if (Math.random() < dropC) {
     const d = rollDrop();
     invAdd(d.t, d.tier, 1, d.a);
@@ -830,6 +857,7 @@ function portalWin() {
 
   /* consumable drops — the Rift's real prize */
   const potRoll = (chance, key) => {
+    if (hasTree('xrift4')) chance = Math.min(1, chance * 2); // Alchemist's Favor
     if (Math.random() >= chance) return;
     p.pots[key]++;
     lines.push('<span class="item">🧪 ' + PORTAL_POTS[key].name + '</span> <span class="dim">— ' + PORTAL_POTS[key].desc + '</span>');
@@ -847,16 +875,24 @@ function portalLose(retreated) {
   const p = state.portal;
   p.losses++;
   const until = Date.now() + PORTAL_DEATH_MS;
-  const fallen = [];
+  const fallen = [], revived = [];
   for (const a of battle.allies) {
+    /* Standing Reserves: Phoenix Feathers are spent the moment they fall */
+    if (hasTree('auto11') && p.pots.revive > 0) {
+      p.pots.revive--;
+      revived.push(a.name);
+      continue;
+    }
     p.deadUntil[a.uid] = until;
     fallen.push(a.name);
   }
-  const lines = [
-    (retreated ? 'You fled the Rift...' : 'Your team was slain...'),
-    '<span class="dim">' + fallen.join(', ') + '</span>',
-    'DEAD for <b style="color:var(--hp)">10:00</b> — they give NO damage or item bonuses until they recover!',
-  ];
+  const lines = [(retreated ? 'You fled the Rift...' : 'Your team was slain...')];
+  if (fallen.length) {
+    lines.push('<span class="dim">' + fallen.join(', ') + '</span>');
+    lines.push('DEAD for <b style="color:var(--hp)">10:00</b> — they give NO damage or item bonuses until they recover!');
+  }
+  if (revived.length)
+    lines.push('<span class="item">🧪 Standing Reserves: ' + revived.join(', ') + ' revived by Phoenix Feather!</span>');
   showPortalResult(false, lines, 0);
 }
 
@@ -884,6 +920,23 @@ function showPortalResult(won, lines, cardStage) {
   btn.textContent = cardStage ? 'CHOOSE A RIFT CARD' : 'CONTINUE';
   btn.onclick = () => { cardStage ? showCardPick() : showPortalScreen('lobby'); };
   box.appendChild(btn);
+
+  /* AUTO MODE: victories roll straight into the next stage */
+  if (won && state.portal.auto && !cardStage) {
+    const note = document.createElement('div');
+    note.className = 'pr-lines';
+    note.innerHTML = '<span class="dim">♻ AUTO — the next battle begins in a moment…</span>';
+    box.appendChild(note);
+    btn.textContent = 'STOP AUTO (lobby)';
+    const myToken = ++portalAutoToken;
+    btn.onclick = () => { portalAutoToken++; showPortalScreen('lobby'); };
+    setTimeout(() => {
+      if (myToken === portalAutoToken && portalScreen === 'result' && !battle &&
+          state.portal.auto && !$('portal-modal').classList.contains('hidden')) {
+        portalStartBattle();
+      }
+    }, 1200);
+  }
   showPortalScreen('result');
   if (typeof save === 'function') save();
 }
@@ -904,7 +957,8 @@ function showCardPick() {
   const row = document.createElement('div');
   row.className = 'pc-row';
   const pool = PORTAL_CARDS.slice();
-  for (let i = 0; i < 3 && pool.length; i++) {
+  const offers = hasTree('xrift3') ? 4 : 3; // Cartomancer
+  for (let i = 0; i < offers && pool.length; i++) {
     const card = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
     const el = document.createElement('div');
     el.className = 'pc-card';
@@ -913,7 +967,8 @@ function showCardPick() {
     el.onclick = () => {
       state.portal.cards.push(card.id);
       toast('Rift Card: ' + card.name + '!');
-      showPortalScreen('lobby');
+      if (state.portal.auto) portalStartBattle(); // auto rolls on after the pick
+      else showPortalScreen('lobby');
       if (typeof save === 'function') save();
     };
     row.appendChild(el);

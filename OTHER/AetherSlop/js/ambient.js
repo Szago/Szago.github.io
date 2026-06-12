@@ -79,7 +79,9 @@ function ambientRebuild() {
   const hMin = Math.max(0, minX * TILE - pad), hMax = Math.min(MAP_W * TILE, maxX * TILE + pad);
   const vMin = Math.max(0, minY * TILE - pad), vMax = Math.min(MAP_H * TILE, maxY * TILE + pad);
 
-  const want = Math.min(2 + Math.floor(totalBuildings() / 5), 16);
+  /* wanderers grow with the army you've ever raised: +2 per 100 units bought */
+  const unitTier = Math.floor((state.totalUnitsBought || 0) / 100);
+  const want = Math.min(2 + Math.floor(totalBuildings() / 5) + unitTier * 2, 36);
   ambVillagers = [];
   for (let i = 0; i < want; i++) {
     const horizontal = i % 2 === 0;
@@ -118,7 +120,8 @@ function ambientRebuild() {
     const count = state[u.statKey];
     if (!count) continue;
     const figures = (u.id === 'archer' || u.id === 'mage') && count >= 15 ? 2 : 1;
-    for (let f = 0; f < figures && ambPatrols.length < 12; f++) {
+    const patrolCap = Math.min(12 + unitTier * 2, 28);
+    for (let f = 0; f < figures && ambPatrols.length < patrolCap; f++) {
       const home = state.districts[Math.floor(Math.random() * state.districts.length)];
       const [hdx, hdy] = home.split(',').map(Number);
       const px2 = (hdx * DISTRICT_W + 4 + Math.random() * (DISTRICT_W - 8)) * TILE;

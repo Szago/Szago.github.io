@@ -590,6 +590,63 @@ const SPRITES = {
     ],
   },
 
+  /* Royal Knights — mounted lancer in steel plate, red plume */
+  knightp: {
+    pal: { r: '#d63c3c', s: '#c0c8d4', S: '#7a838f', k: '#1c1e24', y: '#ffd23e', b: '#6b4e26', B: '#4a3517', W: '#e8e4d4' },
+    rows: [
+      '......rr........',
+      '.....ssss....W..',
+      '.....skks....W..',
+      '.....ssss....W..',
+      '....SssssS...W..',
+      '...SsyyysS...W..',
+      '...SssssssS..W..',
+      '...SssssssS..W..',
+      '..bSssssssSb.W..',
+      '..bBsssssBb..y..',
+      '..bB.BBBB.Bb.y..',
+      '..bb.b..b.bb....',
+    ],
+  },
+
+  /* Plague Alchemists — hooded green-robed bomber, beaked mask */
+  plaguep: {
+    pal: { g: '#3f7d2e', G: '#2c5a20', k: '#1c1e24', w: '#cfc6ae', y: '#bfe34a', M: '#5ccb4a', b: '#6b4e26' },
+    rows: [
+      '.....ggg........',
+      '....ggggg.......',
+      '...ggGGGgg......',
+      '...gwkkkwg......',
+      '....gkwkg...M...',
+      '....ggggg..MMM..',
+      '...gggGggg.MyM..',
+      '...gggggGg..M...',
+      '...ggGgggg..b...',
+      '...gGgggGg......',
+      '....gg.gg.......',
+      '....GG.GG.......',
+    ],
+  },
+
+  /* Storm Valkyries — winged spear-maiden, white wings, blue mail */
+  valkyriep: {
+    pal: { W: '#f2f4fa', w: '#c7cede', m: '#3c6ed6', M: '#2a4da0', f: '#f0c8a0', y: '#ffd23e', s: '#5fd9ff' },
+    rows: [
+      'W.....yy.....W..',
+      'Ww...mMMm...wW..',
+      'WWw..mMMm..wWW..',
+      '.Ww..ffff..wW.s.',
+      '..w.mMMMMm.w.ss.',
+      '....mMmMMm...s..',
+      '...mMMMMMMm..s..',
+      '...mMmMMmMm..s..',
+      '...mMMMMMMm..s..',
+      '....mM..Mm...s..',
+      '....mm..mm......',
+      '....ww..ww......',
+    ],
+  },
+
   chest: {
     pal: { b: '#8a5a2b', B: '#6e4720', y: '#ffd23e', Y: '#b9982f', k: '#23252b' },
     rows: [
@@ -709,6 +766,9 @@ const SPRITES = {
   icoSun:    { pal: { y: '#ffd23e', Y: '#fff0a0' }, rows: ['y..yy..y', '.yYYYYy.', '.YYYYYY.', 'yYYYYYYy', 'yYYYYYYy', '.YYYYYY.', '.yYYYYy.', 'y..yy..y'] },
   icoCenser: { pal: { y: '#ffd23e', Y: '#b9982f', o: '#ff8c2e' }, rows: ['...yy...', '..yYYy..', '.yYYYYy.', '.yYooYy.', '..yYYy..', '...yy...', '...Y....', '..yyy...'] },
   icoTalon:  { pal: { W: '#e8e4d4', w: '#b8b4a0', r: '#c43c3c' }, rows: ['......W.', '.....WW.', '....WW..', '.W.WW...', '.WWWw...', '..WWw...', '...Ww...', '....r...'] },
+  icoLance:  { pal: { s: '#c0c8d4', S: '#7a838f', b: '#6b4e26', r: '#d63c3c' }, rows: ['.......s', '......ss', '.....sS.', '..r.sS..', '.rr.S...', 'rrbS....', '.bb.....', 'b.......'] },
+  icoVial:   { pal: { g: '#5ccb4a', G: '#2f8f23', w: '#cfc6ae', y: '#bfe34a' }, rows: ['..ww....', '..gw....', '..gg....', '.gggy...', '.gyggy..', 'gggggy..', 'gGgggg..', '.gGGg...'] },
+  icoGlaive: { pal: { s: '#5fd9ff', m: '#3c6ed6', M: '#2a4da0', y: '#ffd23e' }, rows: ['......ss', '.....sm.', '....sm..', '...sm...', '..ym....', '..ym....', '..yM....', '..M.....'] },
 
   icoGold:  { pal: { o: '#b9982f', y: '#ffd23e', Y: '#fff0a0' }, rows: ['..oooo..', '.oyyyyo.', 'oyYyyyyo', 'oyYyyyyo', 'oyyyyyyo', 'oyyyyyyo', '.oyyyyo.', '..oooo..'] },
   icoWood:  { pal: { b: '#8a5a2b', B: '#6e4720', o: '#c79454' }, rows: ['........', '.bbbbbo.', 'bBBBBboo', 'bbbbbboo', 'bBBBBbo.', '.bbbbb..', '........', '........'] },

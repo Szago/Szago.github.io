@@ -8,7 +8,8 @@
    On-time hits deal more damage; misses wound the hero — he CAN
    die (10 minutes, same as a Rift defeat). Every floor slightly
    raises BPM & approach rate and shrinks the squares.
-   Rewards scale with the floor. Floors reset on Ascension.
+   Rewards scale with the floor. Floors PERSIST through Ascension —
+   the climb is once per save.
    ============================================================ */
 
 'use strict';
@@ -22,6 +23,8 @@ const TW_DMG_MULT = { perfect: 4, great: 2, ok: 1 };
 const TW_MISS_HP = 0.12;               // a miss costs 12% of the hero's max HP
 const TW_TRIPLE_CHANCE = 0.15;         // chance a step becomes a 3-note burst
 const TW_NOTES_TO_KILL = 35;           // ~notes of GREAT damage to fell floor-1 boss
+const TW_BLESS_RES = ['wood', 'stone', 'mana']; // blessing pool — never gold
+const TW_BLESS_STEP = 1.05;            // each beaten floor: +5% production on one random resource
 
 /* per-floor difficulty: each boss is VERY slightly meaner.
    size: big & clustered early; spacing: the note grid SPREADS out
@@ -34,6 +37,10 @@ function towerParams(floorN) {
     spacing: Math.min(1, 0.5 + 0.03 * (floorN - 1)),
   };
 }
+
+/* ascension-tree hooks */
+function twMissHp() { return hasTree('xtow2') ? 0.08 : TW_MISS_HP; }       // Steel Tempo
+function twHitMult(j) { return j === 'perfect' && hasTree('xtow3') ? 5 : TW_DMG_MULT[j]; } // Resonant Blade
 
 function towerBoss(floorN, clickDmg) {
   const type = BOSS_TYPES[(floorN - 1) % BOSS_TYPES.length];
@@ -49,10 +56,17 @@ function towerBoss(floorN, clickDmg) {
 function towerEnsure(s) {
   if (!s.tower) s.tower = {};
   const t = s.tower;
-  if (t.floor === undefined) t.floor = 0;   // floors cleared this ascension
+  if (t.floor === undefined) t.floor = 0;   // floors cleared (kept through ascensions)
   if (t.best === undefined) t.best = 0;
   if (t.wins === undefined) t.wins = 0;
   if (t.losses === undefined) t.losses = 0;
+  if (!t.resMult) {
+    /* permanent production blessings — one roll per beaten floor, so saves
+       from before this feature are blessed retroactively */
+    t.resMult = { wood: 1, stone: 1, mana: 1 };
+    for (let i = 0; i < t.floor; i++)
+      t.resMult[TW_BLESS_RES[Math.floor(Math.random() * TW_BLESS_RES.length)]] *= TW_BLESS_STEP;
+  }
   return s;
 }
 
@@ -122,7 +136,7 @@ function renderTowerLobby() {
     '<div class="pl-pot" title="How long the approach ring takes to close. Lower = faster.">◎ APPROACH: <b>' + par.approach.toFixed(2) + 's</b></div>' +
     '<div class="pl-pot" title="Hit square size. Shrinks each floor.">□ SIZE: <b>' + par.size.toFixed(0) + 'px</b></div>' +
     '<div class="pl-pot" title="How far apart the squares sit on the grid. Spreads out each floor.">↔ SPREAD: <b>' + (par.spacing * 100).toFixed(0) + '%</b></div>' +
-    '<div class="pl-pot" title="Your hero\'s health. Each miss costs ' + (TW_MISS_HP * 100).toFixed(0) + '% of it.">❤ HERO HP: <b>' + fmt(heroHp) + '</b></div>';
+    '<div class="pl-pot" title="Your hero\'s health. Each miss costs ' + (twMissHp() * 100).toFixed(0) + '% of it.">❤ HERO HP: <b>' + fmt(heroHp) + '</b></div>';
   secB.appendChild(chips);
   box.appendChild(secB);
 
@@ -132,11 +146,26 @@ function renderTowerLobby() {
     '<div class="pl-note" style="text-align:left">' +
     'Squares flow in straight lines from the previous square — along a row, a column or a diagonal — ' +
     'sometimes in quick TRIPLES. Click each one (LEFT MOUSE, or hover + <b>Z</b>/<b>X</b>) exactly when its ring closes.<br>' +
-    'PERFECT = x' + TW_DMG_MULT.perfect + ' damage · GREAT = x' + TW_DMG_MULT.great + ' · OK = x' + TW_DMG_MULT.ok +
-    ' · MISS or clicking TOO EARLY = the boss strikes YOU (-' + (TW_MISS_HP * 100).toFixed(0) + '% HP).<br>' +
+    'PERFECT = x' + twHitMult('perfect') + ' damage · GREAT = x' + TW_DMG_MULT.great + ' · OK = x' + TW_DMG_MULT.ok +
+    ' · MISS or clicking TOO EARLY = the boss strikes YOU (-' + (twMissHp() * 100).toFixed(0) + '% HP).<br>' +
     'Hit them IN ORDER — clicking a later square just shakes the one you owe first. ' +
     'Combos add up to +50% damage. If the hero falls he is DEAD for 10 minutes — in the city too.</div>';
   box.appendChild(secH);
+
+  const secM = document.createElement('div');
+  secM.className = 'pl-section';
+  secM.innerHTML = '<div class="pl-head tw-head">TOWER BLESSINGS</div>' +
+    '<div class="pl-note" style="text-align:left">Every floor beaten blesses the city: a PERMANENT +' +
+    ((TW_BLESS_STEP - 1) * 100).toFixed(0) + '% production multiplier on a random resource other than Gold. ' +
+    'Blessings stack and survive Ascension.</div>';
+  const bchips = document.createElement('div');
+  bchips.className = 'pl-pots';
+  bchips.innerHTML = TW_BLESS_RES.map(r =>
+    '<div class="pl-pot" title="Permanent ' + RES_META[r].name + ' production multiplier earned from beaten floors.">' +
+    '<span style="color:' + RES_META[r].color + '">' + RES_META[r].name.toUpperCase() + '</span> <b>x' +
+    state.tower.resMult[r].toFixed(2) + '</b></div>').join('');
+  secM.appendChild(bchips);
+  box.appendChild(secM);
 
   const secS = document.createElement('div');
   secS.className = 'pl-section';
@@ -351,7 +380,7 @@ function towerJudge(n, t) {
   twr.combo++;
   if (twr.combo > twr.maxCombo) twr.maxCombo = twr.combo;
   const comboMult = 1 + Math.min(0.5, twr.combo * 0.01);
-  const dmg = twr.clickDmg * TW_DMG_MULT[j] * comboMult;
+  const dmg = twr.clickDmg * twHitMult(j) * comboMult;
   twr.boss.hp -= dmg;
   twFloat(n, (j === 'perfect' ? 'PERFECT! ' : j === 'great' ? 'GREAT ' : 'OK ') + '-' + fmt(dmg), j);
   twRemoveNote(n);
@@ -365,7 +394,7 @@ function towerJudge(n, t) {
 function towerMiss(n, early) {
   twr.counts.miss++;
   twr.combo = 0;
-  twr.hero.hp -= twr.hero.maxHp * TW_MISS_HP;
+  twr.hero.hp -= twr.hero.maxHp * twMissHp();
   twFloat(n, early ? 'TOO EARLY!' : 'MISS', 'miss');
   twRemoveNote(n);
   $('tw-field').classList.add('hurt');
@@ -453,22 +482,30 @@ function towerWin() {
   if (state.tower.floor > state.tower.best) state.tower.best = state.tower.floor;
 
   const lines = [];
+  const plunder = hasTree('xtow1') ? 2 : 1; // Tower Plunder
   const g = Math.pow(ZONE_GOLD_GROWTH, floorN - 1);
-  const goldGain = 6 * g * 40 * (C ? C.killMult : 1);
+  const goldGain = 6 * g * 40 * (C ? C.killMult : 1) * plunder;
   earnGold(goldGain);
   lines.push('<span class="gold">+' + fmt(goldGain) + ' Gold</span>');
   if (C) {
-    const wood = Math.max(10, C.prod.wood * 20), stone = Math.max(10, C.prod.stone * 20);
+    const wood = Math.max(10, C.prod.wood * 20) * plunder, stone = Math.max(10, C.prod.stone * 20) * plunder;
     state.wood += wood;
     state.stone += stone;
     lines.push('+' + fmt(wood) + ' Wood · +' + fmt(stone) + ' Stone');
   }
-  if (Math.random() < Math.min(0.95, 0.6 * (C ? C.dropMult : 1))) {
+  if (hasTree('xtow3') || Math.random() < Math.min(0.95, 0.6 * (C ? C.dropMult : 1))) { // Resonant Blade: guaranteed
     const d = rollDrop();
     invAdd(d.t, d.tier, 1, d.a);
     state.stats.itemsFound++;
     lines.push('<span class="item">' + itemName(d.t, d.tier, d.a) + '</span>');
   }
+  /* the floor's blessing: +5% production on a random non-gold resource, forever */
+  towerEnsure(state);
+  const bless = TW_BLESS_RES[Math.floor(Math.random() * TW_BLESS_RES.length)];
+  state.tower.resMult[bless] *= TW_BLESS_STEP;
+  lines.push('<span style="color:' + RES_META[bless].color + '">★ BLESSING: +' +
+    ((TW_BLESS_STEP - 1) * 100).toFixed(0) + '% ' + RES_META[bless].name +
+    ' production, forever (now x' + state.tower.resMult[bless].toFixed(2) + ')</span>');
   lines.push('<span class="dim">' + counts.perfect + ' PERFECT · ' + counts.great + ' GREAT · ' +
     counts.ok + ' OK · ' + counts.miss + ' MISS — max combo ' + maxCombo + 'x</span>');
 

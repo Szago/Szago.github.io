@@ -39,6 +39,7 @@
 
       <div class="scroll">
         <div class="section-title">WAR COUNCIL — click a unit for details</div>
+        <div id="unit-amt"></div>
         <div id="unit-cards"></div>
       </div>
     </aside>
@@ -95,6 +96,7 @@
 
       <div id="right-tabs">
         <button id="tab-build" class="rtab active">BUILD</button>
+        <button id="tab-upgr" class="rtab">UPGRADES</button>
         <button id="tab-bag" class="rtab">BAG <span id="bag-count"></span></button>
       </div>
 
@@ -115,6 +117,10 @@
             <button class="filter-btn" data-filter="mana">MANA</button>
           </div>
           <div id="shop-list"></div>
+        </div>
+
+        <div id="view-upgr" class="hidden">
+          <div id="upgr-list"></div>
         </div>
 
         <div id="view-bag" class="hidden">
