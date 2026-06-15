@@ -492,7 +492,7 @@ function renderPortalLobby() {
 
   const note = document.createElement('div');
   note.className = 'pl-note';
-  note.innerHTML = 'Positions LOCK when combat begins. Units auto-attack and fire their SPECIAL when ' +
+  note.innerHTML = 'Positions 🔒 when combat begins. Units auto-attack and fire their SPECIAL when ' +
     'their energy (⚡) fills — each one charges to a different cost.<br>' +
     'FIGHTERS hit the front row · RANGED hit the back row · AOE hit everyone — hover anything for details.<br>' +
     'Defeat leaves your deployed units DEAD for 10 minutes — they fight for nothing while dead. ' +

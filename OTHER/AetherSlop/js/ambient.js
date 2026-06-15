@@ -32,6 +32,55 @@ let lightsCtx = null;
 let glowWarm = null, glowGreen = null;
 let cityGlow = null; // {x, y, r} ambient dome over the city
 
+function makeVillager(i, hMin, hMax, vMin, vMax) {
+  const horizontal = i % 2 === 0;
+  const v = {
+    h: horizontal,
+    min: horizontal ? hMin : vMin,
+    max: horizontal ? hMax : vMax,
+    p: 0,
+    dir: Math.random() < 0.5 ? 1 : -1,
+    speed: 7 + Math.random() * 9,
+    lane: 3 + Math.floor(Math.random() * 9),
+    col: VILLAGER_COLORS[i % VILLAGER_COLORS.length],
+    seed: Math.random() * 10,
+  };
+  v.p = v.min + Math.random() * Math.max(1, v.max - v.min);
+  return v;
+}
+
+function retuneVillager(v, i, hMin, hMax, vMin, vMax) {
+  v.min = v.h ? hMin : vMin;
+  v.max = v.h ? hMax : vMax;
+  if (!isFinite(v.p)) v.p = v.min + Math.random() * Math.max(1, v.max - v.min);
+  v.p = Math.min(v.max, Math.max(v.min, v.p));
+  if (!v.speed) v.speed = 7 + Math.random() * 9;
+  if (!v.lane) v.lane = 3 + Math.floor(Math.random() * 9);
+  if (!v.col) v.col = VILLAGER_COLORS[i % VILLAGER_COLORS.length];
+  if (!isFinite(v.seed)) v.seed = Math.random() * 10;
+  return v;
+}
+
+function makePatrol(sprite) {
+  const home = state.districts[Math.floor(Math.random() * state.districts.length)];
+  const [hdx, hdy] = home.split(',').map(Number);
+  const px = (hdx * DISTRICT_W + 4 + Math.random() * (DISTRICT_W - 8)) * TILE;
+  const py = (hdy * DISTRICT_H + 4 + Math.random() * (DISTRICT_H - 8)) * TILE;
+  return { sprite, x: px, y: py, tx: px, ty: py, speed: 9 + Math.random() * 6, pause: Math.random() * 2 };
+}
+
+function preservePatrol(sprite, used) {
+  for (let i = 0; i < ambPatrols.length; i++) {
+    const p = ambPatrols[i];
+    if (used.has(i) || p.sprite !== sprite) continue;
+    used.add(i);
+    if (!isFinite(p.speed) || p.speed <= 0) p.speed = 9 + Math.random() * 6;
+    if (!isFinite(p.pause)) p.pause = Math.random() * 2;
+    return p;
+  }
+  return makePatrol(sprite);
+}
+
 /* a soft radial glow sprite, drawn smoothly (NOT pixelated) */
 function makeGlow(r, g, b) {
   const c = document.createElement('canvas');
@@ -82,22 +131,11 @@ function ambientRebuild() {
   /* wanderers grow with the army you've ever raised: +2 per 100 units bought */
   const unitTier = Math.floor((state.totalUnitsBought || 0) / 100);
   const want = Math.min(2 + Math.floor(totalBuildings() / 5) + unitTier * 2, 36);
+  const oldVillagers = ambVillagers;
   ambVillagers = [];
   for (let i = 0; i < want; i++) {
-    const horizontal = i % 2 === 0;
-    ambVillagers.push({
-      h: horizontal,
-      min: horizontal ? hMin : vMin,
-      max: horizontal ? hMax : vMax,
-      p: 0, // set below
-      dir: Math.random() < 0.5 ? 1 : -1,
-      speed: 7 + Math.random() * 9,
-      lane: 3 + Math.floor(Math.random() * 9),
-      col: VILLAGER_COLORS[i % VILLAGER_COLORS.length],
-      seed: Math.random() * 10,
-    });
-    const v = ambVillagers[i];
-    v.p = v.min + Math.random() * (v.max - v.min);
+    const v = oldVillagers[i] || makeVillager(i, hMin, hMax, vMin, vMax);
+    ambVillagers.push(retuneVillager(v, i, hMin, hMax, vMin, vMax));
   }
 
   /* roaming wilderness monsters */
@@ -114,21 +152,18 @@ function ambientRebuild() {
 
   /* your units patrol the city: one figure per owned unit type
      (archers/mages get a second one when you have 15+) */
-  ambPatrols = [];
+  const wantedPatrolSprites = [];
   for (const u of UNITS) {
     if (u.id === 'walls') continue;
     const count = state[u.statKey];
     if (!count) continue;
     const figures = (u.id === 'archer' || u.id === 'mage') && count >= 15 ? 2 : 1;
     const patrolCap = Math.min(12 + unitTier * 2, 28);
-    for (let f = 0; f < figures && ambPatrols.length < patrolCap; f++) {
-      const home = state.districts[Math.floor(Math.random() * state.districts.length)];
-      const [hdx, hdy] = home.split(',').map(Number);
-      const px2 = (hdx * DISTRICT_W + 4 + Math.random() * (DISTRICT_W - 8)) * TILE;
-      const py2 = (hdy * DISTRICT_H + 4 + Math.random() * (DISTRICT_H - 8)) * TILE;
-      ambPatrols.push({ sprite: u.portrait, x: px2, y: py2, tx: px2, ty: py2, speed: 9 + Math.random() * 6, pause: Math.random() * 2 });
-    }
+    for (let f = 0; f < figures && wantedPatrolSprites.length < patrolCap; f++)
+      wantedPatrolSprites.push(u.portrait);
   }
+  const usedPatrols = new Set();
+  ambPatrols = wantedPatrolSprites.map(sprite => preservePatrol(sprite, usedPatrols));
 
   /* chimney smoke: first shown smith, tavern and the keep */
   ambSmokes = [];

@@ -830,9 +830,9 @@ const PRESTIGE_TREE = (() => {
   n('spirit2', 1, 'spirit', 1, 'Nimble Spirits', 'Spirit Hands click +1 more time per second.');
   n('spirit3', 1, 'spirit', 2, 'Spirit Focus', 'Spirit clicks deal +50% damage.');
   n('xspirit1', 1, 'spirit', 2, 'Helpful Haunts', 'Spirit clicks deal +1% damage per Advancement node owned.', { req: 'spirit3', side: 1 });
-  n('auto1', 1, 'auto', 0, 'Buying Ledgers', 'UNLOCK: the x10 buy amount.');
-  n('auto2', 1, 'auto', 1, 'Procurement Office', 'UNLOCK: the x100, ⌖10 and MAX buy amounts.');
-  n('auto3', 1, 'auto', 2, 'Steward of Works', 'UNLOCK: the 💰 BUY ALL UPGRADES buttons (units, buildings & the Royal Works).');
+  n('auto1', 1, 'auto', 0, 'Buying Ledgers', '🔓 the x10 buy amount.');
+  n('auto2', 1, 'auto', 1, 'Procurement Office', '🔓 the x100, N10, N100 and MAX buy amounts.');
+  n('auto3', 1, 'auto', 2, 'Steward of Works', '🔓 the 💰 BUY ALL UPGRADES buttons (units, buildings & the Royal Works).');
 
   /* ===== GATE + ERA 2 — AGE OF STONE ===== */
   gate('era2', 2, 'Age of Stone', '+25% ALL gold. The kingsroads are gravelled. Every Age of Stone branch starts here.');
@@ -870,8 +870,8 @@ const PRESTIGE_TREE = (() => {
   n('spirit5', 2, 'spirit', 1, 'Spectral Edge', 'Spirit clicks can CRIT.');
   n('xspire1', 2, 'spirit', 1, 'Featherweight', 'SILVER SPIRE: spirits lighten your step — launch power +10%.', { req: 'spirit5', side: -1 });
   n('spirit6', 2, 'spirit', 2, 'Ghostly Discipline', 'Spirit clicks deal another +50% damage.', { req: ['spirit5', 'xspirit2'] });
-  n('auto4', 2, 'auto', 0, 'Bellows Engines', 'UNLOCK: the FORGE ALL button in the bag.');
-  n('auto5', 2, 'auto', 1, 'Rift Standing Orders', 'UNLOCK: the Rift Portal\'s ♻ AUTO MODE.');
+  n('auto4', 2, 'auto', 0, 'Bellows Engines', '🔓 the FORGE ALL button in the bag.');
+  n('auto5', 2, 'auto', 1, 'Rift Standing Orders', '🔓 the Rift Portal\'s ♻ AUTO MODE.');
   n('auto6', 2, 'auto', 2, 'Punctual Couriers', 'Treasure chests are delivered TWICE as often.');
 
   /* ===== GATE + ERA 3 — AGE OF IRON ===== */
@@ -933,7 +933,7 @@ const PRESTIGE_TREE = (() => {
   n('forg1', 4, 'for', 0, 'Gilded Loot', 'ALL item values +30%.');
   n('xfor4', 4, 'for', 0, 'Hoard Sense', 'Item drop chance +10% per Era gate owned.', { req: 'forg1', side: 1 });
   n('xfor8', 4, 'for', 1, 'Jackpot Chests', 'Chests have a 10% chance to be JACKPOTS: x10 Gold & resources, items +2 tiers.', { req: 'xfor4', side: 1 });
-  n('forg2', 4, 'for', 1, 'Affix Fusion', 'FORGE UNLOCK: fuse two same-tier items with DIFFERENT affixes into one item carrying BOTH.');
+  n('forg2', 4, 'for', 1, 'Affix Fusion', 'FORGE 🔓: fuse two same-tier items with DIFFERENT affixes into one item carrying BOTH.');
   n('xrift3', 4, 'for', 1, 'Cartomancer', 'RIFT PORTAL: the Rift\'s bargains offer FOUR cards to choose from (instead of three).', { req: 'xrift2', side: -1 });
   n('forg3', 4, 'for', 2, 'Deep Pockets', 'Item drop chance +40%.', { req: ['forg2', 'xfor4'] });
   n('mysg1', 4, 'mys', 0, 'Gold-Threaded Robes', 'Mana production x2.');
@@ -996,6 +996,8 @@ const PRESTIGE_TREE = (() => {
   n('auto13', 5, 'auto', 0, 'The Brass Steward', 'TOGGLE: automatically buys BUILDING UPGRADES (cheapest first) every 5s.');
   n('auto14', 5, 'auto', 1, 'The Iron Quartermaster', 'TOGGLE: automatically buys UNIT UPGRADES (cheapest first) every 5s.');
   n('auto15', 5, 'auto', 2, 'The Clockwork Architect', 'TOGGLE: automatically builds the cheapest BUILDINGS every 5s.');
+  n('xauto1', 5, 'auto', 2, 'Fast Foremen', 'AUTO BUILD runs every 2s instead of every 5s.', { req: 'auto15', side: -1 });
+  n('xauto2', 5, 'auto', 2, 'Instant Blueprints', 'AUTO BUILD runs every 1s.', { req: 'xauto1', side: 1 });
 
   /* ===== GATE + ERA 6 — AGE OF AETHER ===== */
   gate('era6', 6, 'Age of Aether', '+150% ALL gold. The kingsroads glow with aether. The final ring.');
@@ -1032,6 +1034,7 @@ const PRESTIGE_TREE = (() => {
   n('spirita3', 6, 'spirit', 2, 'One With the Ghosts', 'YOUR clicks gain all spirit damage bonuses.', { req: ['spirita2', 'xspirit6'] });
   n('auto16', 6, 'auto', 0, 'The Arcane Vizier', 'TOGGLE: automatically learns ARCANE SKILLS the moment you can afford them.');
   n('auto17', 6, 'auto', 1, 'The Phantom Smith', 'TOGGLE: automatically FORGES your whole bag every 10s.');
+  n('auto19', 6, 'auto', 1, 'The Fusion Loom', 'TOGGLE: automatically FUSES compatible affixed items every 10s.', { req: 'auto17', side: 1 });
   n('auto18', 6, 'auto', 2, 'The Grand Automaton', 'All automatons work EVERY SECOND, and ALL production +25%.');
 
   return T;

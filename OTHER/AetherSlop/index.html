@@ -98,6 +98,7 @@
         <button id="tab-build" class="rtab active">BUILD</button>
         <button id="tab-upgr" class="rtab">UPGRADES</button>
         <button id="tab-bag" class="rtab">BAG <span id="bag-count"></span></button>
+        <button id="tab-auto" class="rtab">AUTOMATION</button>
       </div>
 
       <div class="scroll" id="right-body">
@@ -108,6 +109,7 @@
             <button class="amt-btn" data-amt="100">x100</button>
             <button class="amt-btn" data-amt="max">MAX</button>
             <button class="amt-btn" data-amt="next10" title="Round up to the next multiple of 10">&#8968;10</button>
+            <button class="amt-btn" data-amt="next100" title="Round up to the next multiple of 100">&#8968;100</button>
           </div>
           <div id="shop-filters">
             <button class="filter-btn active" data-filter="all">ALL</button>
@@ -125,6 +127,10 @@
 
         <div id="view-bag" class="hidden">
           <div id="inv-list"></div>
+        </div>
+
+        <div id="view-auto" class="hidden">
+          <div id="auto-list"></div>
         </div>
 
         <div id="view-detail" class="hidden">

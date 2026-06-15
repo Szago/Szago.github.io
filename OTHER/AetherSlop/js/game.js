@@ -53,7 +53,9 @@ let state = {
   inv: {},                            // "type:tier" -> count (persists ascension)
   equip: defaultEquip(),              // unit id -> slot array of {t, tier}|null
   stats: defaultStats(),
-  buyAmount: 1,
+  buyAmount: 1,                       // legacy: migrated into buildBuyAmount
+  buildBuyAmount: 1,
+  unitBuyAmount: 1,
   lastSave: Date.now(),
 };
 
@@ -82,12 +84,16 @@ function ensureShape(s) {
   if (!s.tree) s.tree = {};
   /* automation toggles (the 8th branch) */
   if (!s.autoOn) s.autoOn = {};
-  for (const k of ['bup', 'uup', 'build', 'skill', 'forge'])
+  for (const k of ['bup', 'uup', 'build', 'skill', 'forge', 'fuse'])
     if (s.autoOn[k] === undefined) s.autoOn[k] = false;
   /* buy amounts are gated by Automation nodes — reset locked modes */
   const amtLocked = v => (String(v) === '10' && !s.tree.auto1) ||
-    (['100', 'max', 'next10'].includes(String(v)) && !s.tree.auto2);
-  if (amtLocked(s.buyAmount)) s.buyAmount = 1;
+    (['100', 'max', 'next10', 'next100'].includes(String(v)) && !s.tree.auto2);
+  if (s.buildBuyAmount === undefined) s.buildBuyAmount = s.buyAmount === undefined ? 1 : s.buyAmount;
+  if (s.unitBuyAmount === undefined) s.unitBuyAmount = 1;
+  if (amtLocked(s.buildBuyAmount)) s.buildBuyAmount = 1;
+  if (amtLocked(s.unitBuyAmount)) s.unitBuyAmount = 1;
+  s.buyAmount = s.buildBuyAmount; // keep older tooling/saves readable
   /* tree rework migration: if any owned node no longer exists,
      wipe the tree and refund ALL sigils (free respec) */
   const validNodes = new Set(PRESTIGE_TREE.map(n => n.id));
@@ -750,11 +756,15 @@ function maxAffordable(b) {
 
 /* resolve the buy-amount mode into a concrete count for this building */
 function resolveAmount(b) {
-  const mode = state.buyAmount;
+  const mode = buyAmountFor('build');
   if (mode === 'max') return Math.max(1, maxAffordable(b));
   if (mode === 'next10') {
     const rem = bCount(b.id) % 10;
     return rem === 0 ? 10 : 10 - rem;
+  }
+  if (mode === 'next100') {
+    const rem = bCount(b.id) % 100;
+    return rem === 0 ? 100 : 100 - rem;
   }
   return Number(mode) || 1;
 }
@@ -762,7 +772,7 @@ function resolveAmount(b) {
 function buyBuilding(id) {
   if (!districtOwnedFor(id)) return;
   const b = BUILDINGS.find(x => x.id === id);
-  const amt = state.buyAmount === 'max' ? maxAffordable(b) : resolveAmount(b);
+  const amt = buyAmountFor('build') === 'max' ? maxAffordable(b) : resolveAmount(b);
   if (amt < 1) return;
   const cost = buildingCost(b, bCount(id), amt);
   if (!canAfford(cost)) return;
@@ -778,12 +788,13 @@ function buyBuildingOne(id) {
   if (!districtOwnedFor(id)) return;
   const b = BUILDINGS.find(x => x.id === id);
   const cost = buildingCost(b, bCount(id), 1);
-  if (!canAfford(cost)) return;
+  if (!canAfford(cost)) return false;
   pay(cost);
   state.buildings[id] = bCount(id) + 1;
   state.totalBuildingsBought++;
   renderCity();
   invDirty = true; // counts/costs update live — no panel rebuild (no flicker)
+  return true;
 }
 
 /* buy ONE level of a building upgrade (greedy loops use this) */
@@ -812,10 +823,11 @@ function buyBuildingUpgrade(bid, upId) {
 function buyUnitMain(unitId) {
   const u = UNITS.find(x => x.id === unitId);
   if (!unitUnlocked(u)) return;
-  const mode = state.buyAmount;
+  const mode = buyAmountFor('unit');
   let want;
   if (mode === 'max') want = 1000;
   else if (mode === 'next10') { const rem = state[u.statKey] % 10; want = rem === 0 ? 10 : 10 - rem; }
+  else if (mode === 'next100') { const rem = state[u.statKey] % 100; want = rem === 0 ? 100 : 100 - rem; }
   else want = Number(mode) || 1;
   let bought = 0;
   while (bought < want) {
@@ -849,7 +861,7 @@ function buyUnitSubStep(unitId, subId) {
 function buyUnitSub(unitId, subId) {
   const u = UNITS.find(x => x.id === unitId);
   const sub = u.subs.find(s => s.id === subId);
-  const batch = subBatch(sub.cost, subLvl(sub), sub.max);
+  const batch = subBatch(sub.cost, subLvl(sub), sub.max, 'unit');
   if (!batch.n || !canAfford(batch.cost)) return;
   let n = 0;
   while (n < batch.n && buyUnitSubStep(unitId, subId)) n++;
@@ -935,6 +947,99 @@ function autoToggleBtn(flag, nodeId, label, title) {
   return btn;
 }
 
+const AUTO_MODE_DEFS = [
+  { flag: 'bup', node: 'auto13', label: 'BUILDING UPGRADES', desc: 'Buys the cheapest affordable building upgrade.' },
+  { flag: 'uup', node: 'auto14', label: 'UNIT UPGRADES', desc: 'Buys the cheapest affordable unit upgrade.' },
+  { flag: 'build', node: 'auto15', label: 'BUILDINGS', desc: 'Builds the cheapest affordable building across owned districts.' },
+  { flag: 'skill', node: 'auto16', label: 'ARCANE SKILLS', desc: 'Learns affordable Arcane Skills.' },
+  { flag: 'forge', node: 'auto17', label: 'FORGE BAG', desc: 'Combines identical item pairs across the bag.' },
+  { flag: 'fuse', node: 'auto19', label: 'FUSE AFFIXES', desc: 'Fuses compatible affixed items into multi-affix relics.' },
+];
+
+function autoBuildPeriod() {
+  if (hasTree('auto18') || hasTree('xauto2')) return 1;
+  if (hasTree('xauto1')) return 2;
+  return 5;
+}
+
+function autoModePeriod(flag) {
+  if (flag === 'build') return autoBuildPeriod();
+  if (hasTree('auto18')) return 1;
+  return flag === 'forge' || flag === 'fuse' ? 10 : 5;
+}
+
+function autoUnlockText(nodeId) {
+  const node = PRESTIGE_TREE.find(n => n.id === nodeId);
+  return node ? 'Unlock in Ascension: ' + node.name + '.' : 'Unlock in Ascension.';
+}
+
+function automationModeRow(parent, def) {
+  const row = document.createElement('div');
+  row.className = 'auto-mode-row';
+  const btn = document.createElement('button');
+  row.appendChild(btn);
+  const body = document.createElement('div');
+  body.className = 'auto-mode-copy';
+  body.innerHTML = '<div class="auto-mode-name">' + def.label + '</div><div class="auto-mode-desc">' + def.desc + '</div><div class="auto-mode-rate"></div>';
+  row.appendChild(body);
+  const rate = body.querySelector('.auto-mode-rate');
+
+  const paint = () => {
+    const unlocked = hasTree(def.node);
+    btn.className = 'menu-btn auto-toggle' + (unlocked && state.autoOn[def.flag] ? ' on' : '');
+    btn.disabled = !unlocked;
+    btn.textContent = unlocked ? (state.autoOn[def.flag] ? 'ON' : 'OFF') : '🔒';
+    btn.title = unlocked ? 'Toggle ' + def.label + '.' : autoUnlockText(def.node);
+    rate.textContent = unlocked ? 'Runs every ' + autoModePeriod(def.flag) + 's.' : autoUnlockText(def.node);
+  };
+  btn.onclick = () => {
+    if (!hasTree(def.node)) return;
+    state.autoOn[def.flag] = !state.autoOn[def.flag];
+    paint();
+    save();
+  };
+  paint();
+  viewUpdaters.push(paint);
+  parent.appendChild(row);
+}
+
+function renderAutomationTab() {
+  const list = $('auto-list');
+  list.innerHTML = '';
+
+  sectionTitle(list, 'MODES');
+  for (const def of AUTO_MODE_DEFS) automationModeRow(list, def);
+
+  sectionTitle(list, 'BUILD SPEED');
+  const speed = document.createElement('div');
+  speed.className = 'automation-note';
+  speed.innerHTML =
+    '<div><b>Auto-build cadence:</b> every ' + autoBuildPeriod() + 's</div>' +
+    '<div>' + (hasTree('xauto1') ? 'Fast Foremen owned.' : autoUnlockText('xauto1')) + '</div>' +
+    '<div>' + (hasTree('xauto2') ? 'Instant Blueprints owned.' : autoUnlockText('xauto2')) + '</div>';
+  list.appendChild(speed);
+
+  sectionTitle(list, 'ACTIONS');
+  const actions = document.createElement('div');
+  actions.className = 'bag-actions';
+  const forgeBtn = document.createElement('button');
+  forgeBtn.className = 'menu-btn';
+  forgeBtn.textContent = hasTree('auto4') ? 'FORGE ALL NOW' : '🔒 FORGE ALL';
+  forgeBtn.disabled = !hasTree('auto4');
+  forgeBtn.title = hasTree('auto4') ? 'Combine every pair of identical items, cascading to higher tiers' : autoUnlockText('auto4');
+  forgeBtn.onclick = () => forgeAll();
+  actions.appendChild(forgeBtn);
+
+  const fuseBtn = document.createElement('button');
+  fuseBtn.className = 'menu-btn';
+  fuseBtn.textContent = hasTree('forg2') ? 'FUSE ALL NOW' : '🔒 FUSE ALL';
+  fuseBtn.disabled = !hasTree('forg2');
+  fuseBtn.title = hasTree('forg2') ? 'Fuse every compatible affixed item pair into larger multi-affix items' : autoUnlockText('forg2');
+  fuseBtn.onclick = () => fuseAll();
+  actions.appendChild(fuseBtn);
+  list.appendChild(actions);
+}
+
 function autoBuyBuildingUpgrades() {
   let guard = 0;
   while (guard++ < 40) {
@@ -986,12 +1091,10 @@ function autoBuyBuildings() {
       if (!best || s < best.s) best = { b, cost, s };
     }
     if (!best) break;
-    pay(best.cost);
-    state.buildings[best.b.id] = bCount(best.b.id) + 1;
-    state.totalBuildingsBought++;
+    if (!buyBuildingOne(best.b.id)) break;
     bought++;
   }
-  if (bought) { renderCity(); invDirty = true; }
+  if (bought) { refreshShop(); invDirty = true; }
 }
 
 function autoLearnSkills() {
@@ -1001,20 +1104,45 @@ function autoLearnSkills() {
   }
 }
 
-let autoAcc = 0, autoRuns = 0;
+let autoAcc = 0, autoBuildAcc = 0, autoForgeAcc = 0, autoFuseAcc = 0;
 function runAutomations(dt) {
   const a = state.autoOn;
   if (!a) return;
+
+  if (a.build && hasTree('auto15')) {
+    autoBuildAcc += dt;
+    const period = autoBuildPeriod();
+    if (autoBuildAcc >= period) {
+      autoBuildAcc = 0;
+      autoBuyBuildings();
+    }
+  }
+
+  if (a.forge && hasTree('auto17')) {
+    autoForgeAcc += dt;
+    const period = hasTree('auto18') ? 1 : 10;
+    if (autoForgeAcc >= period) {
+      autoForgeAcc = 0;
+      forgeAll(true);
+    }
+  }
+
+  if (a.fuse && hasTree('auto19')) {
+    autoFuseAcc += dt;
+    const period = hasTree('auto18') ? 1 : 10;
+    if (autoFuseAcc >= period) {
+      autoFuseAcc = 0;
+      fuseAll(true);
+    }
+  }
+
   autoAcc += dt;
   const period = hasTree('auto18') ? 1 : 5; // the Grand Automaton never rests
   if (autoAcc < period) return;
   autoAcc = 0;
-  autoRuns++;
   if (a.bup && hasTree('auto13')) autoBuyBuildingUpgrades();
   if (a.uup && hasTree('auto14')) autoBuyUnitUpgrades();
-  if (a.build && hasTree('auto15')) autoBuyBuildings();
   if (a.skill && hasTree('auto16')) autoLearnSkills();
-  if (a.forge && hasTree('auto17') && autoRuns % 2 === 0) forgeAll(true);
 }
 
 /* Animated Armory: a dropped item slips into the first empty fitting slot */
@@ -1114,19 +1242,74 @@ function combineItem(t, tier, a) {
   rebuildDetail();
 }
 
-/* AFFIX FUSION (Ages Tree: Affix Fusion node) — two same-type same-tier
-   items with DIFFERENT single affixes fuse into ONE carrying both. */
-function fuseItems(t, tier, a1, a2) {
-  if (!hasTree('forg2')) return;
-  if (a1 === a2 || invCount(t, tier, a1) < 1 || invCount(t, tier, a2) < 1) return;
+/* AFFIX FUSION (Ages Tree: Affix Fusion node) — same-type same-tier
+   affixed items merge their affix sets. Multi-affix items can keep fusing. */
+function fuseResultAffix(a1, a2) {
+  const l1 = affixList(a1), l2 = affixList(a2);
+  if (!l1.length || !l2.length) return null;
+  const fused = affixKey([...new Set([...l1, ...l2])]);
+  if (!fused) return null;
+  const c = affixList(fused).length;
+  return c > Math.max(l1.length, l2.length) ? fused : null;
+}
+
+function canFuseAffixes(a1, a2) {
+  return !!fuseResultAffix(a1, a2);
+}
+
+function fuseItems(t, tier, a1, a2, quiet) {
+  if (!hasTree('forg2')) return false;
+  const fused = fuseResultAffix(a1, a2);
+  if (!fused) return false;
+  if (invCount(t, tier, a1) < 1 || invCount(t, tier, a2) < 1) return false;
   invAdd(t, tier, -1, a1);
   invAdd(t, tier, -1, a2);
-  const fused = affixKey([...affixList(a1), ...affixList(a2)]);
   invAdd(t, tier, 1, fused);
   state.stats.itemsCombined++;
-  toast('FUSED: ' + itemName(t, tier, fused) + '!');
-  fuseSel = null;
-  rebuildDetail();
+  if (!quiet) {
+    toast('FUSED: ' + itemName(t, tier, fused) + '!');
+    fuseSel = null;
+    rebuildDetail();
+  }
+  return true;
+}
+
+function fuseAll(quiet) {
+  if (!hasTree('forg2')) {
+    if (!quiet) toast('Unlock Affix Fusion in the Fortune branch first.');
+    return 0;
+  }
+  let total = 0, guard = 0;
+  while (guard++ < 1000) {
+    const entries = Object.entries(state.inv)
+      .map(([k, n]) => Object.assign(invParse(k), { n }))
+      .filter(e => e.n > 0 && affixList(e.a).length > 0);
+    let best = null;
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const a = entries[i], b = entries[j];
+        if (a.t !== b.t || a.tier !== b.tier) continue;
+        const fused = fuseResultAffix(a.a, b.a);
+        if (!fused) continue;
+        const affCount = affixList(fused).length;
+        const score = affCount * 100 + Math.min(affixList(a.a).length, affixList(b.a).length);
+        if (!best || score > best.score) best = { a, b, fused, score };
+      }
+    }
+    if (!best) break;
+    if (!fuseItems(best.a.t, best.a.tier, best.a.a, best.b.a, true)) break;
+    total++;
+  }
+  if (total) {
+    if (!quiet) {
+      toast('FUSE ALL: ' + total + ' fusion(s) made!');
+      fuseSel = null;
+      rebuildDetail();
+    }
+  } else if (!quiet) {
+    toast('Nothing to fuse - need same-type, same-tier affixed items with new affixes.');
+  }
+  return total;
 }
 
 /* cross-forge: a double-affix item + a matching single-affix item of the
@@ -1304,7 +1487,8 @@ function ascend() {
     sigils: state.sigils, sigilsEver: state.sigilsEver, ascensions: state.ascensions,
     bonusSigils: state.bonusSigils || 0,
     tree: state.tree, inv: state.inv, equip: state.equip, stats: state.stats,
-    buyAmount: state.buyAmount, autoOn: state.autoOn, lastSave: Date.now(),
+    buyAmount: state.buildBuyAmount, buildBuyAmount: state.buildBuyAmount, unitBuyAmount: state.unitBuyAmount,
+    autoOn: state.autoOn, lastSave: Date.now(),
     /* Rift Portal: stages, cards and deaths reset — permanent
        upgrades (elixirs, satchel slots) and supplies are kept */
     portal: { ...(state.portal || {}), stage: 0, cards: [], deadUntil: {}, team: [], flaskArmed: false },
@@ -1368,7 +1552,7 @@ function applyNodeInstant(id) {
     toast('Reliquary Straps: the Hero can carry one more item!');
   }
   /* Automation unlocks change buttons all over the UI — rebuild it */
-  if (id.startsWith('auto')) {
+  if (id.startsWith('auto') || id.startsWith('xauto') || id === 'forg2') {
     buildShop();
     buildUnitCards();
     syncRightPanel();
@@ -1515,26 +1699,42 @@ function costHtml(cost) {
   return parts.join(parts.length > 1 ? '<br>' : ' ');
 }
 
-/* ---------------- buy amount (shared by shop, units & details) ---------------- */
+/* ---------------- buy amount (separate for buildings and units) ---------------- */
 
 /* buy amounts beyond x1 are unlocked by the Automation branch */
 function amtUnlocked(v) {
   if (String(v) === '1') return true;
   if (String(v) === '10') return hasTree('auto1');
-  return hasTree('auto2'); // 100 / max / next10
+  return hasTree('auto2'); // 100 / max / next10 / next100
 }
 
-function setBuyAmount(v) {
+function normalizeBuyAmount(v) {
+  return isNaN(Number(v)) ? v : Number(v);
+}
+
+function buyAmountFor(scope) {
+  return scope === 'unit' ? state.unitBuyAmount : state.buildBuyAmount;
+}
+
+function setBuyAmount(v, scope) {
   if (!amtUnlocked(v)) return;
-  state.buyAmount = isNaN(Number(v)) ? v : Number(v);
-  for (const b of document.querySelectorAll('.amt-btn'))
-    b.classList.toggle('active', String(state.buyAmount) === b.dataset.amt);
+  scope = scope === 'unit' ? 'unit' : 'build';
+  const amt = normalizeBuyAmount(v);
+  if (scope === 'unit') state.unitBuyAmount = amt;
+  else {
+    state.buildBuyAmount = amt;
+    state.buyAmount = amt; // legacy mirror
+  }
+  for (const b of document.querySelectorAll('.amt-btn')) {
+    const btnScope = b.dataset.scope || 'build';
+    b.classList.toggle('active', String(buyAmountFor(btnScope)) === b.dataset.amt);
+  }
   refreshShop();
 }
 
 /* apply Automation-branch locks to every buy-amount button in the DOM
    (covers the static #amt-toggle strip in the building shop too) */
-function refreshAmtLocks() {
+function legacyRefreshAmtLocks() {
   for (const btn of document.querySelectorAll('.amt-btn')) {
     if (!btn.dataset.label) btn.dataset.label = btn.textContent.replace('🔒', '');
     const locked = !amtUnlocked(btn.dataset.amt);
@@ -1548,7 +1748,7 @@ function refreshAmtLocks() {
 }
 
 /* a compact x1/x10/x100/MAX strip, used in the left panel and detail pages */
-function makeAmtToggle() {
+function legacyMakeAmtToggle() {
   const box = document.createElement('div');
   box.className = 'amt-inline';
   for (const v of ['1', '10', '100', 'max', 'next10']) {
@@ -1572,13 +1772,58 @@ function makeAmtToggle() {
   return box;
 }
 
+/* apply Automation-branch locks to every buy-amount button in the DOM
+   (covers the static #amt-toggle strip in the building shop too) */
+function refreshAmtLocks() {
+  for (const btn of document.querySelectorAll('.amt-btn')) {
+    if (!btn.dataset.scope) btn.dataset.scope = 'build';
+    if (!btn.dataset.label) btn.dataset.label = btn.textContent.replace(/^🔒\s*/, '');
+    const locked = !amtUnlocked(btn.dataset.amt);
+    btn.disabled = locked;
+    btn.textContent = (locked ? '🔒' : '') + btn.dataset.label;
+    btn.title = locked
+      ? 'Unlock in the Ascension tree - Automation branch (' +
+        (btn.dataset.amt === '10' ? 'Buying Ledgers' : 'Procurement Office') + ').'
+      : (btn.dataset.amt === 'next10' ? 'Round up to the next multiple of 10' :
+        btn.dataset.amt === 'next100' ? 'Round up to the next multiple of 100' : '');
+    btn.classList.toggle('active', !locked && String(buyAmountFor(btn.dataset.scope)) === btn.dataset.amt);
+  }
+}
+
+/* a compact x1/x10/x100/MAX strip, used in the left panel and detail pages */
+function makeAmtToggle(scope) {
+  scope = scope === 'unit' ? 'unit' : 'build';
+  const box = document.createElement('div');
+  box.className = 'amt-inline';
+  for (const v of ['1', '10', '100', 'max', 'next10', 'next100']) {
+    const btn = document.createElement('button');
+    btn.className = 'amt-btn';
+    btn.dataset.amt = v;
+    btn.dataset.scope = scope;
+    const label = v === 'max' ? 'MAX' : v === 'next10' ? 'N10' : v === 'next100' ? 'N100' : 'x' + v;
+    btn.dataset.label = label;
+    btn.textContent = (amtUnlocked(v) ? '' : '🔒') + label;
+    btn.disabled = !amtUnlocked(v);
+    btn.title = !amtUnlocked(v)
+      ? 'Unlock in the Ascension tree - Automation branch (' +
+        (v === '10' ? 'Buying Ledgers' : 'Procurement Office') + ').'
+      : (v === 'next10' ? 'Round up to the next multiple of 10' :
+        v === 'next100' ? 'Round up to the next multiple of 100' : '');
+    btn.onclick = () => setBuyAmount(v, scope);
+    btn.classList.toggle('active', amtUnlocked(v) && String(buyAmountFor(scope)) === v);
+    box.appendChild(btn);
+  }
+  return box;
+}
+
 /* how many levels of a leveled upgrade to buy at the current mode, and
    the summed cost. costFn(level) -> cost obj; respects maxLvl & wallet for MAX */
-function subBatch(costFn, lvl, maxLvl) {
-  const mode = state.buyAmount;
+function subBatch(costFn, lvl, maxLvl, scope) {
+  const mode = buyAmountFor(scope || 'build');
   let want;
   if (mode === 'max') want = 200;
   else if (mode === 'next10') { const rem = lvl % 10; want = rem === 0 ? 10 : 10 - rem; }
+  else if (mode === 'next100') { const rem = lvl % 100; want = rem === 0 ? 100 : 100 - rem; }
   else want = Number(mode) || 1;
   want = Math.min(want, (isFinite(maxLvl) ? maxLvl : Infinity) - lvl);
   if (want <= 0) return { n: 0, cost: null };
@@ -1722,7 +1967,7 @@ function initMapView() {
    RIGHT PANEL — tabs (BUILD / BAG) + detail views
    ============================================================ */
 
-let rightTab = 'build';          // 'build' | 'upgr' | 'bag'
+let rightTab = 'build';          // 'build' | 'upgr' | 'bag' | 'auto'
 let currentDetail = null;        // {kind:'unit'|'building', id}
 let picker = null;               // {unitId, slot} equip picker open in unit detail
 let pickerMaxOnly = false;       // picker filter: only the highest tier of each kind
@@ -1777,13 +2022,16 @@ function syncRightPanel() {
   const showShop = !currentDetail && rightTab === 'build';
   const showUpgr = !currentDetail && rightTab === 'upgr';
   const showBag = !currentDetail && rightTab === 'bag';
+  const showAuto = !currentDetail && rightTab === 'auto';
   $('view-shop').classList.toggle('hidden', !showShop);
   $('view-upgr').classList.toggle('hidden', !showUpgr);
   $('view-bag').classList.toggle('hidden', !showBag);
+  $('view-auto').classList.toggle('hidden', !showAuto);
   $('view-detail').classList.toggle('hidden', !currentDetail);
   $('tab-build').classList.toggle('active', rightTab === 'build' && !currentDetail);
   $('tab-upgr').classList.toggle('active', rightTab === 'upgr' && !currentDetail);
   $('tab-bag').classList.toggle('active', rightTab === 'bag' && !currentDetail);
+  $('tab-auto').classList.toggle('active', rightTab === 'auto' && !currentDetail);
 
   if (currentDetail) {
     if (currentDetail.kind === 'unit') buildUnitDetail(currentDetail.id);
@@ -1796,6 +2044,9 @@ function syncRightPanel() {
   } else if (showUpgr) {
     renderUpgradesTab();
     $('right-title').textContent = 'ROYAL WORKS';
+  } else if (showAuto) {
+    renderAutomationTab();
+    $('right-title').textContent = 'AUTOMATION';
   } else {
     $('right-title').textContent = 'ROYAL BUILDER';
   }
@@ -1821,16 +2072,6 @@ function renderUpgradesTab() {
     allBtn.disabled = true;
   }
   actions.appendChild(allBtn);
-  /* automation toggles (Age of Storms/Aether nodes) */
-  for (const t of [
-    ['bup', 'auto13', 'AUTO UPGRADES', 'The Brass Steward buys building upgrades for you.'],
-    ['uup', 'auto14', 'AUTO UNITS', 'The Iron Quartermaster buys unit upgrades for you.'],
-    ['build', 'auto15', 'AUTO BUILD', 'The Clockwork Architect builds the cheapest buildings for you.'],
-    ['skill', 'auto16', 'AUTO SKILLS', 'The Arcane Vizier learns affordable Arcane Skills for you.'],
-  ]) {
-    const btn = autoToggleBtn(t[0], t[1], t[2], t[3]);
-    if (btn) actions.appendChild(btn);
-  }
   list.appendChild(actions);
 
   /* every upgrade of every built building, sorted by how affordable it is */
@@ -1983,13 +2224,13 @@ function buildUnitDetail(unitId) {
 
   // main upgrade (respects the buy-amount toggle)
   sectionTitle(box, 'UPGRADES');
-  box.appendChild(makeAmtToggle());
+  box.appendChild(makeAmtToggle('unit'));
   upgradeRow(box, {
     name: u.main.name,
-    info: unitUnlocked(u) ? u.main.info : 'LOCKED — reach Zone ' + (u.unlock ? u.unlock.zone : 0) + ' to recruit. ' + u.main.info,
+    info: unitUnlocked(u) ? u.main.info : '🔒 reach Zone ' + (u.unlock ? u.unlock.zone : 0) + ' to recruit. ' + u.main.info,
     lvlText: () => 'Lv.' + state[u.statKey],
-    cost: () => subBatch(u.main.cost, state[u.statKey], Infinity).cost,
-    costPrefix: () => 'Buy x' + subBatch(u.main.cost, state[u.statKey], Infinity).n + ': ',
+    cost: () => subBatch(u.main.cost, state[u.statKey], Infinity, 'unit').cost,
+    costPrefix: () => 'Buy x' + subBatch(u.main.cost, state[u.statKey], Infinity, 'unit').n + ': ',
     onBuy: () => buyUnitMain(u.id),
     disabled: () => !unitUnlocked(u),
   });
@@ -2000,8 +2241,8 @@ function buildUnitDetail(unitId) {
       name: sub.name,
       info: sub.info,
       lvlText: () => 'Lv.' + subLvl(sub) + (isFinite(sub.max) ? '/' + sub.max : ''),
-      cost: () => subLvl(sub) >= sub.max ? null : subBatch(sub.cost, subLvl(sub), sub.max).cost,
-      costPrefix: () => 'Buy x' + subBatch(sub.cost, subLvl(sub), sub.max).n + ': ',
+      cost: () => subLvl(sub) >= sub.max ? null : subBatch(sub.cost, subLvl(sub), sub.max, 'unit').cost,
+      costPrefix: () => 'Buy x' + subBatch(sub.cost, subLvl(sub), sub.max, 'unit').n + ': ',
       onBuy: () => buyUnitSub(u.id, sub.id),
     });
   }
@@ -2164,7 +2405,7 @@ function buildBuildingDetail(bid) {
   });
 
   sectionTitle(box, 'CONSTRUCTION');
-  box.appendChild(makeAmtToggle());
+  box.appendChild(makeAmtToggle('build'));
   upgradeRow(box, {
     name: 'Build ' + b.name,
     info: districtOwnedFor(bid) ? null : 'Requires the ' + DISTRICT_NAMES[BUILDING_DISTRICT[bid]] + ' district.',
@@ -2172,7 +2413,7 @@ function buildBuildingDetail(bid) {
     cost: () => buildingCost(b, bCount(bid), resolveAmount(b)),
     costPrefix: () => 'Buy x' + resolveAmount(b) + ': ',
     onBuy: () => buyBuilding(bid),
-    disabled: () => !districtOwnedFor(bid) || (state.buyAmount === 'max' && maxAffordable(b) < 1),
+    disabled: () => !districtOwnedFor(bid) || (buyAmountFor('build') === 'max' && maxAffordable(b) < 1),
   });
 
   const ups = BUILDING_UPGRADES[bid] || [];
@@ -2277,14 +2518,24 @@ function renderBag() {
     forgeBtn.title = 'Unlock in the Ascension tree — Automation branch (Bellows Engines).';
     forgeBtn.disabled = true;
   }
-  const smithBtn = autoToggleBtn('forge', 'auto17', 'AUTO FORGE', 'The Phantom Smith forges your bag every 10s.');
-  if (smithBtn) actions.appendChild(smithBtn);
+  const fuseBtn = document.createElement('button');
+  fuseBtn.className = 'menu-btn';
+  if (hasTree('forg2')) {
+    fuseBtn.textContent = 'FUSE ALL';
+    fuseBtn.title = 'Fuse compatible same-type, same-tier affixed items into larger multi-affix items';
+    fuseBtn.onclick = () => fuseAll();
+  } else {
+    fuseBtn.textContent = '🔒 FUSE ALL';
+    fuseBtn.title = 'Unlock in the Ascension tree - Fortune branch (Affix Fusion).';
+    fuseBtn.disabled = true;
+  }
   const unequipBtn = document.createElement('button');
   unequipBtn.className = 'menu-btn';
   unequipBtn.textContent = 'UNEQUIP ALL';
   unequipBtn.title = 'Return every equipped item to the bag';
   unequipBtn.onclick = unequipAll;
   actions.appendChild(forgeBtn);
+  actions.appendChild(fuseBtn);
   actions.appendChild(unequipBtn);
   list.appendChild(actions);
 
@@ -2310,6 +2561,7 @@ function renderBag() {
     const note = document.createElement('div');
     note.className = 'detail-note fuse-note';
     note.innerHTML = '⚗ FUSING: <b>' + itemName(fuseSel.t, fuseSel.tier, fuseSel.a) + '</b> — pick a partner of the same type & tier with a DIFFERENT affix. ';
+    note.innerHTML = 'FUSING: <b>' + itemName(fuseSel.t, fuseSel.tier, fuseSel.a) + '</b> - pick a same-type, same-tier partner carrying at least one new affix. ';
     const cancel = document.createElement('button');
     cancel.className = 'combine-btn';
     cancel.textContent = 'CANCEL';
@@ -2349,26 +2601,41 @@ function renderBag() {
     if (hasTree('forg2')) {
       if (fuseSel) {
         const isSel = fuseSel.t === e.t && fuseSel.tier === e.tier && fuseSel.a === e.a;
-        const eligible = !isSel && fuseSel.t === e.t && fuseSel.tier === e.tier &&
-          affs.length === 1 && fuseSel.a !== e.a;
+        const fused = fuseResultAffix(fuseSel.a, e.a);
+        const eligible = !isSel && fuseSel.t === e.t && fuseSel.tier === e.tier && !!fused;
         if (eligible) {
           const fb = document.createElement('button');
           fb.className = 'combine-btn fuse';
           fb.textContent = '⚗ FUSE WITH';
-          fb.title = 'Fuse into ' + itemName(e.t, e.tier, affixKey([fuseSel.a, e.a]));
+          fb.title = 'Fuse into ' + itemName(e.t, e.tier, fused);
+          fb.textContent = 'FUSE WITH';
           fb.onclick = (ev) => { ev.stopPropagation(); fuseItems(e.t, e.tier, fuseSel.a, e.a); };
           row.appendChild(fb);
           row.classList.add('fuse-target');
         } else if (isSel) {
           row.classList.add('fuse-armed');
         }
-      } else if (affs.length === 1) {
+      } else if (affs.length >= 1) {
         const fb = document.createElement('button');
         fb.className = 'combine-btn fuse';
         fb.textContent = '⚗ FUSE';
         fb.title = 'Affix Fusion: pick another ' + def.name + ' ' + tierName(e.tier) + ' with a different affix — the result carries BOTH affixes.';
+        fb.title = 'Affix Fusion: pick another ' + def.name + ' ' + tierName(e.tier) + ' carrying at least one new affix.';
+        fb.textContent = 'FUSE';
         fb.onclick = (ev) => { ev.stopPropagation(); fuseSel = { t: e.t, tier: e.tier, a: e.a }; rebuildDetail(); };
         row.appendChild(fb);
+        if (affs.length === 2) {
+          const partner = crossForgePartner(e.t, e.tier, e.a);
+          const upBtn = document.createElement('button');
+          upBtn.className = 'combine-btn fuse';
+          upBtn.textContent = 'FORGE UP';
+          upBtn.title = partner
+            ? 'Forge UP using 1x ' + itemName(e.t, e.tier, partner) + ': result is ' + itemName(e.t, e.tier + 1, e.a) + ' - all effects kept.'
+            : 'Needs a ' + def.name + ' ' + tierName(e.tier) + ' carrying ONE of these affixes.';
+          upBtn.disabled = !partner;
+          upBtn.onclick = (ev) => { ev.stopPropagation(); crossForge(e.t, e.tier, e.a); };
+          row.appendChild(upBtn);
+        }
       } else if (affs.length === 2) {
         const partner = crossForgePartner(e.t, e.tier, e.a);
         const fb = document.createElement('button');
@@ -2483,7 +2750,7 @@ function refreshShop() {
     const amt = resolveAmount(b);
     const cost = buildingCost(b, owned, amt);
     const districtOk = districtOwnedFor(b.id);
-    const afford = canAfford(cost) && districtOk && !(state.buyAmount === 'max' && maxAffordable(b) < 1);
+    const afford = canAfford(cost) && districtOk && !(buyAmountFor('build') === 'max' && maxAffordable(b) < 1);
     if (ui.row.disabled !== !afford) ui.row.disabled = !afford;
     ui.row.classList.toggle('afford', afford);
     setText(ui, 'owned', ui.ownedEl, owned > 0 ? 'x' + owned : '');
@@ -2559,7 +2826,7 @@ function refreshUnitCards() {
     const count = state[u.statKey];
     if (!unitUnlocked(u)) {
       ui.card.classList.add('locked-unit');
-      setText(ui, 'lvl', ui.lvlEl, 'LOCKED');
+      setText(ui, 'lvl', ui.lvlEl, '🔒');
       setText(ui, 'dps', ui.dpsEl, 'Unlocks at Zone ' + u.unlock.zone + ' (best: ' + state.highestZone + ')');
       setText(ui, 'share', ui.shareEl, '');
       ui.plus.style.display = 'none';
@@ -2705,7 +2972,7 @@ function renderDistrictOverlays() {
         el.title = DISTRICT_NAMES[key] + ' — click to open the Land Office';
       } else {
         const idx = DISTRICT_ORDER.indexOf(key);
-        sub = 'LOCKED<br>after ' + DISTRICT_NAMES[DISTRICT_ORDER[idx - 1]];
+        sub = '🔒<br>after ' + DISTRICT_NAMES[DISTRICT_ORDER[idx - 1]];
         el.title = DISTRICT_NAMES[key] + ' — wards unlock in order';
       }
       const builds = (DISTRICT_BUILDS[key] || []).map(id => BUILDINGS.find(b => b.id === id).name).join(', ');
@@ -2987,7 +3254,7 @@ function renderPrestige() {
     if (!owned && node.gate && ownedNodeCount() < node.needNodes) {
       costTxt += ' • ' + ownedNodeCount() + '/' + node.needNodes;
     } else if (!owned && !avail) {
-      costTxt = 'LOCKED • ' + costTxt;
+      costTxt = '🔒 • ' + costTxt;
     }
     btn.innerHTML = '<span class="node-name">' + node.name + '</span><span class="node-cost">' + costTxt + '</span>';
     btn.onmouseenter = () => { $('node-info').textContent = node.name + ' — ' + node.desc; };
@@ -3357,17 +3624,20 @@ function init() {
   $('tab-build').onclick = () => setRightTab('build');
   $('tab-upgr').onclick = () => setRightTab('upgr');
   $('tab-bag').onclick = () => setRightTab('bag');
+  $('tab-auto').onclick = () => setRightTab('auto');
   $('detail-back').onclick = closeDetail;
   initTreePan();
 
   for (const btn of document.querySelectorAll('#amt-toggle .amt-btn')) {
-    btn.onclick = () => setBuyAmount(btn.dataset.amt);
-    btn.classList.toggle('active', String(state.buyAmount) === btn.dataset.amt);
+    btn.dataset.scope = 'build';
+    if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+    btn.onclick = () => setBuyAmount(btn.dataset.amt, 'build');
+    btn.classList.toggle('active', String(state.buildBuyAmount) === btn.dataset.amt);
   }
 
   /* left panel: buy-amount strip for recruiting */
   const ua = $('unit-amt');
-  if (ua) ua.appendChild(makeAmtToggle());
+  if (ua) ua.appendChild(makeAmtToggle('unit'));
   refreshAmtLocks();
 
   for (const btn of document.querySelectorAll('.filter-btn')) {
