@@ -123,6 +123,7 @@
         .ed-tile { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
         .ed-portrait { width: 100%; aspect-ratio: 1 / 1; border-radius: 10px; background: var(--input); border: 1px solid var(--border); background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
         .ed-portrait i { font-size: 3rem; color: #3a3a44; }
+        .ed-portrait:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(140,53,247,0.4); }
         .ed-tile .field { margin-bottom: 12px; }
         .ed-meta { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
         .ed-meta-row { display: flex; align-items: center; gap: 10px; background: var(--input); border: 1px solid var(--border); border-radius: 10px; padding: 7px 12px; }
@@ -424,7 +425,7 @@
                 }
                 if (f.type === 'textarea') {
                     return `<textarea id="f-${f.key}" placeholder="${f.placeholder || ''}" oninput="CharEditor.onField('${f.key}', this.value)">${escapeHtml(val)}</textarea>
-                        <div class="md-hint"><i class="fab fa-markdown"></i> Markdown supported — **bold**, *italic*, lists, [links](url), ![image](url)</div>
+                        <div class="md-hint"><i class="fab fa-markdown"></i> Markdown supported — **bold**, *italic*, lists, [links](url), ![image](url). <i class="fas fa-paste"></i> Paste an image to embed it (base64).</div>
                         <div class="preview-md" id="pv-${f.key}"></div>`;
                 }
                 return `<input id="f-${f.key}" value="${escapeAttr(val)}" placeholder="${f.placeholder || ''}" oninput="CharEditor.onField('${f.key}', this.value)">`;
@@ -463,8 +464,10 @@
                             <div class="ed-tabpanels">${tabPanels}</div>
                         </div>
                         <aside class="ed-tile">
-                            <div class="ed-portrait" id="preview" ${portrait}>${c.image ? '' : '<i class="fas fa-user"></i>'}</div>
-                            <div class="field"><label>Image URL / path</label>${fieldControl(field('image'), c)}</div>
+                            <div class="ed-portrait" id="preview" tabindex="0" ${portrait} title="Click, then paste an image to embed it">${c.image ? '' : '<i class="fas fa-user"></i>'}</div>
+                            <div class="field"><label>Image URL / path</label>${fieldControl(field('image'), c)}
+                                <div class="hint"><i class="fas fa-paste"></i> Paste an image (here or on the portrait) to embed it as base64.</div>
+                            </div>
                             <div class="field"><label>Name</label>${fieldControl(field('name'), c)}</div>
                             <div class="field"><label>ID (page URL — ?id=…)</label>${fieldControl(field('id'), c)}
                                 <div class="hint">Leave blank to auto-fill from the name. Changing this changes the character's page link.</div>
@@ -524,6 +527,65 @@
 
             function download() { downloadText(document.getElementById('charOutput').value, 'characters.json'); }
             function copy() { navigator.clipboard.writeText(document.getElementById('charOutput').value).then(() => warn('Copied to clipboard.')); }
+
+            /* ---- Paste-to-embed images (stored inline as base64 data URLs) ----
+               Works on the image field/portrait (sets the value) and on the four
+               Markdown textareas (inserts ![…](data:…) at the cursor). */
+            function blobToDataURL(blob) {
+                return new Promise((resolve, reject) => {
+                    const r = new FileReader();
+                    r.onload = () => resolve(r.result);
+                    r.onerror = () => reject(r.error);
+                    r.readAsDataURL(blob);
+                });
+            }
+
+            function imageFromClipboard(e) {
+                const items = (e.clipboardData && e.clipboardData.items) || [];
+                for (const it of items) {
+                    if (it.kind === 'file' && it.type && it.type.indexOf('image/') === 0) return it.getAsFile();
+                }
+                return null;
+            }
+
+            async function handlePaste(e) {
+                if (selected === null) return;
+                const t = e.target;
+                if (!t || !t.id) return;
+
+                // Which character field is this? (portrait shares the image field)
+                let key;
+                if (t.id === 'preview') key = 'image';
+                else if (t.id.indexOf('f-') === 0) key = t.id.slice(2);
+                else return;
+
+                const f = field(key);
+                if (!f || (f.type !== 'textarea' && f.key !== 'image')) return;
+
+                const file = imageFromClipboard(e);
+                if (!file) return;            // not an image — let normal paste happen
+                e.preventDefault();
+
+                let dataURL;
+                try { dataURL = await blobToDataURL(file); }
+                catch (err) { warn('Could not read the pasted image.'); return; }
+
+                if (f.key === 'image') {
+                    const input = document.getElementById('f-image');
+                    if (input) input.value = dataURL;
+                    onField('image', dataURL);
+                } else {
+                    // Insert a Markdown image at the caret in the textarea.
+                    const start = t.selectionStart != null ? t.selectionStart : t.value.length;
+                    const end = t.selectionEnd != null ? t.selectionEnd : t.value.length;
+                    const md = `![pasted image](${dataURL})`;
+                    t.value = t.value.slice(0, start) + md + t.value.slice(end);
+                    t.selectionStart = t.selectionEnd = start + md.length;
+                    onField(key, t.value);
+                }
+            }
+
+            document.addEventListener('paste', handlePaste);
 
             return { reload, importFile, add, del, select, onField, tab, download, copy };
         })();
