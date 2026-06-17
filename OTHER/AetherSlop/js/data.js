@@ -112,7 +112,7 @@ const BUILDINGS = [
   { id: 'beatfoundry', name: 'Beat Foundry', sprite: 'tower', pal: { r: '#ff8c2e', R: '#8d1f1f', K: '#332842' }, cost: { gold: 4.5e9, wood: 180000, stone: 320000, mana: 220000 }, prod: { gold: 360000, stone: 30 }, desc: 'Metronomes the size of houses.', special: 'Tower notes become a little larger and easier to read' },
   { id: 'reapercloister', name: 'Reaper Cloister', sprite: 'cathedral', pal: { W: '#c0c8d4', w: '#7a838f', m: '#8d1f1f', M: '#ff4a3c' }, cost: { gold: 7e9, stone: 420000, mana: 300000 }, prod: { mana: 18, gold: 420000 }, desc: 'A quiet place for loud endings.', special: '+4% Doomforged Reaper damage each; stronger at night' },
   { id: 'bloodtreasury', name: 'Blood Treasury', sprite: 'mint', pal: { y: '#ff4a3c', Y: '#ffd23e', s: '#332842', S: '#1c1622' }, cost: { gold: 1e10, wood: 360000, stone: 480000, mana: 360000 }, prod: { gold: 850000 }, desc: 'Floor trophies, audited in red ink.', special: '+2% all gold each; Tower rewards pay more' },
-  { id: 'nightmetronome', name: 'Night Metronome', sprite: 'magetower', pal: { p: '#1c1622', P: '#332842', M: '#ff4a3c', y: '#ffd23e' }, cost: { gold: 1.4e10, stone: 520000, mana: 520000 }, prod: { mana: 28 }, desc: 'The city sleeps in perfect time.', special: 'Tower misses hurt less; night strengthens clicks and Reapers' },
+  { id: 'nightmetronome', name: 'Night Metronome', sprite: 'magetower', pal: { p: '#1c1622', P: '#332842', M: '#ff4a3c', y: '#ffd23e' }, cost: { gold: 1.4e10, stone: 520000, mana: 520000 }, prod: { mana: 28 }, desc: 'The city sleeps in perfect time.', special: 'Tower misses hurt less; each grants +0.5% night click damage (cap +50%) and +2% night Reaper damage' },
 
   /* ---- Sunken Ward: sealed-sea endgame ---- */
   { id: 'tidebreaker', name: 'Tidebreaker Dock', sprite: 'wharf', pal: { M: '#5fd9ff', m: '#1c5a8a', b: '#6b4e26' }, cost: { gold: 5e9, wood: 320000, stone: 180000, mana: 140000 }, prod: { wood: 48, gold: 320000 }, desc: 'Ships moor where roads cannot.', special: '+3% Drowned Leviathan damage each; better chest resources' },
@@ -402,7 +402,7 @@ const BUILDING_UPGRADES = {
   ],
   nightmetronome: [
     { id: 'metronome_mercy', name: 'Merciful Tempo', max: 10, cost: l => ({ gold: 1.5e10 * Math.pow(3, l), mana: 360000 * Math.pow(2, l) }),
-      info: 'Night Metronomes +20% Mana, Tower misses hurt less and night click/Reaper power rises.' },
+      info: 'Night Metronomes +20% Mana; night clicks gain +1.5% and Reapers +3% per level.' },
   ],
   tidebreaker: [
     { id: 'tidebreaker_cranes', name: 'Tidal Cranes', max: 10, cost: l => ({ gold: 5.4e9 * Math.pow(3, l), wood: 190000 * Math.pow(2.2, l), stone: 130000 * Math.pow(2.2, l) }),
@@ -610,7 +610,7 @@ const SKILLS = [
   { id: 'arcane',   unit: 'mage',   name: 'Arcane Mastery',  cost: { mana: 320 },    desc: 'Mana production +50%.' },
   { id: 'chain',    unit: 'mage',   name: 'Chain Lightning', cost: { mana: 2600 },   desc: 'Mage damage x1.5.' },
   /* hero */
-  { id: 'meteor',   unit: 'hero',   name: 'Meteor Brand',    cost: { mana: 900 },    desc: 'Clicks deal +10% of your idle DPS.' },
+  { id: 'meteor',   unit: 'hero',   name: 'Meteor Brand',    cost: { mana: 900 },    desc: 'Clicks deal +0.05% of your unit idle DPS.' },
   { id: 'frost',    unit: 'hero',   name: 'Frost Sigil',     cost: { mana: 130 },    desc: '+25% gold from kills.' },
   { id: 'echo',     unit: 'hero',   name: 'Echo Strike',     cost: { mana: 120000 }, desc: 'Clicks have a 20% chance to strike TWICE.' },
   /* archer */
@@ -950,10 +950,11 @@ const BOSS_TYPES = [
 
 const ZONE_NAMES = ['Greenfields', 'Dark Forest', 'Mistmoor', 'Cursed Crypts', 'Ashen Peaks', 'Demon Gate'];
 
-const ZONE_HP_GROWTH = 1.6;     // monster HP multiplier per zone
-const ZONE_GOLD_GROWTH = 1.5;   // kill bounty multiplier per zone
-const BOSS_HP_MULT = 8;
-const BOSS_GOLD_MULT = 10;
+const ZONE_HP_GROWTH = 1.62;    // monster HP multiplier per zone
+const ZONE_GOLD_GROWTH = 1.14;  // main-zone bounty growth after the opening zones
+const MODE_GOLD_GROWTH = 1.35;  // Portal/Tower rewards keep a healthier independent curve
+const BOSS_HP_MULT = 12;
+const BOSS_GOLD_MULT = 5;
 const ZONE_INCOME_BONUS = 0.02; // city income bonus per zone reached
 
 function zoneName(zone) {
@@ -968,7 +969,10 @@ function monsterFor(zone, idx) {
     ? BOSS_TYPES[(zone - 1) % BOSS_TYPES.length]
     : MONSTER_TYPES[(zone - 1 + idx - 1) % MONSTER_TYPES.length];
   const hp = 15 * Math.pow(ZONE_HP_GROWTH, zone - 1) * (1 + 0.06 * (idx - 1)) * (isBoss ? BOSS_HP_MULT : 1);
-  const gold = 6 * Math.pow(ZONE_GOLD_GROWTH, zone - 1) * (isBoss ? BOSS_GOLD_MULT : 1);
+  const earlyRewardZones = Math.min(zone - 1, 4);
+  const lateRewardZones = Math.max(0, zone - 5);
+  const gold = 6 * Math.pow(1.5, earlyRewardZones) * Math.pow(ZONE_GOLD_GROWTH, lateRewardZones) *
+    (isBoss ? BOSS_GOLD_MULT : 1);
   return { sprite: type.sprite, name: type.name + (isBoss ? ' [BOSS]' : ''), hp: Math.ceil(hp), gold, isBoss };
 }
 
@@ -1091,7 +1095,7 @@ const PRESTIGE_TREE = (() => {
   n('xwar10', 2, 'war', 1, 'Knightly Orders', 'Royal Knight damage x2.', { req: 'war5', side: 1 });
   n('pros4', 2, 'pros', 0, 'Stone Granaries', 'Buildings produce +30% Gold.');
   n('xpros2', 2, 'pros', 0, 'Caravanserai', 'Markets, Fish Markets, Harbors & Trade Ports produce +75% Gold.', { req: 'pros4', side: 1 });
-  n('xpros7', 2, 'pros', 1, 'Golden Touch', 'Your clicks PLUNDER: each click loots gold worth 10% of the damage dealt, at the monster\'s bounty rate.', { req: 'xpros2', side: 1 });
+  n('xpros7', 2, 'pros', 1, 'Golden Touch', 'Your clicks PLUNDER: each click loots gold worth 2% of damage dealt, at the monster\'s bounty rate.', { req: 'xpros2', side: 1 });
   n('pros5', 2, 'pros', 1, 'Royal Highways', '+20% ALL gold. Trade moves faster on good roads.');
   n('pros6', 2, 'pros', 2, 'Guild Charters', 'All building costs another -10%.', { req: ['pros5', 'xpros2'] });
   n('for4', 2, 'for', 0, 'Quality Smithing', '25% of item drops come one tier higher.');
@@ -1136,7 +1140,7 @@ const PRESTIGE_TREE = (() => {
   n('xwar11', 3, 'war', 0, 'Stormhost', 'Storm Valkyrie damage x2.', { req: 'war7', side: 1 });
   n('prosi1', 3, 'pros', 0, 'Caravan Network', '+30% ALL gold.');
   n('pros8', 3, 'pros', 1, 'Trade Empire', '+40% ALL gold.');
-  n('xpros3', 3, 'pros', 1, 'War Profiteers', 'Gold per kill +3% per Zone reached this run.', { req: 'pros8', side: 1 });
+  n('xpros3', 3, 'pros', 1, 'War Profiteers', 'Gold per kill +0.5% per Zone reached this run.', { req: 'pros8', side: 1 });
   n('prosi2', 3, 'pros', 2, 'Royal Monopoly', 'All building costs another -10%.');
   n('for7', 3, 'for', 0, 'Mystic Forging', 'Item drops have a 50% chance to roll a random AFFIX (second effect at half value).');
   n('for8', 3, 'for', 1, 'Star Metal', 'ALL item values +25%.');
@@ -1162,7 +1166,7 @@ const PRESTIGE_TREE = (() => {
   n('xspire2', 3, 'spirit', 1, 'Angelic Waystones', 'SILVER SPIRE: a waystone every 50m — long falls return you to the last waystone you passed.', { req: 'xspire1', side: -1 });
   n('xspirit3', 3, 'spirit', 1, 'Soul Tithe', 'Every spirit click also gathers 0.5 Mana.', { req: 'spirit8', side: 1 });
   n('xspirit7', 3, 'spirit', 2, 'Grave Robbers', 'Spirits LOOT any treasure chest you let slip away — chests never vanish unclaimed.', { req: 'xspirit3', side: 1 });
-  n('spirit9', 3, 'spirit', 2, 'Restless Night', 'Spirit Hands click TWICE as fast at night.');
+  n('spirit9', 3, 'spirit', 2, 'Restless Night', 'Spirit Hands click 25% faster at night.');
   n('auto7', 3, 'auto', 0, 'Counting Engines', 'Offline progress runs at 75% rate (instead of 50%).');
   n('auto8', 3, 'auto', 1, 'Tireless Scribes', 'Offline progress is counted for up to 16 hours (instead of 8).');
   n('auto9', 3, 'auto', 2, 'Animated Armory', 'TOGGLE: automatically equips the best loadout, prioritizing more affixes and then higher tiers.');
@@ -1249,7 +1253,7 @@ const PRESTIGE_TREE = (() => {
   n('xcrown5', 5, 'crown', 1, 'Census of Storms', 'Sigils ever earned count +20% HIGHER for MASTER bonuses.', { req: 'crown14', side: 1 });
   n('crown15', 5, 'crown', 2, 'Auric Memory', 'Lifetime gold counts +25% higher for Sigil gain.');
   n('spirits1', 5, 'spirit', 0, 'Geist Storm', 'Spirit Hands click +6 more times per second.');
-  n('spirits2', 5, 'spirit', 1, 'Spirit Avatar', 'Each spirit click also deals +10% of your idle DPS.');
+  n('spirits2', 5, 'spirit', 1, 'Spirit Avatar', 'Each spirit click also deals +0.05% of unit idle DPS. Borrowed damage is not multiplied by Spirit bonuses.');
   n('xspire4', 5, 'spirit', 1, 'Gilded Crown', 'SILVER SPIRE: the Crown\'s blessing becomes GOLD x3 (instead of x2).', { req: 'xspire3', side: -1 });
   n('xspire5', 5, 'spirit', 1, 'Spireworks', 'SPIREWATCH BUILDINGS: launch power, waystones and Seraph bonuses are 50% stronger.', { req: 'xspire4', side: -1 });
   n('xspirit5', 5, 'spirit', 1, 'Spirit Lanterns', 'Ghost-lights line the streets: +25% ALL gold at NIGHT.', { req: 'spirits2', side: 1 });
@@ -1265,14 +1269,15 @@ const PRESTIGE_TREE = (() => {
   /* ===== GATE + ERA 6 — AGE OF AETHER ===== */
   gate('era6', 6, 'Age of Aether', '+150% ALL gold. The kingsroads glow with aether. The final ring.');
   n('wara1', 6, 'war', 0, 'Aether Weapons', 'ALL unit damage x1.5.');
-  n('xwar6', 6, 'war', 0, 'Pantheon of War', '+10% ALL unit damage per unit type at level 100 or higher.', { req: 'wara1', side: 1 });
+  n('xwar6', 6, 'war', 0, 'Pantheon of War', 'Final catch-up: most armies x10; Clerics, Valkyries, Dragon Riders and Ward units x100; Walls x1,000,000. Then ALL units gain +10% damage per unit type at level 100+.', { req: 'wara1', side: 1 });
   n('wara2', 6, 'war', 1, 'Dragon Lords', 'Dragon damage x2.');
-  n('wara3', 6, 'war', 2, 'Avatar of War', 'Clicks deal +25% of your idle DPS (stacks with Meteor Brand).', { req: ['wara2', 'xwar6'] });
+  n('wara3', 6, 'war', 2, 'Avatar of War', 'Clicks deal +0.1% of your unit idle DPS (stacks with Meteor Brand).', { req: ['wara2', 'xwar6'] });
   n('xwar13', 6, 'war', 1, 'The New Legions', 'Knight, Plague & Valkyrie damage x2.', { req: 'wara2', side: 1 });
+  n('xwar16', 6, 'war', 2, 'Concord of Wings', 'SKY LEGIONS: Academy, Druid, Observatory and Spireworks buildings gradually raise Dragon Rider damage up to x180 and Valkyrie damage up to x60.', { req: 'xwar13', side: 1 });
   n('prosa1', 6, 'pros', 0, 'Aether Economy', 'ALL gold x2.');
   n('xpros6', 6, 'pros', 0, 'Aether Bounties', 'Gold per kill x2.', { req: 'prosa1', side: 1 });
   n('prosa2', 6, 'pros', 1, 'Infinite Vaults', 'ALL gold x2.');
-  n('prosa3', 6, 'pros', 2, 'Economy of Light', 'ALL production +50%.', { req: ['prosa2', 'xpros6'] });
+  n('prosa3', 6, 'pros', 2, 'Economy of Light', 'ALL building production x3.', { req: ['prosa2', 'xpros6'] });
   n('fora1', 6, 'for', 0, 'Master Forging', 'Affixes are GUARANTEED on every drop.');
   n('xfor6', 6, 'for', 0, 'Reliquary Straps', 'The HERO carries +1 item. (Granted immediately when bought!)', { req: 'fora1', side: 1 });
   n('fora2', 6, 'for', 1, 'Artificer God', 'ALL item values another +50%.');
@@ -1285,16 +1290,18 @@ const PRESTIGE_TREE = (() => {
   n('inda1', 6, 'ind', 0, 'Aether Saws', 'Wood production x2.');
   n('xind6', 6, 'ind', 0, 'Wonder Engines', '+25% ALL production per Wonder of the Ages owned (cap +100%).', { req: 'inda1', side: 1 });
   n('xind8', 6, 'ind', 1, 'Genesis Engines', 'Buildings you own 100+ of produce DOUBLE.', { req: 'xind6', side: 1 });
+  n('xind9', 6, 'ind', 2, 'Living Ramparts', 'WALLS: every military and masonry building joins the defense, gradually raising Wall damage up to x1,000.', { req: 'xind8', side: 1 });
   n('inda2', 6, 'ind', 1, 'Aether Drills', 'Stone production x2.');
   n('inda3', 6, 'ind', 2, 'World Engine', 'ALL production +25% AND building costs another -10%.', { req: ['inda2', 'xind6'] });
   n('crown16', 6, 'crown', 0, 'Apotheosis', 'MASTER: another +5% ALL production & bounties per Sigil ever earned.');
   n('xcrown6', 6, 'crown', 0, 'Throne of Ages', '+1% ALL production & bounties per Advancement node owned.', { req: 'crown16', side: 1 });
   n('xcrown7', 6, 'crown', 1, 'Coronation Largesse', 'Every Ascension grants +1 BONUS Sigil per Era gate owned.', { req: 'xcrown6', side: 1 });
   n('xward2', 6, 'crown', 1, 'Outer Works Mandate', 'OUTER-WARD building upgrade levels grant +0.25% ALL production & bounties each.', { req: 'xward1', side: -1 });
+  n('xward3', 6, 'crown', 2, 'Fourfold Ward Covenant', 'WARD UNITS: each ward\'s buildings gradually raise its guardian toward x30 Reaver, x22 Seraph, x12 Reaper and x6 Leviathan damage.', { req: 'xward2', side: -1 });
   n('crown17', 6, 'crown', 1, 'The Crown Remembers', 'Carry 1% of your Gold through each Ascension.');
   n('crown18', 6, 'crown', 2, 'Sovereign of Ages', 'ALL production & bounties x2.', { req: ['crown17', 'xcrown6'] });
   n('spirita1', 6, 'spirit', 0, 'Legion Eternal', 'Spirit Hands click rate DOUBLED.');
-  n('xspirit6', 6, 'spirit', 0, 'Eternal Procession', 'Spirit clicks deal +3% damage per Ascension performed.', { req: 'spirita1', side: 1 });
+  n('xspirit6', 6, 'spirit', 0, 'Eternal Procession', 'Spirit clicks deal +1% damage per Ascension performed (cap +100%).', { req: 'spirita1', side: 1 });
   n('spirita2', 6, 'spirit', 1, 'Spirit Sovereign', 'Spirit clicks deal +300% damage.');
   n('xwar15', 6, 'war', 1, 'Aura of the First King', 'Raises the Hero aura soft cap from +250% to +500%.', { req: 'xwar14', side: -1 });
   n('spirita3', 6, 'spirit', 2, 'One With the Ghosts', 'YOUR clicks gain all spirit damage bonuses.', { req: ['spirita2', 'xspirit6'] });

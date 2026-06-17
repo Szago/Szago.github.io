@@ -886,7 +886,7 @@ function portalWin() {
   if (p.stage > p.best) p.best = p.stage;
 
   const lines = [];
-  const g = Math.pow(ZONE_GOLD_GROWTH, stageN - 1);
+  const g = Math.pow(MODE_GOLD_GROWTH, stageN - 1);
   const goldGain = 6 * g * 25 * (C ? C.killMult : 1) * (1 + 0.25 * portalCardCount('c_gold')) * (bossStage ? 3 : 1) *
     (hasTree('xrift2') ? 1.5 : 1) * portalRewardMult(); // Rift Plunder
   earnGold(goldGain);

@@ -491,7 +491,7 @@ function towerWin() {
   const lines = [];
   const towerCityReward = 1 + (0.02 * bCount('bloodtreasury') + 0.05 * bUp('blood_vaults')) * doomWorksMult();
   const plunder = (hasTree('xtow1') ? 2 : 1) * towerCityReward; // Tower Plunder
-  const g = Math.pow(ZONE_GOLD_GROWTH, floorN - 1);
+  const g = Math.pow(MODE_GOLD_GROWTH, floorN - 1);
   const goldGain = 6 * g * 40 * (C ? C.killMult : 1) * plunder;
   earnGold(goldGain);
   lines.push('<span class="gold">+' + fmt(goldGain) + ' Gold</span>');

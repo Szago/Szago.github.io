@@ -174,6 +174,92 @@ function uUp(id) { return state.unitUp[id] || 0; }
 function subLvl(sub) { return sub.statKey ? state[sub.statKey] : uUp(sub.id); }
 function totalBuildings() { return BUILDINGS.reduce((n, b) => n + bCount(b.id), 0); }
 
+/* ---------------- lightweight performance profiler ----------------
+   Enabled only while the draggable monitor is open, so normal play pays almost
+   no instrumentation cost. Snapshots are rolled once per second. */
+
+const perfStats = {
+  enabled: false,
+  current: Object.create(null),
+  snapshot: Object.create(null),
+  averageTotals: Object.create(null),
+  sampleCount: 0,
+  snapshotVersion: 0,
+  windowStart: 0,
+  fps: 0,
+  frames: 0,
+  frameStart: 0,
+};
+let perfOverlayOpen = false;
+let perfOverlayRenderedVersion = -1;
+let perfOverlayDrag = null;
+
+function perfStart() {
+  return perfStats.enabled ? performance.now() : 0;
+}
+
+function perfEnd(name, started) {
+  if (!started) return;
+  const ms = performance.now() - started;
+  const row = perfStats.current[name] || (perfStats.current[name] = { total: 0, calls: 0, max: 0 });
+  row.total += ms;
+  row.calls++;
+  if (ms > row.max) row.max = ms;
+  const now = performance.now();
+  if (!perfStats.windowStart) perfStats.windowStart = now;
+  if (name === 'Tick total' && now - perfStats.windowStart >= 1000) {
+    const seconds = Math.max(0.001, (now - perfStats.windowStart) / 1000);
+    const next = Object.create(null);
+    for (const key in perfStats.current) {
+      const src = perfStats.current[key];
+      next[key] = {
+        total: src.total / seconds,
+        calls: src.calls / seconds,
+        avg: src.calls ? src.total / src.calls : 0,
+        max: src.max,
+      };
+    }
+    perfStats.snapshot = next;
+    perfStats.sampleCount++;
+    for (const key in next)
+      perfStats.averageTotals[key] = (perfStats.averageTotals[key] || 0) + next[key].total;
+    perfStats.snapshotVersion++;
+    perfStats.current = Object.create(null);
+    perfStats.windowStart = now;
+  }
+}
+
+function perfFrame(now) {
+  if (perfStats.enabled) {
+    if (!perfStats.frameStart) perfStats.frameStart = now;
+    perfStats.frames++;
+    const elapsed = now - perfStats.frameStart;
+    if (elapsed >= 1000) {
+      perfStats.fps = perfStats.frames * 1000 / elapsed;
+      perfStats.frames = 0;
+      perfStats.frameStart = now;
+    }
+    renderPerformanceOverlay();
+  } else {
+    perfStats.frames = 0;
+    perfStats.frameStart = 0;
+  }
+  requestAnimationFrame(perfFrame);
+}
+
+function perfReset() {
+  perfStats.current = Object.create(null);
+  perfStats.snapshot = Object.create(null);
+  perfStats.averageTotals = Object.create(null);
+  perfStats.sampleCount = 0;
+  perfStats.snapshotVersion++;
+  perfStats.windowStart = performance.now();
+  perfStats.fps = 0;
+  perfStats.frames = 0;
+  perfStats.frameStart = 0;
+  perfOverlayRenderedVersion = -1;
+}
+
 /* ---------------- day / night ---------------- */
 
 function isNight() {
@@ -301,6 +387,10 @@ function calc() {
   const decree = bUp('keep_decree');
   const night = isNight();
   c.night = night;
+  const buildingDoctrineMult = (target, ids, fullAt) => {
+    const buildings = ids.reduce((sum, id) => sum + bCount(id), 0);
+    return 1 + (target - 1) * Math.min(1, buildings / fullAt);
+  };
 
   // HERO LEADERSHIP AURA: items worn by the hero inspire the whole city
   const auraFactor = HERO_AURA_FACTOR * (hasTree('war9') ? 1.5 : 1); // Heroic Saga
@@ -519,7 +609,7 @@ function calc() {
   if (hasTree('prosg2')) industrial *= 1.25;  // World's Fair
   if (hasTree('pross3')) industrial *= 1.3;   // Tempest Trade
   if (hasTree('inds1')) industrial *= 1.25;   // Storm Engines
-  if (hasTree('prosa3')) industrial *= 1.5;   // Economy of Light
+  if (hasTree('prosa3')) industrial *= 3;     // Economy of Light
   if (hasTree('inda3')) industrial *= 1.25;   // World Engine
   if (hasTree('xind2') && night) industrial *= 1.2;  // Night Shifts
   if (hasTree('xind5'))                       // Automated Looms
@@ -728,6 +818,61 @@ function calc() {
   if (hasTree('xward1')) leviathanDps *= 1 + 0.15 * (state.districts.length - 1);
   leviathanDps *= (1 + E.leviathan / 100) * allUnit;
 
+  let dragonDoctrine = 1;
+  let valkyrieDoctrine = 1;
+  if (hasTree('xwar16')) {
+    dragonDoctrine = buildingDoctrineMult(180,
+      ['academy', 'druid', 'skyhookyard', 'cloudfoundry'], 100);
+    valkyrieDoctrine = buildingDoctrineMult(60,
+      ['observatory', 'cathedral', 'cloudfoundry', 'dawnprism'], 100);
+    dragonDps *= dragonDoctrine;
+    valkyrieDps *= valkyrieDoctrine;
+  }
+
+  let wallDoctrine = 1;
+  if (hasTree('xind9')) {
+    wallDoctrine = buildingDoctrineMult(1000,
+      ['quarry', 'stonecutter', 'deepmine', 'barracks', 'armory', 'warcollege', 'siegeworkshop'], 150);
+    wallDps *= wallDoctrine;
+  }
+
+  let reaverDoctrine = 1;
+  let seraphDoctrine = 1;
+  let reaperDoctrine = 1;
+  let leviathanDoctrine = 1;
+  if (hasTree('xward3')) {
+    reaverDoctrine = buildingDoctrineMult(30,
+      ['riftbeacon', 'riftapothecary', 'voidmarket', 'echoarsenal', 'reliquarypress'], 100);
+    seraphDoctrine = buildingDoctrineMult(22,
+      ['skyhookyard', 'wayhouse', 'crownarchive', 'cloudfoundry', 'dawnprism'], 100);
+    reaperDoctrine = buildingDoctrineMult(12,
+      ['doomforge', 'beatfoundry', 'reapercloister', 'bloodtreasury', 'nightmetronome'], 100);
+    leviathanDoctrine = buildingDoctrineMult(6,
+      ['tidebreaker', 'pearlexchange', 'abyssalvault', 'moonpool', 'leviathannest'], 100);
+    reaverDps *= reaverDoctrine;
+    seraphDps *= seraphDoctrine;
+    reaperDps *= reaperDoctrine;
+    leviathanDps *= leviathanDoctrine;
+  }
+
+  /* Pantheon of War catches specialist armies up to Ballistae, whose
+     building synergies already make them the natural siege benchmark. */
+  if (hasTree('xwar6')) {
+    archerDps *= 10;
+    mageDps *= 10;
+    clericDps *= 100;
+    golemDps *= 10;
+    dragonDps *= 100;
+    knightDps *= 10;
+    plagueDps *= 10;
+    valkyrieDps *= 100;
+    wallDps *= 1000000;
+    reaverDps *= 100;
+    seraphDps *= 100;
+    reaperDps *= 100;
+    leviathanDps *= 100;
+  }
+
   /* units slain in the Rift fight for nothing until they recover */
   if (typeof portalUnitDead === 'function') {
     if (portalUnitDead('archer')) archerDps = 0;
@@ -760,6 +905,13 @@ function calc() {
   c.seraphDps = seraphDps;
   c.reaperDps = reaperDps;
   c.leviathanDps = leviathanDps;
+  c.dragonDoctrine = dragonDoctrine;
+  c.valkyrieDoctrine = valkyrieDoctrine;
+  c.wallDoctrine = wallDoctrine;
+  c.reaverDoctrine = reaverDoctrine;
+  c.seraphDoctrine = seraphDoctrine;
+  c.reaperDoctrine = reaperDoctrine;
+  c.leviathanDoctrine = leviathanDoctrine;
   c.dps = archerDps + mageDps + turretDps + clericDps + golemDps + dragonDps +
     knightDps + plagueDps + valkyrieDps + wallDps +
     reaverDps + seraphDps + reaperDps + leviathanDps;
@@ -771,13 +923,17 @@ function calc() {
   if (hasTree('warg3')) click *= 2;                    // Champion of Gold
   click *= 1 + 0.10 * bUp('tavern_rest');
   click *= 1 + Math.min(0.5, 0.005 * bCount('farm')) + Math.min(0.5, 0.01 * bCount('tavern')) + 0.03 * bCount('winery');
-  if (night) click *= 1 + 0.02 * bCount('nightmetronome') + 0.03 * bUp('metronome_mercy');
+  if (night) click *= 1 + Math.min(0.5,
+    0.005 * bCount('nightmetronome') + 0.015 * bUp('metronome_mercy'));
   click *= 1 + 0.10 * uUp('fury');
   click *= Math.pow(1.2, uUp('innerfire'));            // Inner Fire training
   click *= 1 + 0.10 * bUp('armory_master') + 0.10 * bUp('ench_blades') + 0.10 * bUp('winery_courage');
   click *= (1 + E.click / 100) * allUnit;
-  if (hasSkill('meteor')) click += c.dps * 0.10;
-  if (hasTree('wara3')) click += c.dps * 0.25;         // Avatar of War
+  const spiritBaseClick = click;
+  let borrowedClick = 0;
+  if (hasSkill('meteor')) borrowedClick += c.dps * 0.0005;
+  if (hasTree('wara3')) borrowedClick += c.dps * 0.001; // Avatar of War
+  click += borrowedClick;
   c.critChance = Math.min(0.6, 0.02 * uUp('crit') + (hasTree('wars3') ? 0.10 : 0) + (hasTree('xwar3') ? 0.05 : 0)); // Iron Resolve
   c.critMult = hasTree('wars3') ? 4 : 3;               // Eye of the Storm
 
@@ -791,7 +947,7 @@ function calc() {
     if (hasTree('spiritg1')) spiritRate += 4;
     if (hasTree('spirits1')) spiritRate += 6;
     if (hasTree('spirita1')) spiritRate *= 2;          // Legion Eternal
-    if (hasTree('spirit9') && night) spiritRate *= 2;  // Restless Night
+    if (hasTree('spirit9') && night) spiritRate *= 1.25; // Restless Night
   }
   let spiritMult = 1;
   if (hasTree('spirit3')) spiritMult *= 1.5;
@@ -799,15 +955,16 @@ function calc() {
   if (hasTree('spirit8')) spiritMult *= 2;
   if (hasTree('spiritg2')) spiritMult *= 2.5;
   if (hasTree('spirita2')) spiritMult *= 4;
-  if (hasTree('xspirit1')) spiritMult *= 1 + 0.01 * ownedNodeCount(); // Helpful Haunts
-  if (hasTree('xspirit6')) spiritMult *= 1 + 0.03 * state.ascensions; // Eternal Procession
+  if (hasTree('xspirit1')) spiritMult *= 1 + Math.min(1.5, 0.01 * ownedNodeCount()); // Helpful Haunts
+  if (hasTree('xspirit6')) spiritMult *= 1 + Math.min(1, 0.01 * state.ascensions); // Eternal Procession
   c.spiritRate = spiritRate;
-  c.spiritDmg = click * spiritMult + (hasTree('spirits2') ? c.dps * 0.10 : 0); // Spirit Avatar
+  c.spiritDmg = spiritBaseClick * spiritMult + borrowedClick +
+    (hasTree('spirits2') ? c.dps * 0.0005 : 0); // Spirit Avatar
   c.spiritCritChance = hasTree('spirit5') ? Math.min(0.75, c.critChance + (hasTree('spirits3') ? 0.15 : 0)) : 0;
   c.spiritCritMult = hasTree('spiritg3') ? 5 : c.critMult;  // Soul Harvest
   c.spiritDps = spiritRate * c.spiritDmg * (1 + c.spiritCritChance * (c.spiritCritMult - 1)) *
     (hasTree('xspirit4') ? 1.15 : 1); // Twin Hauntings
-  if (hasTree('spirita3')) click *= spiritMult;        // One With the Ghosts
+  if (hasTree('spirita3')) click = spiritBaseClick * spiritMult + borrowedClick; // One With the Ghosts
 
   if (typeof portalUnitDead === 'function' && portalUnitDead('hero')) {
     click = 1; // slain hero: feeble pokes only
@@ -823,7 +980,7 @@ function calc() {
   if (hasSkill('midas')) killMult *= 1.5;
   if (hasSkill('kingsbanner')) killMult *= 1 + 0.01 * state.walls; // Banner of Kings
   if (hasTree('prosg3')) killMult *= 1.5;              // Royal Bounties
-  if (hasTree('xpros3')) killMult *= 1 + 0.03 * (state.zone - 1); // War Profiteers
+  if (hasTree('xpros3')) killMult *= 1 + 0.005 * (state.zone - 1); // War Profiteers
   if (hasTree('xpros5')) killMult *= 1 + 0.02 * state.walls;      // Storm Levies
   if (hasTree('xpros6')) killMult *= 2;                           // Aether Bounties
   killMult *= 1 + E.bounty / 100;
@@ -939,10 +1096,16 @@ function buildingCost(b, owned, amount) {
   const disc = costDisc();
   const g = costGrowth();
   const total = {};
+  const n = Math.max(0, Math.floor(amount));
+  if (!n) return total;
+  if (n === 1) {
+    for (const res in b.cost)
+      total[res] = Math.ceil(b.cost[res] * Math.pow(g, owned) * disc);
+    return total;
+  }
+  const growthSum = Math.pow(g, owned) * (Math.pow(g, n) - 1) / (g - 1);
   for (const res in b.cost) {
-    let sum = 0;
-    for (let k = 0; k < amount; k++) sum += b.cost[res] * Math.pow(g, owned + k);
-    total[res] = Math.ceil(sum * disc);
+    total[res] = Math.ceil(b.cost[res] * growthSum * disc);
   }
   return total;
 }
@@ -968,25 +1131,18 @@ function earnGold(amount) {
   state.lifetimeGold += amount;
 }
 
-/* how many can we afford right now? (incremental, capped at 1000) */
+/* how many can we afford right now? Monotonic binary search avoids summing
+   thousands of exponential terms for every shop row on every game tick. */
 function maxAffordable(b) {
   const owned = bCount(b.id);
-  const disc = costDisc();
-  const g = costGrowth();
-  const sums = {};
-  for (const r in b.cost) sums[r] = 0;
-  let n = 0;
   const lim = hasTree('auto10') ? 5000 : 1000; // Court of Cogs
-  while (n < lim) {
-    let ok = true;
-    for (const r in b.cost) {
-      if (Math.ceil((sums[r] + b.cost[r] * Math.pow(g, owned + n)) * disc) > state[r]) { ok = false; break; }
-    }
-    if (!ok) break;
-    for (const r in b.cost) sums[r] += b.cost[r] * Math.pow(g, owned + n);
-    n++;
+  let low = 0, high = lim;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (canAfford(buildingCost(b, owned, mid))) low = mid;
+    else high = mid - 1;
   }
-  return n;
+  return low;
 }
 
 /* resolve the buy-amount mode into a concrete count for this building */
@@ -1361,32 +1517,43 @@ function autoBuyUnitUpgrades() {
   }
 }
 
+/* Reused records keep continuous autobuy from creating fresh arrays and
+   candidate objects every tick, reducing long-session garbage collection. */
+const autoBuildingCandidates = BUILDINGS.map(b => ({ b, cost: null, active: false }));
+const autoUnitCandidates = UNITS.map(u => ({ u, cost: null, active: false }));
+
 function autoBuyBuildings(limit) {
   let bought = 0;
   const batch = Math.max(1, Math.min(autoBuildBatch(), Math.floor(limit || autoBuildBatch())));
-  const candidates = BUILDINGS
-    .filter(b => districtOwnedFor(b.id))
-    .map(b => ({ b, cost: buildingCost(b, bCount(b.id), 1) }));
+  for (const candidate of autoBuildingCandidates) {
+    candidate.active = districtOwnedFor(candidate.b.id);
+    if (candidate.active)
+      candidate.cost = buildingCost(candidate.b, bCount(candidate.b.id), 1);
+  }
   const changedIds = new Set();
   const ambientTierBefore = Math.floor(totalBuildings() / 5);
   let cityStructureChanged = false;
   for (let i = 0; i < batch; i++) {
-    let best = null;
-    for (const candidate of candidates) {
+    let best = null, bestScore = Infinity;
+    for (const candidate of autoBuildingCandidates) {
+      if (!candidate.active) continue;
       if (!canAfford(candidate.cost)) continue;
       const s = costScore(candidate.cost);
-      if (!best || s < best.s) best = { candidate, s };
+      if (s < bestScore) {
+        best = candidate;
+        bestScore = s;
+      }
     }
     if (!best) break;
-    const b = best.candidate.b;
+    const b = best.b;
     const before = bCount(b.id);
     if (!cityStructureChanged) {
       const spots = (PLOTS[b.id] || [[ROAD_X, ROAD_Y]])
         .filter(([x, y]) => plotAvailable(x, y)).length;
       cityStructureChanged = Math.min(before + 1, spots) !== Math.min(before, spots);
     }
-    if (!buyBuildingOne(b.id, true, best.candidate.cost)) break;
-    best.candidate.cost = buildingCost(b, bCount(b.id), 1);
+    if (!buyBuildingOne(b.id, true, best.cost)) break;
+    best.cost = buildingCost(b, bCount(b.id), 1);
     changedIds.add(b.id);
     bought++;
   }
@@ -1401,22 +1568,28 @@ function autoBuyUnits(limit) {
   let bought = 0;
   const batch = Math.max(1, Math.floor(limit || 1));
   const visualBefore = unitAmbientSignature();
-  const candidates = UNITS
-    .filter(unitUnlocked)
-    .map(u => ({ u, cost: ceilCost(u.main.cost(state[u.statKey])) }));
+  for (const candidate of autoUnitCandidates) {
+    candidate.active = unitUnlocked(candidate.u);
+    if (candidate.active)
+      candidate.cost = ceilCost(candidate.u.main.cost(state[candidate.u.statKey]));
+  }
   for (let i = 0; i < batch; i++) {
-    let best = null;
-    for (const candidate of candidates) {
+    let best = null, bestScore = Infinity;
+    for (const candidate of autoUnitCandidates) {
+      if (!candidate.active) continue;
       if (!canAfford(candidate.cost)) continue;
       const score = costScore(candidate.cost);
-      if (!best || score < best.score) best = { candidate, score };
+      if (score < bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
     }
     if (!best) break;
-    const u = best.candidate.u;
-    pay(best.candidate.cost);
+    const u = best.u;
+    pay(best.cost);
     state[u.statKey]++;
     state.totalUnitsBought++;
-    best.candidate.cost = ceilCost(u.main.cost(state[u.statKey]));
+    best.cost = ceilCost(u.main.cost(state[u.statKey]));
     bought++;
   }
   if (bought && unitAmbientSignature() !== visualBefore) autoUnitVisualPending = true;
@@ -1477,11 +1650,17 @@ function flushAutoCityRefresh(dt) {
 }
 
 function runAutomations(dt) {
+  const perfAll = perfStart();
   const a = state.autoOn;
-  if (!a) return;
+  if (!a) {
+    perfEnd('Automation total', perfAll);
+    return;
+  }
 
   if (a.equip && hasTree('auto9') && autoEquipSeenVersion !== invVersion) {
+    const started = perfStart();
     autoEquipBest();
+    perfEnd('Auto: equipment', started);
   }
 
   if (a.build && hasTree('auto15')) {
@@ -1490,7 +1669,9 @@ function runAutomations(dt) {
     const due = Math.min(Math.floor(autoBuildAcc + 1e-9), maxSlice);
     if (due > 0) {
       autoBuildAcc -= due;
+      const started = perfStart();
       if (autoBuyBuildings(due) < due) autoBuildAcc = 0;
+      perfEnd('Auto: buildings', started);
     }
   } else {
     autoBuildAcc = 0;
@@ -1502,7 +1683,9 @@ function runAutomations(dt) {
     const due = Math.min(Math.floor(autoUnitAcc + 1e-9), maxSlice);
     if (due > 0) {
       autoUnitAcc -= due;
+      const started = perfStart();
       if (autoBuyUnits(due) < due) autoUnitAcc = 0;
+      perfEnd('Auto: units', started);
     }
   } else {
     autoUnitAcc = 0;
@@ -1545,11 +1728,27 @@ function runAutomations(dt) {
 
   autoAcc += dt;
   const period = hasTree('auto18') ? 1 : 5; // the Grand Automaton never rests
-  if (autoAcc < period) return;
+  if (autoAcc < period) {
+    perfEnd('Automation total', perfAll);
+    return;
+  }
   autoAcc = 0;
-  if (a.bup && hasTree('auto13')) autoBuyBuildingUpgrades();
-  if (a.uup && hasTree('auto14')) autoBuyUnitUpgrades();
-  if (a.skill && hasTree('auto16')) autoLearnSkills();
+  if (a.bup && hasTree('auto13')) {
+    const started = perfStart();
+    autoBuyBuildingUpgrades();
+    perfEnd('Auto: building upgrades', started);
+  }
+  if (a.uup && hasTree('auto14')) {
+    const started = perfStart();
+    autoBuyUnitUpgrades();
+    perfEnd('Auto: unit upgrades', started);
+  }
+  if (a.skill && hasTree('auto16')) {
+    const started = perfStart();
+    autoLearnSkills();
+    perfEnd('Auto: skills', started);
+  }
+  perfEnd('Automation total', perfAll);
 }
 
 function autoEquipItemCompare(a, b) {
@@ -2007,7 +2206,7 @@ function onMonsterClick() {
   /* Golden Touch: clicks plunder gold at the monster's bounty rate */
   const m = state.monster;
   if (hasTree('xpros7') && m && m.maxHp > 0)
-    earnGold(Math.min(dmg, Math.max(0, m.hp)) * 0.10 * (m.gold / m.maxHp) * C.killMult);
+    earnGold(Math.min(dmg, Math.max(0, m.hp)) * 0.02 * (m.gold / m.maxHp) * C.killMult);
   damageMonster(dmg, true);
   if (hasSkill('echo') && Math.random() < 0.2) {       // Echo Strike
     spawnFloater('ECHO -' + fmt(dmg), 'crit');
@@ -2787,6 +2986,7 @@ function buildUnitDetail(unitId) {
       lines.push(['Riders bonded', lvl]);
       lines.push(['Dragon DPS', fmt(C.dragonDps)]);
       lines.push(['Academy bonus', '+' + (bCount('academy') * 5) + '%']);
+      if (hasTree('xwar16')) lines.push(['Concord of Wings', 'x' + C.dragonDoctrine.toFixed(2)]);
     } else if (u.id === 'golem') {
       lines.push(['Golem level', lvl]);
       lines.push(['Golem DPS', fmt(C.golemDps)]);
@@ -2803,26 +3003,32 @@ function buildUnitDetail(unitId) {
       lines.push(['Valkyries', lvl]);
       lines.push(['Storm DPS', fmt(C.valkyrieDps)]);
       lines.push(['Observatory bonus', '+' + (bCount('observatory') * 5) + '%']);
+      if (hasTree('xwar16')) lines.push(['Concord of Wings', 'x' + C.valkyrieDoctrine.toFixed(2)]);
     } else if (u.id === 'reaver') {
       lines.push(['Reavers', lvl]);
       lines.push(['Rift DPS', fmt(C.reaverDps)]);
       lines.push(['Rift Portal best stage', fmt(wardProgPortal()) + ' (+' + fmt(wardProgPortal() * 4) + '%)']);
+      if (hasTree('xward3')) lines.push(['Ward Covenant', 'x' + C.reaverDoctrine.toFixed(2)]);
     } else if (u.id === 'seraph') {
       lines.push(['Seraphs', lvl]);
       lines.push(['Radiant DPS', fmt(C.seraphDps)]);
       lines.push(['Spire best altitude', fmt(Math.round(((state.spire && state.spire.bestM) || 0))) + 'm (+' + fmt(wardProgSpire()) + '%)']);
+      if (hasTree('xward3')) lines.push(['Ward Covenant', 'x' + C.seraphDoctrine.toFixed(2)]);
     } else if (u.id === 'reaper') {
       lines.push(['Reapers', lvl]);
       lines.push(['Doom DPS', fmt(C.reaperDps)]);
       lines.push(['Tower of Doom best floor', fmt(wardProgTower()) + ' (+' + fmt(wardProgTower() * 4) + '%)']);
+      if (hasTree('xward3')) lines.push(['Ward Covenant', 'x' + C.reaperDoctrine.toFixed(2)]);
     } else if (u.id === 'leviathan') {
       lines.push(['Leviathans', lvl]);
       lines.push(['Abyss DPS', fmt(C.leviathanDps)]);
       lines.push(['Ascensions', fmt(wardProgSunken()) + ' (+' + fmt(wardProgSunken() * 20) + '%)']);
+      if (hasTree('xward3')) lines.push(['Ward Covenant', 'x' + C.leviathanDoctrine.toFixed(2)]);
     } else {
       lines.push(['Wall level', lvl]);
       lines.push(['Wall DPS', fmt(C.wallDps)]);
       lines.push(['Bounty bonus', '+' + Math.round(state.walls * 5 + uUp('banners') * 3 + uUp('moat') * 2) + '%']);
+      if (hasTree('xind9')) lines.push(['Living Ramparts', 'x' + C.wallDoctrine.toFixed(2)]);
     }
     statsEl.innerHTML = lines.map(l => '<div class="stat-row"><span>' + l[0] + '</span><b>' + l[1] + '</b></div>').join('');
   });
@@ -3378,10 +3584,12 @@ function refreshShop() {
     ui.row.classList.remove('locked');
     ui.info.style.display = '';
     const owned = bCount(b.id);
-    const amt = resolveAmount(b);
+    const maxMode = buyAmountFor('build') === 'max';
+    const maxBuy = maxMode ? maxAffordable(b) : 0;
+    const amt = maxMode ? Math.max(1, maxBuy) : resolveAmount(b);
     const cost = buildingCost(b, owned, amt);
     const districtOk = districtOwnedFor(b.id);
-    const afford = canAfford(cost) && districtOk && !(buyAmountFor('build') === 'max' && maxAffordable(b) < 1);
+    const afford = canAfford(cost) && districtOk && !(maxMode && maxBuy < 1);
     if (ui.row.disabled !== !afford) ui.row.disabled = !afford;
     ui.row.classList.toggle('afford', afford);
     setText(ui, 'owned', ui.ownedEl, owned > 0 ? 'x' + fmt(owned) : '');
@@ -4204,8 +4412,142 @@ function debugGrantItems(n) {
   return count;
 }
 
+function ensurePerformanceOverlay() {
+  let panel = $('perf-overlay');
+  if (panel) return panel;
+  panel = document.createElement('div');
+  panel.id = 'perf-overlay';
+  panel.className = 'perf-overlay hidden';
+  panel.innerHTML =
+    '<div id="perf-overlay-head">' +
+      '<span>LIVE PERFORMANCE</span>' +
+      '<button id="perf-overlay-close" title="Close performance monitor">X</button>' +
+    '</div>' +
+    '<div class="perf-overlay-body">' +
+      '<div class="perf-summary">' +
+        '<span>FPS <b id="perf-overlay-fps">sampling...</b></span>' +
+        '<span>Tick <b id="perf-overlay-tick">sampling...</b></span>' +
+        '<span>Budget <b>' + TICK_MS + ' ms</b></span>' +
+      '</div>' +
+      '<div class="perf-overlay-note">Live = last second. Average = since opened/reset. Auto rows are included in Automation total.</div>' +
+      '<div id="perf-overlay-rows"></div>' +
+      '<div class="menu-btns"><button id="perf-overlay-reset" class="menu-btn">RESET AVERAGES</button></div>' +
+    '</div>';
+  document.body.appendChild(panel);
+
+  $('perf-overlay-close').onclick = () => setPerformanceOverlay(false);
+  $('perf-overlay-reset').onclick = perfReset;
+  const head = $('perf-overlay-head');
+  head.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    const rect = panel.getBoundingClientRect();
+    perfOverlayDrag = { pointerId: e.pointerId, dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    panel.style.left = rect.left + 'px';
+    panel.style.top = rect.top + 'px';
+    panel.style.right = 'auto';
+    try { head.setPointerCapture(e.pointerId); } catch (err) { /* pointer may already be gone */ }
+    panel.classList.add('dragging');
+    e.preventDefault();
+  });
+  head.addEventListener('pointermove', e => {
+    if (!perfOverlayDrag || perfOverlayDrag.pointerId !== e.pointerId) return;
+    const maxX = Math.max(0, window.innerWidth - panel.offsetWidth);
+    const maxY = Math.max(0, window.innerHeight - panel.offsetHeight);
+    panel.style.left = Math.max(0, Math.min(maxX, e.clientX - perfOverlayDrag.dx)) + 'px';
+    panel.style.top = Math.max(0, Math.min(maxY, e.clientY - perfOverlayDrag.dy)) + 'px';
+  });
+  const stopDrag = e => {
+    if (!perfOverlayDrag || perfOverlayDrag.pointerId !== e.pointerId) return;
+    perfOverlayDrag = null;
+    panel.classList.remove('dragging');
+  };
+  head.addEventListener('pointerup', stopDrag);
+  head.addEventListener('pointercancel', stopDrag);
+  return panel;
+}
+
+function updatePerformanceToggle() {
+  const btn = $('perf-toggle');
+  if (!btn) return;
+  btn.classList.toggle('on', perfOverlayOpen);
+  btn.textContent = perfOverlayOpen ? 'ON - HIDE MONITOR' : 'OFF - SHOW MONITOR';
+}
+
+function setPerformanceOverlay(open) {
+  perfOverlayOpen = !!open;
+  const panel = ensurePerformanceOverlay();
+  panel.classList.toggle('hidden', !perfOverlayOpen);
+  perfStats.enabled = perfOverlayOpen;
+  perfOverlayDrag = null;
+  if (perfOverlayOpen) {
+    perfReset();
+    renderPerformanceOverlay(true);
+  }
+  updatePerformanceToggle();
+}
+
+function renderPerformanceOverlay(force) {
+  if (!perfOverlayOpen) return;
+  const panel = ensurePerformanceOverlay();
+  if (!force && perfOverlayRenderedVersion === perfStats.snapshotVersion) return;
+  perfOverlayRenderedVersion = perfStats.snapshotVersion;
+  const snap = perfStats.snapshot;
+  const tick = snap['Tick total'];
+  const tickAverage = perfStats.sampleCount
+    ? (perfStats.averageTotals['Tick total'] || 0) / perfStats.sampleCount
+    : 0;
+  $('perf-overlay-fps').textContent = perfStats.fps ? perfStats.fps.toFixed(1) : 'sampling...';
+  $('perf-overlay-tick').textContent = tick
+    ? tick.avg.toFixed(2) + ' ms/call | average ' + tickAverage.toFixed(2) + ' ms/s'
+    : 'sampling...';
+  const tickLive = tick ? tick.total : 0;
+  const names = new Set([...Object.keys(perfStats.averageTotals), ...Object.keys(snap)]);
+  names.delete('Tick total');
+  const ordered = [...names].sort((a, b) => {
+    const liveDiff = (snap[b] ? snap[b].total : 0) - (snap[a] ? snap[a].total : 0);
+    if (liveDiff) return liveDiff;
+    return (perfStats.averageTotals[b] || 0) - (perfStats.averageTotals[a] || 0);
+  });
+  $('perf-overlay-rows').innerHTML = ordered.length ? ordered.map(name => {
+    const row = snap[name] || { total: 0, avg: 0, max: 0 };
+    const share = tickLive > 0 ? row.total / tickLive * 100 : 0;
+    const average = perfStats.sampleCount
+      ? (perfStats.averageTotals[name] || 0) / perfStats.sampleCount
+      : 0;
+    return '<div class="perf-row"><span>' + name + '</span><b>' +
+      row.total.toFixed(2) + ' ms/s</b><small>average ' + average.toFixed(2) +
+      ' ms/s | ' + share.toFixed(1) + '% of tick | ' +
+      row.avg.toFixed(3) + ' ms/call | max ' + row.max.toFixed(2) + '</small></div>';
+  }).join('') : '<div class="perf-overlay-note">Collecting a one-second sample...</div>';
+
+  /* Keep the panel reachable if resizing made its saved position invalid. */
+  const rect = panel.getBoundingClientRect();
+  if (rect.right > window.innerWidth)
+    panel.style.left = Math.max(0, window.innerWidth - rect.width) + 'px';
+  if (rect.bottom > window.innerHeight)
+    panel.style.top = Math.max(0, window.innerHeight - rect.height) + 'px';
+}
+
 function debugRender() {
   const body = $('menu-body');
+  const perfSec = document.createElement('div');
+  perfSec.className = 'menu-section hidden';
+  perfSec.innerHTML =
+    '<div class="menu-section-title">LIVE PERFORMANCE</div>' +
+    '<div class="menu-note">Measured only while this tab is open. “ms/s” is main-thread time consumed per second; nested Auto rows are included in Automation total.</div>' +
+    '<div class="perf-summary"><span>FPS <b id="perf-fps">—</b></span><span>Tick <b id="perf-tick">—</b></span><span>Budget <b>' + TICK_MS + ' ms</b></span></div>' +
+    '<div id="perf-rows"></div>' +
+    '<div class="menu-btns"><button id="perf-reset" class="menu-btn">RESET MEASUREMENTS</button></div>';
+  body.appendChild(perfSec);
+
+  const monitorSec = document.createElement('div');
+  monitorSec.className = 'menu-section';
+  monitorSec.innerHTML =
+    '<div class="menu-section-title">PERFORMANCE MONITOR</div>' +
+    '<div class="menu-note">Opens a draggable monitor over the game. It shows the latest one-second cost and a running average for every entry.</div>' +
+    '<div class="menu-btns"><button id="perf-toggle" class="menu-btn perf-toggle"></button></div>';
+  body.appendChild(monitorSec);
+
   const sec = document.createElement('div');
   sec.className = 'menu-section';
   sec.innerHTML =
@@ -4224,6 +4566,31 @@ function debugRender() {
     '<button id="dbg-pots" class="menu-btn">ADD PORTAL SUPPLIES</button>' +
     '</div>';
   body.appendChild(sec);
+
+  let renderedSnapshot = null;
+  const renderPerf = () => {
+    const snap = perfStats.snapshot;
+    if (snap === renderedSnapshot) return;
+    renderedSnapshot = snap;
+    const tick = snap['Tick total'];
+    $('perf-fps').textContent = perfStats.fps ? perfStats.fps.toFixed(1) : 'sampling…';
+    $('perf-tick').textContent = tick ? tick.avg.toFixed(2) + ' ms avg / ' + tick.max.toFixed(2) + ' max' : 'sampling…';
+    const total = tick ? tick.total : 0;
+    const ordered = Object.keys(snap)
+      .filter(name => name !== 'Tick total')
+      .sort((a, b) => snap[b].total - snap[a].total);
+    $('perf-rows').innerHTML = ordered.length ? ordered.map(name => {
+      const row = snap[name];
+      const share = total > 0 ? row.total / total * 100 : 0;
+      return '<div class="perf-row"><span>' + name + '</span><b>' +
+        row.total.toFixed(2) + ' ms/s</b><small>' + share.toFixed(1) + '% · ' +
+        row.avg.toFixed(3) + ' ms/call · max ' + row.max.toFixed(2) + '</small></div>';
+    }).join('') : '<div class="menu-note">Collecting a one-second sample…</div>';
+  };
+  renderPerf();
+  $('perf-reset').onclick = perfReset;
+  updatePerformanceToggle();
+  $('perf-toggle').onclick = () => setPerformanceOverlay(!perfOverlayOpen);
 
   $('dbg-res').onclick = () => {
     const n = debugAmount();
@@ -4500,6 +4867,8 @@ function updateHud() {
 let autoClickAcc = 0;
 
 function tick() {
+  const perfTick = perfStart();
+  let perfPart = perfStart();
   const wasNight = isNight();
   state.cycleSec += TICK_MS / 1000;
   if (isNight() !== wasNight) {
@@ -4513,8 +4882,12 @@ function tick() {
     }
   }
 
+  perfEnd('Cycle/events', perfPart);
+  perfPart = perfStart();
   C = calc();
+  perfEnd('Derived stats calc', perfPart);
 
+  perfPart = perfStart();
   if (C.dps > 0) damageMonster(C.dps / TICKS_PER_SEC, false);
 
   if (C.spiritRate > 0) {
@@ -4540,18 +4913,32 @@ function tick() {
     earnGold(Math.min(C.prod.gold, 0.005 * state.gold) / TICKS_PER_SEC);
 
   state.stats.playSec += TICK_MS / 1000;
+  perfEnd('Combat & income', perfPart);
 
   runAutomations(TICK_MS / 1000);
+  perfPart = perfStart();
   tickEndgameBuildings(TICK_MS / 1000);
   tickChests();
+  perfEnd('Buildings & chests', perfPart);
+  perfPart = perfStart();
   updateHud();
+  perfEnd('HUD refresh', perfPart);
+  perfPart = perfStart();
   refreshShop();
+  perfEnd('Shop refresh', perfPart);
+  perfPart = perfStart();
   refreshUnitCards();
+  perfEnd('Unit cards refresh', perfPart);
+  perfPart = perfStart();
   for (const f of viewUpdaters) f();
   if (menuOpen) for (const f of menuUpdaters) f();
   if (invDirty && rightTab === 'bag' && !currentDetail &&
       performance.now() - lastBagRenderAt >= 250) renderBag();
+  perfEnd('Open panels refresh', perfPart);
+  perfPart = perfStart();
   maybeTerrain(false);
+  perfEnd('Terrain check/render', perfPart);
+  perfEnd('Tick total', perfTick);
 }
 
 /* ---------------- init ---------------- */
@@ -4615,6 +5002,7 @@ function init() {
 
   setInterval(tick, TICK_MS);
   setInterval(save, 15000);
+  requestAnimationFrame(perfFrame);
   window.addEventListener('beforeunload', save);
 
   if (state._respecced) {
