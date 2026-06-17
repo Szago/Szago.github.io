@@ -713,7 +713,6 @@ const MAP_H = DISTRICT_H * DISTRICT_GRID;  // 120
 const TILE = 16;
 
 const HOME_KEY = '2,2';
-const DISTRICT_WALL_REQ = 5;      // wall level needed before buying land
 const DISTRICT_GOLD_BONUS = 0.05; // +5% all gold per extra district
 
 function dKey(dx, dy) { return dx + ',' + dy; }
@@ -728,11 +727,32 @@ function isCityDistrict(dx, dy) {
 }
 
 function districtCost(nOwnedExtra) {
-  return {
-    gold: Math.ceil(25000 * Math.pow(4, nOwnedExtra)),
-    wood: Math.ceil(500 * Math.pow(2.5, nOwnedExtra)),
-    stone: Math.ceil(500 * Math.pow(2.5, nOwnedExtra)),
+  const cost = {
+    gold: Math.ceil(100000 * Math.pow(5, nOwnedExtra)),
+    wood: Math.ceil(1500 * Math.pow(2.5, nOwnedExtra)),
+    stone: Math.ceil(1500 * Math.pow(2.5, nOwnedExtra)),
   };
+  if (nOwnedExtra >= 4) cost.mana = Math.ceil(750 * Math.pow(2.8, nOwnedExtra - 4));
+  return cost;
+}
+
+const DISTRICT_REQUIREMENTS = [
+  { zone: 3, walls: 5, buildings: 10 },
+  { zone: 6, walls: 7, buildings: 25 },
+  { zone: 10, walls: 9, buildings: 45 },
+  { zone: 15, walls: 11, buildings: 70 },
+  { zone: 22, walls: 13, buildings: 100 },
+  { zone: 30, walls: 15, buildings: 140 },
+  { zone: 40, walls: 17, buildings: 190 },
+  { zone: 52, walls: 19, buildings: 250 },
+  { zone: 70, walls: 21, buildings: 325 },
+  { zone: 92, walls: 23, buildings: 415 },
+  { zone: 118, walls: 25, buildings: 525 },
+  { zone: 150, walls: 27, buildings: 650 },
+];
+
+function districtRequirement(nOwnedExtra) {
+  return DISTRICT_REQUIREMENTS[Math.min(nOwnedExtra, DISTRICT_REQUIREMENTS.length - 1)];
 }
 
 const DISTRICT_NAMES = {
@@ -959,8 +979,8 @@ function monsterFor(zone, idx) {
    The tree spans 6 ERAS. Era gates require a number of owned
    nodes (needNodes) + sigils, and upgrade the kingsroads on the
    map. Everything can eventually be bought out.                */
-const SIGIL_BASE = 3e6;
-const SIGIL_EXP = 0.30;            // was sqrt (0.5) — dramatically slower now
+const SIGIL_BASE = 1e8;
+const SIGIL_EXP = 0.24;
 
 function sigilsFromLifetime(lifetimeGold) {
   return Math.floor(Math.pow(Math.max(0, lifetimeGold) / SIGIL_BASE, SIGIL_EXP));
@@ -984,24 +1004,24 @@ const TREE_BRANCHES = {
   spirit: { name: 'Spirit',     angle: -90 + 6 * 45 },
   auto:   { name: 'Automation', angle: -90 + 7 * 45 },
 };
-const ERA_RING_R = [0, 430, 800, 1170, 1540, 1910];      // gate ring radius (era 2..6)
-const ERA_NODE_R0 = [150, 530, 900, 1270, 1640, 2010];   // first node radius per era
-const TREE_NODE_STEP = 105;
-const TREE_SIDE_OFF = 150;   // side nodes: perpendicular offset from the spine
-const TREE_SIDE_OUT = 50;    // ...plus a small outward push (diagonal hang)
+const ERA_RING_R = [0, 560, 1080, 1600, 2120, 2640];      // gate ring radius (era 2..6)
+const ERA_NODE_R0 = [190, 690, 1210, 1730, 2250, 2770];   // first node radius per era
+const TREE_NODE_STEP = 150;
+const TREE_SIDE_OFF = 215;   // side nodes: perpendicular offset from the spine
+const TREE_SIDE_OUT = 70;    // ...plus a small outward push (diagonal hang)
 
 /* node costs per era per step — the incline gets BRUTAL in the
    outer rings, because Sigil masters scale off every one earned */
 const ERA_NODE_COST = [
-  [1, 2, 3],
-  [8, 12, 16],
-  [30, 45, 70],
-  [200, 320, 500],
-  [1200, 2000, 3200],
-  [8000, 13000, 21000],
+  [1, 3, 7],
+  [20, 35, 60],
+  [250, 450, 800],
+  [4000, 7000, 12000],
+  [75000, 130000, 220000],
+  [1500000, 2500000, 4000000],
 ];
-const ERA_GATE_COST = [0, 10, 40, 200, 1200, 8000];
-const ERA_GATE_NEED = [0, 8, 22, 40, 60, 82];
+const ERA_GATE_COST = [0, 30, 400, 6000, 100000, 2000000];
+const ERA_GATE_NEED = [0, 14, 36, 64, 94, 125];
 
 /* node helper: n(id, era, branch, step, name, desc, opts)
    opts.req  — explicit requirement: a node id, or an ARRAY (needs all)
@@ -1098,8 +1118,11 @@ const PRESTIGE_TREE = (() => {
   n('xspire1', 2, 'spirit', 1, 'Featherweight', 'SILVER SPIRE: spirits lighten your step — launch power +10%.', { req: 'spirit5', side: -1 });
   n('spirit6', 2, 'spirit', 2, 'Ghostly Discipline', 'Spirit clicks deal another +50% damage.', { req: ['spirit5', 'xspirit2'] });
   n('auto4', 2, 'auto', 0, 'Bellows Engines', '🔓 the FORGE ALL button in the bag.');
+  n('auton1', 2, 'auto', 0, 'Quiet Hunt', 'AUTOMATION SETTING: hide routine item-drop notifications.', { req: 'auto4', side: 1 });
   n('auto5', 2, 'auto', 1, 'Rift Standing Orders', '🔓 the Rift Portal\'s ♻ AUTO MODE.');
+  n('auton2', 2, 'auto', 1, 'Silent Couriers', 'AUTOMATION SETTING: hide treasure-chest notifications.', { req: 'auto5', side: 1 });
   n('auto6', 2, 'auto', 2, 'Punctual Couriers', 'Treasure chests are delivered TWICE as often.');
+  n('auton3', 2, 'auto', 2, 'Workshop Ledgers', 'AUTOMATION SETTING: hide items and Portal supplies created by buildings.', { req: 'auto6', side: 1 });
 
   /* ===== GATE + ERA 3 — AGE OF IRON ===== */
   gate('era3', 3, 'Age of Iron', '+50% ALL gold. The kingsroads are cobbled. Every Age of Iron branch starts here.');
@@ -1109,6 +1132,7 @@ const PRESTIGE_TREE = (() => {
   n('xwar3', 3, 'war', 1, 'Iron Resolve', 'Hero crit chance +5% (absolute).', { req: 'war8', side: 1 });
   n('xwar7', 3, 'war', 2, 'Overkill', 'Damage beyond a monster\'s last breath CARRIES OVER to the next one.', { req: 'xwar3', side: 1 });
   n('war9', 3, 'war', 2, 'Heroic Saga', "The Hero's leadership aura is 50% stronger.");
+  n('xwar14', 3, 'war', 2, 'Commanding Presence', 'Raises the Hero aura soft cap from +150% to +250%; gains beyond it have diminishing returns.', { req: 'war9', side: -1 });
   n('xwar11', 3, 'war', 0, 'Stormhost', 'Storm Valkyrie damage x2.', { req: 'war7', side: 1 });
   n('prosi1', 3, 'pros', 0, 'Caravan Network', '+30% ALL gold.');
   n('pros8', 3, 'pros', 1, 'Trade Empire', '+40% ALL gold.');
@@ -1141,7 +1165,7 @@ const PRESTIGE_TREE = (() => {
   n('spirit9', 3, 'spirit', 2, 'Restless Night', 'Spirit Hands click TWICE as fast at night.');
   n('auto7', 3, 'auto', 0, 'Counting Engines', 'Offline progress runs at 75% rate (instead of 50%).');
   n('auto8', 3, 'auto', 1, 'Tireless Scribes', 'Offline progress is counted for up to 16 hours (instead of 8).');
-  n('auto9', 3, 'auto', 2, 'Animated Armory', 'Item drops AUTO-EQUIP themselves into empty matching slots.');
+  n('auto9', 3, 'auto', 2, 'Animated Armory', 'TOGGLE: automatically equips the best loadout, prioritizing more affixes and then higher tiers.');
 
   /* ===== GATE + ERA 4 — AGE OF GOLD ===== */
   gate('era4', 4, 'Age of Gold', '+75% ALL gold. The kingsroads are paved in marble. Every Age of Gold branch starts here.');
@@ -1163,6 +1187,7 @@ const PRESTIGE_TREE = (() => {
   n('xfor4', 4, 'for', 0, 'Hoard Sense', 'Item drop chance +10% per Era gate owned.', { req: 'forg1', side: 1 });
   n('xfor8', 4, 'for', 1, 'Jackpot Chests', 'Chests have a 10% chance to be JACKPOTS: x10 Gold & resources, items +2 tiers.', { req: 'xfor4', side: 1 });
   n('forg2', 4, 'for', 1, 'Affix Fusion', 'FORGE 🔓: fuse two same-tier items with DIFFERENT affixes into one item carrying BOTH.');
+  n('xfor9', 4, 'for', 1, 'Overflowing Fortune', 'Raises normal and boss item-drop soft caps by 10 percentage points; overflow chance has diminishing returns.', { req: 'forg2', side: 1 });
   n('xrift3', 4, 'for', 1, 'Cartomancer', 'RIFT PORTAL: the Rift\'s bargains offer FOUR cards to choose from (instead of three).', { req: 'xrift2', side: -1 });
   n('xreav1', 4, 'for', 1, 'Riftborn Legion', 'WARD UNIT: Rift Reaver damage x2.', { req: 'xrift3', side: -1 });
   n('forg3', 4, 'for', 2, 'Deep Pockets', 'Item drop chance +40%.', { req: ['forg2', 'xfor4'] });
@@ -1231,9 +1256,11 @@ const PRESTIGE_TREE = (() => {
   n('spirits3', 5, 'spirit', 2, 'Deathless Vigil', 'Spirit crit chance +15% (absolute).');
   n('auto13', 5, 'auto', 0, 'The Brass Steward', 'TOGGLE: automatically buys BUILDING UPGRADES (cheapest first) every 5s.');
   n('auto14', 5, 'auto', 1, 'The Iron Quartermaster', 'TOGGLE: automatically buys UNIT UPGRADES (cheapest first) every 5s.');
+  n('auto21', 5, 'auto', 1, 'The Clockwork Recruiter', 'TOGGLE: continuously buys the cheapest recruitable UNIT at up to 1 unit per second.', { req: 'auto14', side: -1 });
   n('auto15', 5, 'auto', 2, 'The Clockwork Architect', 'TOGGLE: automatically builds the cheapest BUILDINGS every 5s.');
   n('xauto1', 5, 'auto', 2, 'Fast Foremen', 'AUTO BUILD works continuously at up to 7.5 buildings per second.', { req: 'auto15', side: -1 });
   n('xauto2', 5, 'auto', 2, 'Instant Blueprints', 'AUTO BUILD works continuously at up to 50 buildings per second.', { req: 'xauto1', side: 1 });
+  n('xauto3', 5, 'auto', 2, 'Muster Drums', 'AUTO RECRUIT works continuously at up to 10 units per second.', { req: 'auto21', side: -1 });
 
   /* ===== GATE + ERA 6 — AGE OF AETHER ===== */
   gate('era6', 6, 'Age of Aether', '+150% ALL gold. The kingsroads glow with aether. The final ring.');
@@ -1249,6 +1276,7 @@ const PRESTIGE_TREE = (() => {
   n('fora1', 6, 'for', 0, 'Master Forging', 'Affixes are GUARANTEED on every drop.');
   n('xfor6', 6, 'for', 0, 'Reliquary Straps', 'The HERO carries +1 item. (Granted immediately when bought!)', { req: 'fora1', side: 1 });
   n('fora2', 6, 'for', 1, 'Artificer God', 'ALL item values another +50%.');
+  n('xfor10', 6, 'for', 1, 'Fortune Without End', 'Raises normal and boss item-drop soft caps by another 15 percentage points.', { req: 'xfor9', side: 1 });
   n('fora3', 6, 'for', 2, 'Aether Reliquary', 'ALL item drops come one tier higher (stacks with other tier-ups).', { req: ['fora2', 'xfor6'] });
   n('mysa1', 6, 'mys', 0, 'Aether Mind', 'Mana production x2.');
   n('xmys6', 6, 'mys', 0, 'Aether Tide', '+1% ALL gold per 1,000 Mana you currently hold (cap +100%).', { req: 'mysa1', side: 1 });
@@ -1268,11 +1296,13 @@ const PRESTIGE_TREE = (() => {
   n('spirita1', 6, 'spirit', 0, 'Legion Eternal', 'Spirit Hands click rate DOUBLED.');
   n('xspirit6', 6, 'spirit', 0, 'Eternal Procession', 'Spirit clicks deal +3% damage per Ascension performed.', { req: 'spirita1', side: 1 });
   n('spirita2', 6, 'spirit', 1, 'Spirit Sovereign', 'Spirit clicks deal +300% damage.');
+  n('xwar15', 6, 'war', 1, 'Aura of the First King', 'Raises the Hero aura soft cap from +250% to +500%.', { req: 'xwar14', side: -1 });
   n('spirita3', 6, 'spirit', 2, 'One With the Ghosts', 'YOUR clicks gain all spirit damage bonuses.', { req: ['spirita2', 'xspirit6'] });
   n('auto16', 6, 'auto', 0, 'The Arcane Vizier', 'TOGGLE: automatically learns ARCANE SKILLS the moment you can afford them.');
   n('auto17', 6, 'auto', 1, 'The Phantom Smith', 'TOGGLE: automatically FORGES your whole bag every 10s.');
   n('auto19', 6, 'auto', 1, 'The Fusion Loom', 'TOGGLE: automatically FUSES compatible affixed items every 10s.', { req: 'auto17', side: 1 });
-  n('auto18', 6, 'auto', 2, 'The other automatons work EVERY SECOND, AUTO BUILD works continuously at up to 100 buildings per second, and ALL production +25%.');
+  n('auto18', 6, 'auto', 2, 'The other automatons work EVERY SECOND, AUTO BUILD reaches 100 buildings/s, Legion Foundry reaches 100 units/s, and ALL production +25%.');
+  n('xauto4', 6, 'auto', 2, 'Legion Foundry', 'AUTO RECRUIT works continuously at up to 50 units per second, or 100 with the Grand Automaton.', { req: 'xauto3', side: -1 });
   n('auto20', 6, 'auto', 2, 'Crown Planner', 'ASCENSION: unlocks BUY ALL NODES, buying the cheapest available Advancement nodes first.', { req: 'auto18', side: 1 });
 
   return T;

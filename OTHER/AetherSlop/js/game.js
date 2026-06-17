@@ -58,6 +58,8 @@ let state = {
   buildBuyAmount: 1,
   unitBuyAmount: 1,
   endgameTimers: { item: 0, pot: 0 },
+  autoOn: { bup: false, uup: false, build: false, unit: false, equip: false, skill: false, forge: false, fuse: false },
+  notifyOff: {},
   lastSave: Date.now(),
 };
 
@@ -93,11 +95,13 @@ function ensureShape(s) {
   if (!s.unitUp) s.unitUp = {};
   if (!s.bUp) s.bUp = {};
   if (!s.tree) s.tree = {};
+  if (!s.notifyOff) s.notifyOff = {};
   if (s.debugUnlocked === undefined) s.debugUnlocked = false;
   /* automation toggles (the 8th branch) */
   if (!s.autoOn) s.autoOn = {};
-  for (const k of ['bup', 'uup', 'build', 'skill', 'forge', 'fuse'])
+  for (const k of ['bup', 'uup', 'build', 'unit', 'skill', 'forge', 'fuse'])
     if (s.autoOn[k] === undefined) s.autoOn[k] = false;
+  if (s.autoOn.equip === undefined) s.autoOn.equip = !!s.tree.auto9;
   /* buy amounts are gated by Automation nodes — reset locked modes */
   const amtLocked = v => (String(v) === '10' && !s.tree.auto1) ||
     (['100', 'max', 'next10', 'next100'].includes(String(v)) && !s.tree.auto2);
@@ -201,10 +205,69 @@ function affixFactor() {
 function affixList(a) { return a ? String(a).split('+') : []; }
 function affixKey(list) { return list.slice().sort().join('+'); }
 
+function itemAffixCategory(t) {
+  const eff = ITEMS[t] && ITEMS[t].eff;
+  if (eff === 'gold' || eff === 'bounty' || eff === 'boss') return 'wealth';
+  if (eff === 'res' || eff === 'mana') return 'craft';
+  if (eff === 'luck') return 'fortune';
+  return 'combat';
+}
+
+function itemClusterName(list) {
+  const counts = { combat: 0, wealth: 0, craft: 0, fortune: 0 };
+  for (const t of list) counts[itemAffixCategory(t)]++;
+  const active = Object.keys(counts).filter(k => counts[k] > 0).sort();
+  const single = { combat: 'Warbound', wealth: 'Gilded', craft: 'Runewrought', fortune: 'Fated' };
+  const pairs = {
+    'combat,craft': 'Spellforged',
+    'combat,fortune': 'Doomfavored',
+    'combat,wealth': 'Conquering',
+    'craft,fortune': 'Moonwoven',
+    'craft,wealth': 'Provident',
+    'fortune,wealth': 'Omen-Crowned',
+  };
+  const profile = active.length === 1 ? single[active[0]]
+    : active.length === 2 ? pairs[active.join(',')]
+    : active.length === 4 ? 'Pantheonic'
+    : 'Concordant';
+  const rank = ['','', '', '', '', 'Pentadic', 'Hexadic', 'Heptadic', 'Octadic', 'Enneadic', 'Decadic'][list.length] ||
+    (list.length >= 11 ? 'Myriad' : 'Manyfold');
+  return rank + ' ' + profile;
+}
+
 function itemName(t, tier, a) {
   const list = affixList(a);
+  if (list.length > 4) return ITEMS[t].name + ' ' + tierName(tier) + ' - ' + itemClusterName(list);
   return ITEMS[t].name + ' ' + tierName(tier) +
     (list.length ? ' of ' + list.map(x => AFFIX_NAMES[x]).join(' & ') : '');
+}
+
+function itemStatLines(t, tier, a) {
+  const lines = ['+' + effItemValue(t, tier).toFixed(1) + '% ' + ITEMS[t].txt];
+  for (const affix of affixList(a)) {
+    if (ITEMS[affix]) lines.push('+' + (effItemValue(affix, tier) * affixFactor()).toFixed(1) + '% ' + ITEMS[affix].txt);
+  }
+  return lines;
+}
+
+function itemStatsHtml(t, tier, a) {
+  return itemStatLines(t, tier, a).map(line => '<span class="item-stat-line">' + line + '</span>').join('');
+}
+
+function softCapValue(raw, cap) {
+  if (raw <= cap) return raw;
+  return cap + cap * (1 - Math.exp(-(raw - cap) / cap * 0.35));
+}
+
+function itemDropChance(isBoss) {
+  if (isBoss && hasTree('xfor3')) return 1;
+  const base = (isBoss ? BOSS_DROP_CHANCE * (hasTree('for6') ? 2 : 1) : DROP_CHANCE) +
+    (bUp('alch_phil') ? 0.005 : 0);
+  const raw = base * C.dropMult;
+  const capBoost = (hasTree('xfor9') ? 0.10 : 0) + (hasTree('xfor10') ? 0.15 : 0);
+  const cap = Math.min(0.95, (isBoss ? 0.75 : 0.50) + capBoost);
+  if (raw <= cap) return raw;
+  return Math.min(0.995, cap + (1 - cap) * (1 - Math.exp(-(raw - cap) / Math.max(0.01, 1 - cap) * 0.35)));
 }
 
 /* a unit's items only work if the unit actually exists.
@@ -241,9 +304,13 @@ function calc() {
 
   // HERO LEADERSHIP AURA: items worn by the hero inspire the whole city
   const auraFactor = HERO_AURA_FACTOR * (hasTree('war9') ? 1.5 : 1); // Heroic Saga
-  let heroAura = 0;
+  let heroAuraRaw = 0;
   if (unitActive('hero')) // a Rift-slain hero inspires nobody
-    for (const it of state.equip.hero) if (it) heroAura += effItemValue(it.t, it.tier) * auraFactor;
+    for (const it of state.equip.hero) if (it) heroAuraRaw += effItemValue(it.t, it.tier) * auraFactor;
+  const heroAuraCap = hasTree('xwar15') ? 500 : hasTree('xwar14') ? 250 : 150;
+  const heroAura = softCapValue(heroAuraRaw, heroAuraCap);
+  c.heroAuraRaw = heroAuraRaw;
+  c.heroAuraCap = heroAuraCap;
   c.heroAura = heroAura;
   const auraMult = 1 + heroAura / 100;
   let enemyHpMult = Math.max(0.6, 1 - heroAura / 200); // enemies spawn weaker, cap -40%
@@ -747,6 +814,7 @@ function calc() {
     c.spiritRate = 0; c.spiritDmg = 0; c.spiritDps = 0; // his ghosts mourn with him
   }
   c.click = click;
+  c.rosterDps = c.dps + c.spiritDps;
 
   // kill bounty multiplier (on top of monster base gold)
   let killMult = goldMult * (1 + 0.05 * state.walls) * (1 + 0.03 * uUp('banners') + 0.02 * uUp('moat'));
@@ -1111,9 +1179,17 @@ const AUTO_MODE_DEFS = [
   { flag: 'bup', node: 'auto13', label: 'BUILDING UPGRADES', desc: 'Buys the cheapest affordable building upgrade.' },
   { flag: 'uup', node: 'auto14', label: 'UNIT UPGRADES', desc: 'Buys the cheapest affordable unit upgrade.' },
   { flag: 'build', node: 'auto15', label: 'BUILDINGS', desc: 'Builds the cheapest affordable building across owned districts.' },
+  { flag: 'unit', node: 'auto21', label: 'UNITS', desc: 'Buys the cheapest recruit, training level, hero level, or wall level.' },
+  { flag: 'equip', node: 'auto9', label: 'AUTO-EQUIP', desc: 'Rebuilds active-unit loadouts: most affixes first, then highest tier.' },
   { flag: 'skill', node: 'auto16', label: 'ARCANE SKILLS', desc: 'Learns affordable Arcane Skills.' },
   { flag: 'forge', node: 'auto17', label: 'FORGE BAG', desc: 'Combines identical item pairs across the bag.' },
   { flag: 'fuse', node: 'auto19', label: 'FUSE AFFIXES', desc: 'Fuses compatible affixed items into multi-affix relics.' },
+];
+
+const NOTIFY_MODE_DEFS = [
+  { key: 'item', node: 'auton1', label: 'ITEM DROPS', desc: 'Routine monster loot and twin-drop notices.' },
+  { key: 'chest', node: 'auton2', label: 'CHESTS', desc: 'Treasure chest rewards and jackpots.' },
+  { key: 'building', node: 'auton3', label: 'BUILDING OUTPUT', desc: 'Printed items and Portal supplies made by buildings.' },
 ];
 
 function autoBuildPeriod() {
@@ -1133,8 +1209,15 @@ function autoBuildRate() {
   return autoBuildBatch() / autoBuildPeriod();
 }
 
+function autoUnitRate() {
+  if (hasTree('xauto4') && hasTree('auto18')) return 100;
+  if (hasTree('xauto4')) return 50;
+  if (hasTree('xauto3')) return 10;
+  return 1;
+}
+
 function autoModePeriod(flag) {
-  if (flag === 'build') return autoBuildPeriod();
+  if (flag === 'build' || flag === 'unit') return 0;
   if (hasTree('auto18')) return 1;
   return flag === 'forge' || flag === 'fuse' ? 10 : 5;
 }
@@ -1162,19 +1245,48 @@ function automationModeRow(parent, def) {
     btn.textContent = unlocked ? (state.autoOn[def.flag] ? 'ON' : 'OFF') : '🔒';
     btn.title = unlocked ? 'Toggle ' + def.label + '.' : autoUnlockText(def.node);
     rate.textContent = unlocked
-      ? (def.flag === 'build'
-        ? 'Runs continuously at up to ' + fmt(autoBuildRate()) + ' buildings/s.'
+      ? (def.flag === 'equip'
+        ? 'Rechecks whenever the bag or equipped gear changes.'
+        : def.flag === 'build' || def.flag === 'unit'
+        ? 'Runs continuously at up to ' + fmt(def.flag === 'build' ? autoBuildRate() : autoUnitRate()) +
+          (def.flag === 'build' ? ' buildings/s.' : ' units/s.')
         : 'Runs every ' + autoModePeriod(def.flag) + 's.')
       : autoUnlockText(def.node);
   };
   btn.onclick = () => {
     if (!hasTree(def.node)) return;
     state.autoOn[def.flag] = !state.autoOn[def.flag];
+    if (def.flag === 'equip' && state.autoOn.equip) autoEquipBest();
     paint();
     save();
   };
   paint();
   viewUpdaters.push(paint);
+  parent.appendChild(row);
+}
+
+function notificationModeRow(parent, def) {
+  if (!hasTree(def.node)) return;
+  const row = document.createElement('div');
+  row.className = 'auto-mode-row notify-mode-row';
+  const btn = document.createElement('button');
+  const body = document.createElement('div');
+  body.className = 'auto-mode-copy';
+  body.innerHTML = '<div class="auto-mode-name">' + def.label + '</div><div class="auto-mode-desc">' + def.desc + '</div>';
+  const paint = () => {
+    const hidden = !!state.notifyOff[def.key];
+    btn.className = 'menu-btn auto-toggle' + (hidden ? ' on' : '');
+    btn.textContent = hidden ? 'HIDDEN' : 'SHOWN';
+    btn.title = hidden ? 'Show these notifications.' : 'Hide these notifications.';
+  };
+  btn.onclick = () => {
+    state.notifyOff[def.key] = !state.notifyOff[def.key];
+    paint();
+    save();
+  };
+  paint();
+  row.appendChild(btn);
+  row.appendChild(body);
   parent.appendChild(row);
 }
 
@@ -1190,30 +1302,18 @@ function renderAutomationTab() {
   speed.className = 'automation-note';
   speed.innerHTML =
     '<div><b>Auto-build rate:</b> up to ' + fmt(autoBuildRate()) + ' building(s) per second</div>' +
+    '<div><b>Auto-recruit rate:</b> up to ' + fmt(autoUnitRate()) + ' unit(s) per second</div>' +
     '<div><b>Workload:</b> purchases are spread across game ticks for smoother input</div>' +
     '<div>' + (hasTree('xauto1') ? 'Fast Foremen owned.' : autoUnlockText('xauto1')) + '</div>' +
-    '<div>' + (hasTree('xauto2') ? 'Instant Blueprints owned.' : autoUnlockText('xauto2')) + '</div>';
+    '<div>' + (hasTree('xauto2') ? 'Instant Blueprints owned.' : autoUnlockText('xauto2')) + '</div>' +
+    '<div>' + (hasTree('xauto3') ? 'Muster Drums owned.' : autoUnlockText('xauto3')) + '</div>' +
+    '<div>' + (hasTree('xauto4') ? 'Legion Foundry owned.' : autoUnlockText('xauto4')) + '</div>';
   list.appendChild(speed);
 
-  sectionTitle(list, 'ACTIONS');
-  const actions = document.createElement('div');
-  actions.className = 'bag-actions';
-  const forgeBtn = document.createElement('button');
-  forgeBtn.className = 'menu-btn';
-  forgeBtn.textContent = hasTree('auto4') ? 'FORGE ALL NOW' : '🔒 FORGE ALL';
-  forgeBtn.disabled = !hasTree('auto4');
-  forgeBtn.title = hasTree('auto4') ? 'Combine every pair of identical items, cascading to higher tiers' : autoUnlockText('auto4');
-  forgeBtn.onclick = () => forgeAll();
-  actions.appendChild(forgeBtn);
-
-  const fuseBtn = document.createElement('button');
-  fuseBtn.className = 'menu-btn';
-  fuseBtn.textContent = hasTree('forg2') ? 'FUSE ALL NOW' : '🔒 FUSE ALL';
-  fuseBtn.disabled = !hasTree('forg2');
-  fuseBtn.title = hasTree('forg2') ? 'Fuse every compatible affixed item pair into larger multi-affix items' : autoUnlockText('forg2');
-  fuseBtn.onclick = () => fuseAll();
-  actions.appendChild(fuseBtn);
-  list.appendChild(actions);
+  if (NOTIFY_MODE_DEFS.some(def => hasTree(def.node))) {
+    sectionTitle(list, 'NOTIFICATIONS');
+    for (const def of NOTIFY_MODE_DEFS) notificationModeRow(list, def);
+  }
 }
 
 function autoBuyBuildingUpgrades() {
@@ -1297,6 +1397,42 @@ function autoBuyBuildings(limit) {
   return bought;
 }
 
+function autoBuyUnits(limit) {
+  let bought = 0;
+  const batch = Math.max(1, Math.floor(limit || 1));
+  const visualBefore = unitAmbientSignature();
+  const candidates = UNITS
+    .filter(unitUnlocked)
+    .map(u => ({ u, cost: ceilCost(u.main.cost(state[u.statKey])) }));
+  for (let i = 0; i < batch; i++) {
+    let best = null;
+    for (const candidate of candidates) {
+      if (!canAfford(candidate.cost)) continue;
+      const score = costScore(candidate.cost);
+      if (!best || score < best.score) best = { candidate, score };
+    }
+    if (!best) break;
+    const u = best.candidate.u;
+    pay(best.candidate.cost);
+    state[u.statKey]++;
+    state.totalUnitsBought++;
+    best.candidate.cost = ceilCost(u.main.cost(state[u.statKey]));
+    bought++;
+  }
+  if (bought && unitAmbientSignature() !== visualBefore) autoUnitVisualPending = true;
+  return bought;
+}
+
+function unitAmbientSignature() {
+  const unitTier = Math.floor((state.totalUnitsBought || 0) / 100);
+  const villagerCount = Math.min(2 + Math.floor(totalBuildings() / 5) + unitTier * 2, 36);
+  const patrolCap = Math.min(12 + unitTier * 2, 28);
+  const roster = UNITS.filter(u => u.id !== 'walls' && state[u.statKey] > 0)
+    .map(u => u.id + ((u.id === 'archer' || u.id === 'mage') && state[u.statKey] >= 15 ? '2' : '1'))
+    .join(',');
+  return villagerCount + '|' + patrolCap + '|' + roster;
+}
+
 function autoLearnSkills() {
   let learned = 0;
   for (const s of SKILLS) {
@@ -1306,11 +1442,13 @@ function autoLearnSkills() {
   return learned;
 }
 
-let autoBuildAcc = 0, autoAcc = -0.25, autoForgeAcc = -0.5, autoFuseAcc = -0.75;
+let autoBuildAcc = 0, autoUnitAcc = 0, autoAcc = -0.25, autoForgeAcc = -0.5, autoFuseAcc = -0.75;
 let autoCityRefreshAcc = 0, autoCityStructurePending = false, autoCityAmbientPending = false;
 const autoCityChangedIds = new Set();
 let autoForgeSeenVersion = -1, autoFuseSeenVersion = -1;
+let autoEquipSeenVersion = -1;
 let autoFusePending = false;
+let autoUnitVisualAcc = 0, autoUnitVisualPending = false;
 
 function queueAutoCityRefresh(ids, fullRender, ambient) {
   for (const id of ids) autoCityChangedIds.add(id);
@@ -1342,6 +1480,10 @@ function runAutomations(dt) {
   const a = state.autoOn;
   if (!a) return;
 
+  if (a.equip && hasTree('auto9') && autoEquipSeenVersion !== invVersion) {
+    autoEquipBest();
+  }
+
   if (a.build && hasTree('auto15')) {
     autoBuildAcc += dt * autoBuildRate();
     const maxSlice = Math.max(1, Math.ceil(autoBuildRate() * TICK_MS / 1000));
@@ -1354,6 +1496,27 @@ function runAutomations(dt) {
     autoBuildAcc = 0;
   }
 
+  if (a.unit && hasTree('auto21')) {
+    autoUnitAcc += dt * autoUnitRate();
+    const maxSlice = Math.max(1, Math.ceil(autoUnitRate() * TICK_MS / 1000));
+    const due = Math.min(Math.floor(autoUnitAcc + 1e-9), maxSlice);
+    if (due > 0) {
+      autoUnitAcc -= due;
+      if (autoBuyUnits(due) < due) autoUnitAcc = 0;
+    }
+  } else {
+    autoUnitAcc = 0;
+  }
+  if (autoUnitVisualPending) {
+    autoUnitVisualAcc += dt;
+    if (autoUnitVisualAcc >= 2) {
+      autoUnitVisualAcc = 0;
+      autoUnitVisualPending = false;
+      if (typeof ambientRebuild === 'function') ambientRebuild();
+    }
+  } else {
+    autoUnitVisualAcc = 0;
+  }
   if (a.forge && hasTree('auto17')) {
     autoForgeAcc += dt;
     const period = hasTree('auto18') ? 1 : 10;
@@ -1389,19 +1552,68 @@ function runAutomations(dt) {
   if (a.skill && hasTree('auto16')) autoLearnSkills();
 }
 
-/* Animated Armory: a dropped item slips into the first empty fitting slot */
-function autoEquipDrop(t, tier, a) {
-  if (!hasTree('auto9')) return;
-  const units = ITEMS[t].units || UNITS.map(u => u.id);
-  for (const uid of units) {
-    if (!unitActive(uid) || !state.equip[uid]) continue;
-    const i = state.equip[uid].indexOf(null);
-    if (i === -1) continue;
-    invAdd(t, tier, -1, a);
-    state.equip[uid][i] = { t, tier, a: a || null };
-    toast('AUTO-EQUIP: ' + itemName(t, tier, a) + ' → ' + UNITS.find(u => u.id === uid).name);
-    return;
+function autoEquipItemCompare(a, b) {
+  const affixDiff = affixList(b.a).length - affixList(a.a).length;
+  if (affixDiff) return affixDiff;
+  if (b.tier !== a.tier) return b.tier - a.tier;
+  const valueA = effItemValue(a.t, a.tier) +
+    affixList(a.a).reduce((sum, t) => sum + (ITEMS[t] ? effItemValue(t, a.tier) * affixFactor() : 0), 0);
+  const valueB = effItemValue(b.t, b.tier) +
+    affixList(b.a).reduce((sum, t) => sum + (ITEMS[t] ? effItemValue(t, b.tier) * affixFactor() : 0), 0);
+  return valueB - valueA || invKey(a.t, a.tier, a.a).localeCompare(invKey(b.t, b.tier, b.a));
+}
+
+function autoEquipBest(notificationCategory) {
+  if (!hasTree('auto9') || !state.autoOn.equip) return 0;
+  const activeUnits = UNITS.filter(u => unitActive(u.id) && Array.isArray(state.equip[u.id]))
+    .sort((a, b) => (a.id === 'hero' ? -1 : b.id === 'hero' ? 1 : 0));
+  if (!activeUnits.length) return 0;
+
+  const pool = new Map();
+  for (const [key, n] of Object.entries(state.inv)) if (n > 0) pool.set(key, n);
+  const before = {};
+  for (const u of activeUnits) {
+    before[u.id] = state.equip[u.id].map(it => it ? invKey(it.t, it.tier, it.a) : '');
+    for (const it of state.equip[u.id]) {
+      if (!it) continue;
+      const key = invKey(it.t, it.tier, it.a);
+      pool.set(key, (pool.get(key) || 0) + 1);
+    }
+    state.equip[u.id].fill(null);
   }
+
+  const entries = [...pool.entries()].map(([key, n]) => Object.assign(invParse(key), { key, n }))
+    .sort(autoEquipItemCompare);
+  for (const u of activeUnits) {
+    for (let slot = 0; slot < state.equip[u.id].length; slot++) {
+      const best = entries.find(e => e.n > 0 && itemAllowed(e.t, u.id));
+      if (!best) break;
+      state.equip[u.id][slot] = { t: best.t, tier: best.tier, a: best.a || null };
+      best.n--;
+    }
+  }
+
+  const nextInv = {};
+  for (const e of entries) if (e.n > 0) nextInv[e.key] = e.n;
+  state.inv = nextInv;
+  let changed = 0;
+  for (const u of activeUnits) {
+    const after = state.equip[u.id].map(it => it ? invKey(it.t, it.tier, it.a) : '');
+    for (let i = 0; i < after.length; i++) if (after[i] !== before[u.id][i]) changed++;
+  }
+  invDirty = true;
+  invVersion++;
+  autoEquipSeenVersion = invVersion;
+  if (changed) {
+    toast('AUTO-EQUIP: optimized ' + fmt(changed) + ' equipment slot(s).', notificationCategory || 'item');
+    if (currentDetail && currentDetail.kind === 'unit') rebuildDetail();
+  }
+  return changed;
+}
+
+/* Inventory changes prompt a full Animated Armory loadout check. */
+function autoEquipDrop(t, tier, a, notificationCategory) {
+  autoEquipBest(notificationCategory);
 }
 
 function skillCostMult() {
@@ -1467,14 +1679,14 @@ function dropItem(isBoss) {
   const d = rollDrop();
   invAdd(d.t, d.tier, 1, d.a);
   state.stats.itemsFound++;
-  toast('LOOT: ' + itemName(d.t, d.tier, d.a) + (isBoss ? ' (boss)' : '') + '!');
+  toast('LOOT: ' + itemName(d.t, d.tier, d.a) + (isBoss ? ' (boss)' : '') + '!', 'item');
   spawnFloater('ITEM!', 'item');
   autoEquipDrop(d.t, d.tier, d.a); // Animated Armory
   if (hasTree('fors2') && Math.random() < 0.25) {     // Twin Drops
     const d2 = rollDrop();
     invAdd(d2.t, d2.tier, 1, d2.a);
     state.stats.itemsFound++;
-    toast('TWIN DROP: ' + itemName(d2.t, d2.tier, d2.a) + '!');
+    toast('TWIN DROP: ' + itemName(d2.t, d2.tier, d2.a) + '!', 'item');
     autoEquipDrop(d2.t, d2.tier, d2.a);
   }
 }
@@ -1483,9 +1695,9 @@ function grantPrintedItem(label, extraTier, extraAffixChance) {
   const d = rollDrop(extraTier || 0, extraAffixChance || 0);
   invAdd(d.t, d.tier, 1, d.a);
   state.stats.itemsFound++;
-  autoEquipDrop(d.t, d.tier, d.a);
+  autoEquipDrop(d.t, d.tier, d.a, 'building');
   invDirty = true;
-  toast(label + ': ' + itemName(d.t, d.tier, d.a) + '!');
+  toast(label + ': ' + itemName(d.t, d.tier, d.a) + '!', 'building');
 }
 
 function tickEndgameBuildings(dt) {
@@ -1521,7 +1733,7 @@ function tickEndgameBuildings(dt) {
         const roll = Math.random();
         const key = roll < 0.42 ? 'revive' : roll < 0.76 ? 'energy' : roll < 0.96 ? 'elixir' : 'satchel';
         state.portal.pots[key]++;
-        toast('RIFT APOTHECARY: brewed ' + PORTAL_POTS[key].name + '!');
+        toast('RIFT APOTHECARY: brewed ' + PORTAL_POTS[key].name + '!', 'building');
       }
       brewed++;
     }
@@ -1753,10 +1965,9 @@ function killMonster() {
   if (m.isBoss) state.stats.bossKills++;
   spawnFloater('+' + fmt(bounty) + ' gold', 'gold');
 
-  let base = (m.isBoss ? BOSS_DROP_CHANCE * (hasTree('for6') ? 2 : 1) : DROP_CHANCE) + (bUp('alch_phil') ? 0.005 : 0);
   let dropped = false;
   if (m.isBoss && hasTree('xfor3')) dropped = true; // Trophy Cases: bosses always drop
-  else if (Math.random() < Math.min(0.75, base * C.dropMult)) dropped = true;
+  else if (Math.random() < itemDropChance(m.isBoss)) dropped = true;
   if (hasTree('xfor7') && !dropped) {              // Pity of the Gods
     state.dryKills = (state.dryKills || 0) + 1;
     if (state.dryKills >= 30) dropped = true;
@@ -1831,11 +2042,12 @@ function ascend() {
 
   const keep = {
     lifetimeGold: state.lifetimeGold, highestZone: state.highestZone, totalKills: state.totalKills,
+    totalBuildingsBought: state.totalBuildingsBought, totalUnitsBought: state.totalUnitsBought,
     sigils: state.sigils, sigilsEver: state.sigilsEver, ascensions: state.ascensions,
     bonusSigils: state.bonusSigils || 0,
     tree: state.tree, inv: state.inv, equip: state.equip, stats: state.stats,
     buyAmount: state.buildBuyAmount, buildBuyAmount: state.buildBuyAmount, unitBuyAmount: state.unitBuyAmount,
-    autoOn: state.autoOn, lastSave: Date.now(),
+    autoOn: state.autoOn, notifyOff: state.notifyOff, lastSave: Date.now(),
     /* Rift Portal: stages, cards and deaths reset — permanent
        upgrades (elixirs, satchel slots) and supplies are kept */
     portal: { ...(state.portal || {}), stage: 0, cards: [], deadUntil: {}, team: [], flaskArmed: false },
@@ -2046,11 +2258,19 @@ function spawnFloater(text, cls) {
   setTimeout(() => el.remove(), 900);
 }
 
-function toast(text) {
+function notificationHidden(category) {
+  const unlocks = { item: 'auton1', chest: 'auton2', building: 'auton3' };
+  return !!(category && unlocks[category] && hasTree(unlocks[category]) && state.notifyOff[category]);
+}
+
+function toast(text, category) {
+  if (notificationHidden(category)) return;
   const box = $('toasts');
   const el = document.createElement('div');
   el.className = 'toast';
   el.textContent = text;
+  el.title = 'Click to dismiss';
+  el.onclick = () => el.remove();
   box.appendChild(el);
   while (box.children.length > 4) box.firstChild.remove();
   setTimeout(() => el.remove(), 5000);
@@ -2540,12 +2760,12 @@ function buildUnitDetail(unitId) {
       lines.push(['Blade level', lvl]);
       lines.push(['Click damage', fmt(C.click)]);
       lines.push(['Crit chance', Math.round(C.critChance * 100) + '% (x' + C.critMult + ' dmg)']);
-      lines.push(['Leadership aura', '+' + C.heroAura.toFixed(1) + '% units, income & drops']);
+      lines.push(['Leadership aura', '+' + C.heroAura.toFixed(1) + '% (soft cap +' + fmt(C.heroAuraCap) + '%)']);
       lines.push(['Enemy HP', '-' + Math.round((1 - C.enemyHpMult) * 100) + '% on spawn']);
       if (C.spiritRate > 0) {
         lines.push(['Spirit Hands', C.spiritRate + ' clicks/s · ' + fmt(C.spiritDmg) + ' each']);
-        const share = C.spiritDps / Math.max(1e-9, C.dps + C.spiritDps) * 100;
-        lines.push(['Spirit DPS', fmt(C.spiritDps) + ' (' + share.toFixed(1) + '% of all damage)']);
+        lines.push(['Spirit DPS', fmt(C.spiritDps) + ' (' +
+          contributionPct(C.spiritDps, C.rosterDps) + '% of total roster DPS)']);
       }
     } else if (u.id === 'archer') {
       lines.push(['Archers', lvl]);
@@ -2683,6 +2903,7 @@ function buildUnitDetail(unitId) {
     auraNote.className = 'detail-note';
     auraNote.textContent = 'Items worn by the Hero also inspire the city: each grants ' +
       Math.round(HERO_AURA_FACTOR * 100) + '% of its value as bonus unit damage, resource income and item drop chance — and weakens enemy spawns.';
+    auraNote.textContent += ' Aura gains beyond +' + fmt(C.heroAuraCap) + '% have diminishing returns.';
     box.appendChild(auraNote);
   }
   const slotsEl = document.createElement('div');
@@ -2697,9 +2918,8 @@ function buildUnitDetail(unitId) {
       tier.className = 'slot-tier';
       tier.textContent = tierName(it.tier) + '+'.repeat(affixList(it.a).length);
       slot.appendChild(tier);
-      slot.title = itemName(it.t, it.tier, it.a) + ' — +' + effItemValue(it.t, it.tier).toFixed(1) + '% ' + ITEMS[it.t].txt +
-        affixList(it.a).map(a => ' & +' + (effItemValue(a, it.tier) * affixFactor()).toFixed(1) + '% ' + ITEMS[a].txt).join('') +
-        ' (click to unequip)';
+      slot.title = itemName(it.t, it.tier, it.a) + '\n' + itemStatLines(it.t, it.tier, it.a).join('\n') +
+        '\nClick to unequip';
       slot.onclick = () => unequipItem(u.id, i);
     } else {
       slot.textContent = '+';
@@ -2746,8 +2966,7 @@ function buildUnitDetail(unitId) {
       const body = document.createElement('div');
       body.className = 'buy-body';
       body.innerHTML = '<div class="buy-top"><span class="buy-name">' + itemName(e.t, e.tier, e.a) + '</span><span class="buy-owned">x' + fmt(e.n) + '</span></div>' +
-        '<div class="buy-prod">+' + effItemValue(e.t, e.tier).toFixed(1) + '% ' + ITEMS[e.t].txt +
-        affixList(e.a).map(a => ' • +' + (effItemValue(a, e.tier) * affixFactor()).toFixed(1) + '% ' + ITEMS[a].txt).join('') + '</div>';
+        '<div class="buy-prod item-stats">' + itemStatsHtml(e.t, e.tier, e.a) + '</div>';
       row.appendChild(body);
       row.onclick = () => equipItem(u.id, picker.slot, e.t, e.tier, e.a);
       pick.appendChild(row);
@@ -2997,9 +3216,8 @@ function renderBag() {
     const who = def.units ? def.units.map(uid => UNITS.find(u => u.id === uid).name).join(', ') : 'Anyone';
     body.innerHTML =
       '<div class="buy-top"><span class="buy-name">' + itemName(e.t, e.tier, e.a) + '</span><span class="buy-owned">x' + fmt(e.n) + '</span></div>' +
-      '<div class="buy-prod">+' + effItemValue(e.t, e.tier).toFixed(1) + '% ' + def.txt +
-      affs.map(a => ' • +' + (effItemValue(a, e.tier) * affixFactor()).toFixed(1) + '% ' + ITEMS[a].txt).join('') +
-      ' • Fits: ' + who + '</div>';
+      '<div class="buy-prod item-stats">' + itemStatsHtml(e.t, e.tier, e.a) +
+      '<span class="item-stat-line item-fit">Fits: ' + who + '</span></div>';
     row.appendChild(body);
 
     const comb = document.createElement('button');
@@ -3195,10 +3413,12 @@ function refreshShop() {
 /* ---------------- UI: unit cards (left panel) ---------------- */
 
 const unitCards = {};
+let lastUnitCardRefreshAt = -Infinity;
 
 function buildUnitCards() {
   const list = $('unit-cards');
   list.innerHTML = '';
+  lastUnitCardRefreshAt = -Infinity;
   for (const u of UNITS) {
     const card = document.createElement('div');
     card.className = 'unit-card';
@@ -3233,7 +3453,10 @@ function buildUnitCards() {
   }
 }
 
-function refreshUnitCards() {
+function refreshUnitCards(force) {
+  const now = performance.now();
+  if (!force && now - lastUnitCardRefreshAt < 250) return;
+  lastUnitCardRefreshAt = now;
   for (const u of UNITS) {
     const ui = unitCards[u.id];
     const count = state[u.statKey];
@@ -3252,13 +3475,25 @@ function refreshUnitCards() {
     let eachTxt = u.dpsLabel + ': ' + fmt(total);
     if (u.id !== 'hero' && count > 0) eachTxt += ' (' + fmt(total / count) + ' each)';
     setText(ui, 'dps', ui.dpsEl, eachTxt);
-    const share = (u.id !== 'hero' && C.dps > 0) ? (total / C.dps * 100).toFixed(1) + '% of idle DPS' : '';
+    let share = '';
+    if (u.id === 'hero' && C.spiritDps > 0) {
+      share = contributionPct(C.spiritDps, C.rosterDps) + '% of total roster DPS from autoclicking';
+    } else if (C.rosterDps > 0) {
+      share = contributionPct(total, C.rosterDps) + '% of total roster DPS';
+    }
     setText(ui, 'share', ui.shareEl, share);
     const batch = subBatch(u.main.cost, count, Infinity, 'unit');
     const afford = batch.n > 0 && batch.cost && canAfford(batch.cost);
     ui.plus.classList.toggle('afford', afford);
     ui.plus.title = u.main.verb + ' x' + fmt(batch.n || 0) + ' (' + u.main.name + ')';
   }
+}
+
+function contributionPct(part, total) {
+  if (total <= 0 || part <= 0) return '0';
+  const pct = part / total * 100;
+  if (part < total && pct >= 99.995) return '<100';
+  return pct.toFixed(2).replace(/\.?0+$/, '');
 }
 
 /* ---------------- districts (city expansion) ---------------- */
@@ -3282,6 +3517,14 @@ function nextDistrictCost() {
   return c;
 }
 
+function nextDistrictRequirement() {
+  return districtRequirement(state.districts.length - 1);
+}
+
+function districtRequirementsMet(req) {
+  return state.highestZone >= req.zone && state.walls >= req.walls && totalBuildings() >= req.buildings;
+}
+
 function districtOwnedFor(buildingId) {
   const key = BUILDING_DISTRICT[buildingId];
   return !key || ownsDistrict(key);
@@ -3290,7 +3533,7 @@ function districtOwnedFor(buildingId) {
 function buyDistrict(key) {
   if (ownsDistrict(key)) return;
   if (key !== nextDistrictKey()) return;
-  if (state.walls < DISTRICT_WALL_REQ) return;
+  if (!districtRequirementsMet(nextDistrictRequirement())) return;
   const cost = nextDistrictCost();
   if (!canAfford(cost)) return;
   pay(cost);
@@ -3339,11 +3582,14 @@ function buildDistrictDetail(key) {
   const mg = MODE_BY_WARD[key];
   viewUpdaters.push(() => {
     const next = nextDistrictKey();
+    const req = districtRequirement(Math.max(0, DISTRICT_ORDER.indexOf(key)));
     const lines = [
       ['Status', owned ? 'OWNED' : key === next ? 'FOR SALE (next in line)' : 'Locked — buy ' + DISTRICT_NAMES[next] + ' first'],
       ['District bonus', '+' + Math.round(DISTRICT_GOLD_BONUS * 100) + '% ALL gold each'],
       ['Districts owned', state.districts.length + ' / ' + (DISTRICT_ORDER.length + 1)],
-      ['Wall requirement', 'Wall Lv.' + fmt(DISTRICT_WALL_REQ) + ' (now ' + fmt(state.walls) + ')'],
+      ['Best-zone requirement', 'Zone ' + fmt(req.zone) + ' (best ' + fmt(state.highestZone) + ')'],
+      ['Wall requirement', 'Wall Lv.' + fmt(req.walls) + ' (now ' + fmt(state.walls) + ')'],
+      ['City-size requirement', fmt(req.buildings) + ' buildings (now ' + fmt(totalBuildings()) + ')'],
       [mg ? 'Gamemode gate' : 'Unlocks buildings',
         mg ? (mg.open ? mg.name + (modeTileUnlocked(mg.id) ? ' (OPEN)' : ' (unlocks on purchase)') : 'Sealed — coming soon')
            : (builds.length ? String(builds.length) : 'none (royal gardens)')],
@@ -3369,7 +3615,7 @@ function buildDistrictDetail(key) {
     lvlText: () => '',
     cost: () => owned ? null : nextDistrictCost(),
     onBuy: () => buyDistrict(key),
-    disabled: () => key !== nextDistrictKey() || state.walls < DISTRICT_WALL_REQ,
+    disabled: () => key !== nextDistrictKey() || !districtRequirementsMet(nextDistrictRequirement()),
     doneText: 'OWNED',
   });
 }
@@ -3393,7 +3639,10 @@ function renderDistrictOverlays() {
       let sub;
       if (buyable) {
         const cost = nextDistrictCost();
-        sub = 'FOR SALE<br>' + fmt(cost.gold) + ' Gold<br>' + fmt(cost.wood) + ' Wood + ' + fmt(cost.stone) + ' Stone';
+        const req = nextDistrictRequirement();
+        const costLines = Object.entries(cost).map(([res, amt]) => fmt(amt) + ' ' + RES_META[res].name).join('<br>');
+        sub = 'FOR SALE<br>' + costLines + '<br>Zone ' + fmt(req.zone) +
+          ' / Wall ' + fmt(req.walls) + '<br>' + fmt(req.buildings) + ' buildings';
         el.title = DISTRICT_NAMES[key] + ' — click to open the Land Office';
       } else {
         const idx = DISTRICT_ORDER.indexOf(key);
@@ -3510,30 +3759,30 @@ function lootChest() {
   const jackpot = hasTree('xfor8') && Math.random() < 0.10; // Jackpot Chests
   const chestMult = (hasTree('xfor2') ? 2 : 1) * (jackpot ? 10 : 1);
   const sunkenChestMult = 1 + 0.02 * bCount('tidebreaker') + 0.05 * bUp('tidebreaker_cranes');
-  if (jackpot) toast('💰 JACKPOT CHEST!');
+  if (jackpot) toast('💰 JACKPOT CHEST!', 'chest');
   if (r < 0.25) {
     const d = rollDrop();
     if (Math.random() < (hasTree('xfor2') ? 0.35 : 0.12) && d.tier === 1) d.tier = 2; // chests skew higher
     if (jackpot) d.tier += 2;
     invAdd(d.t, d.tier, 1, d.a);
     state.stats.itemsFound++;
-    toast('CHEST: ' + itemName(d.t, d.tier, d.a) + '!');
+    toast('CHEST: ' + itemName(d.t, d.tier, d.a) + '!', 'chest');
   } else if (r < 0.55) {
     const amt = Math.max(25, C.prod.gold * 30 + (m ? m.gold * C.killMult * 3 : 0)) * chestMult;
     earnGold(amt);
-    toast('CHEST: +' + fmt(amt) + ' Gold!');
+    toast('CHEST: +' + fmt(amt) + ' Gold!', 'chest');
   } else if (r < 0.72) {
     const amt = Math.max(15, C.prod.wood * 40) * chestMult * sunkenChestMult;
     state.wood += amt;
-    toast('CHEST: +' + fmt(amt) + ' Wood!');
+    toast('CHEST: +' + fmt(amt) + ' Wood!', 'chest');
   } else if (r < 0.88) {
     const amt = Math.max(10, C.prod.stone * 40) * chestMult * sunkenChestMult;
     state.stone += amt;
-    toast('CHEST: +' + fmt(amt) + ' Stone!');
+    toast('CHEST: +' + fmt(amt) + ' Stone!', 'chest');
   } else {
     const amt = Math.max(5, C.prod.mana * 40) * chestMult;
     state.mana += amt;
-    toast('CHEST: +' + fmt(amt) + ' Mana!');
+    toast('CHEST: +' + fmt(amt) + ' Mana!', 'chest');
   }
   removeChest();
 }
@@ -3686,8 +3935,8 @@ function closePrestige() {
 
 /* ---- solar-system tree rendering ---- */
 
-const TREE_WORLD = 4600;                 // world px, center at 2300
-const treePan = { x: 0, y: 0, z: 1, min: 0.12, max: 1.6, init: false };
+const TREE_WORLD = 6600;                 // world px, center at 3300
+const treePan = { x: 0, y: 0, z: 1, min: 0.10, max: 1.6, init: false };
 
 function treeNodePos(node) {
   const cx = TREE_WORLD / 2, cy = TREE_WORLD / 2;
@@ -3708,8 +3957,8 @@ function treeNodePos(node) {
     x += Math.cos(a + Math.PI / 2) * TREE_SIDE_OFF * node.side;
     y += Math.sin(a + Math.PI / 2) * TREE_SIDE_OFF * node.side;
     if (stack) {
-      x += Math.cos(a + Math.PI / 2) * 90 * node.side * stack;
-      y += Math.sin(a + Math.PI / 2) * 90 * node.side * stack;
+      x += Math.cos(a + Math.PI / 2) * 175 * node.side * stack;
+      y += Math.sin(a + Math.PI / 2) * 175 * node.side * stack;
     }
   }
   return [x, y];
@@ -3749,8 +3998,9 @@ function renderPrestige() {
     const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     l.setAttribute('x1', x1); l.setAttribute('y1', y1);
     l.setAttribute('x2', x2); l.setAttribute('y2', y2);
-    l.setAttribute('stroke', lit ? '#ffd23e' : '#4a3a6b');
-    l.setAttribute('stroke-width', lit ? 4 : 3);
+    l.setAttribute('stroke', lit ? '#ffd23e' : '#56486f');
+    l.setAttribute('stroke-width', lit ? 2.5 : 1.5);
+    l.setAttribute('stroke-opacity', lit ? 0.42 : 0.20);
     svg.appendChild(l);
   };
   for (const node of PRESTIGE_TREE) {
@@ -4064,7 +4314,8 @@ function renderMenu() {
       ['WAR', [
         ['Click damage', () => fmt(C.click)],
         ['Crit chance', () => Math.round(C.critChance * 100) + '%'],
-        ['Idle DPS (total)', () => fmt(C.dps)],
+        ['Roster passive DPS', () => fmt(C.rosterDps)],
+        ['Unit idle DPS', () => fmt(C.dps)],
         ['Spirit Hands DPS', () => C.spiritRate > 0 ? fmt(C.spiritDps) + ' (' + C.spiritRate + '/s)' : '—'],
         ['— Archers / Mages / Clerics', () => fmt(C.archerDps) + ' / ' + fmt(C.mageDps) + ' / ' + fmt(C.clericDps)],
         ['— Ballistae / Golem / Dragons / Walls', () => fmt(C.turretDps) + ' / ' + fmt(C.golemDps) + ' / ' + fmt(C.dragonDps) + ' / ' + fmt(C.wallDps)],
@@ -4087,11 +4338,10 @@ function renderMenu() {
         ['Items forged', () => fmt(state.stats.itemsCombined)],
         ['Items in bag', () => fmt(invTotal())],
         ['Chests looted', () => fmt(state.stats.chestsFound)],
-        ['Hero leadership aura', () => '+' + C.heroAura.toFixed(1) + '% (enemy HP -' + Math.round((1 - C.enemyHpMult) * 100) + '%)'],
-        ['Drop chance now', () => {
-          const base = DROP_CHANCE + (bUp('alch_phil') ? 0.005 : 0);
-          return (Math.min(0.5, base * C.dropMult) * 100).toFixed(1) + '% (' + (Math.min(0.5, (BOSS_DROP_CHANCE + (bUp('alch_phil') ? 0.005 : 0)) * C.dropMult) * 100).toFixed(0) + '% boss)';
-        }],
+        ['Hero leadership aura', () => '+' + C.heroAura.toFixed(1) + '% / +' + fmt(C.heroAuraCap) +
+          '% soft cap (raw +' + C.heroAuraRaw.toFixed(1) + '%)'],
+        ['Drop chance now', () => (itemDropChance(false) * 100).toFixed(1) + '% (' +
+          (itemDropChance(true) * 100).toFixed(1) + '% boss)'],
       ]],
       ['THE CROWN', [
         ['Buildings standing', () => fmt(totalBuildings())],
