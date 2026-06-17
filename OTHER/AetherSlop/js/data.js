@@ -174,6 +174,8 @@ const BUILDING_UPGRADES = {
   magetower: [
     { id: 'magetower_focus', name: 'Arcane Focus', max: 10, cost: l => ({ gold: 150000 * Math.pow(3, l), mana: 80 * Math.pow(2, l) }),
       info: 'Mages +5% damage AND Mana production +10% per level.' },
+    { id: 'magetower_rifts', name: 'Riftway Anchors', max: 10, cost: l => ({ gold: 4e7 * Math.pow(3, l), mana: 6000 * Math.pow(2, l) }),
+      info: 'Rift Reavers +10% damage per level.' },
   ],
   cathedral: [
     { id: 'cath_relics', name: 'Holy Relics', max: 5, cost: l => ({ gold: 400000 * Math.pow(4, l), mana: 100 * Math.pow(2, l) }),
@@ -200,6 +202,8 @@ const BUILDING_UPGRADES = {
   foundry: [
     { id: 'foundry_runes', name: 'Rune Forges', max: 10, cost: l => ({ gold: 8e6 * Math.pow(3, l), mana: 1500 * Math.pow(2, l) }),
       info: 'Golem +10% damage per level.' },
+    { id: 'foundry_doom', name: 'Hellforge Crucibles', max: 10, cost: l => ({ gold: 6e7 * Math.pow(3, l), mana: 8000 * Math.pow(2, l) }),
+      info: 'Doomforged Reapers +10% damage per level.' },
   ],
   tradeport: [
     { id: 'trade_mercs', name: 'Mercenary Contracts', max: 5, cost: l => ({ gold: 1e7 * Math.pow(4, l), wood: 5000 * Math.pow(2.5, l) }),
@@ -259,10 +263,14 @@ const BUILDING_UPGRADES = {
   observatory: [
     { id: 'obs_charts', name: 'Star Charts', max: 10, cost: l => ({ gold: 500000 * Math.pow(3, l), mana: 150 * Math.pow(2, l) }),
       info: 'Dragons +10% AND Valkyries +10% damage per level.' },
+    { id: 'obs_seraphs', name: 'Celestial Beacons', max: 10, cost: l => ({ gold: 5e7 * Math.pow(3, l), mana: 7000 * Math.pow(2, l) }),
+      info: 'Skyward Seraphs +10% damage per level.' },
   ],
   harbor: [
     { id: 'harbor_ballistae', name: 'Naval Ballistae', max: 10, cost: l => ({ gold: 300000 * Math.pow(3, l), wood: 1200 * Math.pow(2.2, l) }),
       info: 'Ballistae +10% damage per level.' },
+    { id: 'harbor_leviathan', name: 'Abyssal Wards', max: 10, cost: l => ({ gold: 7e7 * Math.pow(3, l), mana: 9000 * Math.pow(2, l) }),
+      info: 'Drowned Leviathan +10% damage per level.' },
   ],
   enchanter: [
     { id: 'ench_blades', name: 'Runed Blades', max: 10, cost: l => ({ gold: 1.2e6 * Math.pow(3, l), mana: 400 * Math.pow(2, l) }),
@@ -431,6 +439,55 @@ const UNITS = [
       { id: 'garrison', name: 'Garrison Drills', max: Infinity, cost: l => ({ mana: 16 * Math.pow(1.6, l) }), info: '+20% Wall damage per level. Requires Mana.' },
     ],
   },
+
+  /* ---------------- WARD UNITS ----------------
+     Four units, each unlocked by claiming an outer cardinal ward,
+     and each scaling with the PROGRESS of that ward's realm.
+     unlock: {ward} — permanent once the ward is first bought.  */
+  {
+    id: 'reaver', name: 'Rift Reavers', portrait: 'reaverp', icon: 'icoFang', slots: 2, statKey: 'reaver',
+    lvlLabel: 'Reavers', dpsLabel: 'RIFT DPS', unlock: { ward: '2,0' },
+    desc: 'Riftborn marauders dragged back through the Portal — they grow stronger the deeper you have pushed into the Rift.',
+    main: { name: 'Drag Reaver', verb: 'Drag', cost: l => ({ gold: 8e6 * Math.pow(1.6, l), mana: 1200 * Math.pow(1.5, l) }), info: 'Each reaver deals 700 idle DPS. +4% damage per Rift Portal best stage.' },
+    subs: [
+      { id: 'rendfang', name: 'Rending Fangs', max: 20, cost: l => ({ gold: 3e7 * Math.pow(2, l), mana: 3500 * Math.pow(1.7, l) }), info: '+15% Reaver damage per level.' },
+      { id: 'riftpact', name: 'Riftborn Pact', max: 1, cost: () => ({ mana: 300000 }), info: 'Reaver damage x1.5.' },
+      { id: 'voidcall', name: 'Voidcalling', max: Infinity, cost: l => ({ mana: 320 * Math.pow(1.7, l) }), info: '+25% Reaver damage per level. Requires Mana.' },
+    ],
+  },
+  {
+    id: 'seraph', name: 'Skyward Seraphs', portrait: 'seraphp', icon: 'icoHalo', slots: 2, statKey: 'seraph',
+    lvlLabel: 'Seraphs', dpsLabel: 'RADIANT DPS', unlock: { ward: '0,2' },
+    desc: 'Winged celestials called down from the Silver Spire — every meter you have climbed lends them light.',
+    main: { name: 'Call Seraph', verb: 'Call', cost: l => ({ gold: 1e7 * Math.pow(1.6, l), mana: 1500 * Math.pow(1.5, l) }), info: 'Each seraph deals 1,100 idle DPS. +1% damage per 5m of Silver Spire best altitude.' },
+    subs: [
+      { id: 'radiant', name: 'Radiant Wings', max: 20, cost: l => ({ gold: 4e7 * Math.pow(2, l), mana: 4000 * Math.pow(1.7, l) }), info: '+15% Seraph damage per level.' },
+      { id: 'skyrite', name: 'Rite of Ascension', max: 1, cost: () => ({ mana: 400000 }), info: 'Seraph damage x1.5.' },
+      { id: 'skysong', name: 'Choir of the Spire', max: Infinity, cost: l => ({ mana: 360 * Math.pow(1.7, l) }), info: '+25% Seraph damage per level. Requires Mana.' },
+    ],
+  },
+  {
+    id: 'reaper', name: 'Doomforged Reapers', portrait: 'reaperp', icon: 'icoBrand', slots: 2, statKey: 'reaper',
+    lvlLabel: 'Reapers', dpsLabel: 'DOOM DPS', unlock: { ward: '2,4' },
+    desc: 'Hellforged executioners climbing out of the Tower of Doom — each floor you have conquered tempers their scythes.',
+    main: { name: 'Forge Reaper', verb: 'Forge', cost: l => ({ gold: 1.5e7 * Math.pow(1.6, l), stone: 4000 * Math.pow(1.5, l), mana: 1800 * Math.pow(1.5, l) }), info: 'Each reaper deals 1,500 idle DPS. +4% damage per Tower of Doom best floor.' },
+    subs: [
+      { id: 'scythes', name: 'Cruel Scythes', max: 20, cost: l => ({ gold: 6e7 * Math.pow(2, l), stone: 9000 * Math.pow(1.7, l) }), info: '+15% Reaper damage per level.' },
+      { id: 'doompact', name: 'Pact of Doom', max: 1, cost: () => ({ mana: 500000 }), info: 'Reaper damage x1.5.' },
+      { id: 'infernrite', name: 'Infernal Rites', max: Infinity, cost: l => ({ mana: 420 * Math.pow(1.7, l) }), info: '+25% Reaper damage per level. Requires Mana.' },
+    ],
+  },
+  {
+    id: 'leviathan', name: 'Drowned Leviathan', portrait: 'leviathanp', icon: 'icoTide', slots: 2, statKey: 'leviathan',
+    lvlLabel: 'Leviathans', dpsLabel: 'ABYSS DPS', unlock: { ward: '4,2' },
+    desc: 'An ancient horror stirring beneath the Sunken Ward, sealed behind a gate no key yet opens. It wakes a little more with every Ascension.',
+    main: { name: 'Rouse Leviathan', verb: 'Rouse', cost: l => ({ gold: 3e7 * Math.pow(1.62, l), mana: 2500 * Math.pow(1.5, l) }), info: 'Each leviathan deals 2,600 idle DPS. +20% damage per Ascension performed.' },
+    subs: [
+      { id: 'barbtide', name: 'Barbed Tides', max: 20, cost: l => ({ gold: 1.2e8 * Math.pow(2, l), mana: 6000 * Math.pow(1.7, l) }), info: '+15% Leviathan damage per level.' },
+      { id: 'abysspact', name: 'Abyssal Pact', max: 1, cost: () => ({ mana: 750000 }), info: 'Leviathan damage x1.5.' },
+      { id: 'deepcall', name: 'The Deep Calls', max: Infinity, cost: l => ({ mana: 520 * Math.pow(1.7, l) }), info: '+25% Leviathan damage per level. Requires Mana.' },
+    ],
+  },
 ];
 
 /* ---------------- ARCANE SKILLS (one-time, cost Mana) ----------------
@@ -470,6 +527,17 @@ const SKILLS = [
   /* walls */
   { id: 'midas',    unit: 'walls',  name: 'Midas Curse',     cost: { mana: 6500 },   desc: '+50% gold from kills.' },
   { id: 'kingsbanner', unit: 'walls', name: 'Banner of Kings', cost: { mana: 70000 }, desc: 'Gold per kill +1% per Wall level.' },
+  /* reaver (Rift) */
+  { id: 'riftsurge', unit: 'reaver', name: 'Rift Surge',      cost: { mana: 400000 }, desc: 'Reaver damage x2.' },
+  { id: 'riftmaw',   unit: 'reaver', name: 'The Hungering Maw', cost: { mana: 900000 }, desc: 'Reavers deal +1% damage per Rift card you have claimed.' },
+  /* seraph (Spire) */
+  { id: 'judgment',  unit: 'seraph', name: 'Judgment',        cost: { mana: 500000 }, desc: 'Seraph damage x2.' },
+  /* reaper (Doom) */
+  { id: 'reaping',   unit: 'reaper', name: 'Grim Reaping',    cost: { mana: 600000 }, desc: 'Reaper damage x2.' },
+  { id: 'doombrand', unit: 'reaper', name: 'Brand of Night',  cost: { mana: 1.2e6 },  desc: 'Reapers deal DOUBLE damage at night.' },
+  /* leviathan (Sunken) */
+  { id: 'tidefury',  unit: 'leviathan', name: 'Tidefury',     cost: { mana: 900000 }, desc: 'Leviathan damage x2.' },
+  { id: 'drowning',  unit: 'leviathan', name: 'Drowned Kingdom', cost: { mana: 2e6 }, desc: 'Leviathans deal +2% damage per District owned.' },
 ];
 
 /* ---------------- ITEMS ----------------
@@ -488,6 +556,10 @@ const ITEMS = {
   lance:  { name: "Knight's Lance",  icon: 'icoLance',  units: ['knight'], eff: 'knight', base: 15, txt: 'Knight damage' },
   vial:   { name: 'Vial of Venom',   icon: 'icoVial',   units: ['plague'], eff: 'plague', base: 15, txt: 'Plague damage' },
   glaive: { name: 'Storm Glaive',    icon: 'icoGlaive', units: ['valkyrie'], eff: 'valkyrie', base: 15, txt: 'Valkyrie damage' },
+  fang:   { name: 'Riftborn Fang',   icon: 'icoFang',   units: ['reaver'], eff: 'reaver', base: 15, txt: 'Reaver damage' },
+  halo:   { name: 'Seraph Halo',     icon: 'icoHalo',   units: ['seraph'], eff: 'seraph', base: 15, txt: 'Seraph damage' },
+  brand:  { name: 'Doom Brand',      icon: 'icoBrand',  units: ['reaper'], eff: 'reaper', base: 15, txt: 'Reaper damage' },
+  tide:   { name: 'Abyssal Pearl',   icon: 'icoTide',   units: ['leviathan'], eff: 'leviathan', base: 15, txt: 'Leviathan damage' },
   banner: { name: 'Watch Banner',    icon: 'icoBanner', units: ['walls'],  eff: 'bounty', base: 12, txt: 'gold per kill' },
   coin:   { name: 'Lucky Coin',      icon: 'icoGold',   units: null,       eff: 'gold',   base: 10, txt: 'ALL gold' },
   charm:  { name: 'Harvest Charm',   icon: 'icoCharm',  units: null,       eff: 'res',    base: 12, txt: 'Wood & Stone production' },
@@ -501,6 +573,7 @@ const AFFIX_NAMES = {
   sword: 'Slaying', quiver: 'Winds', orb: 'Sorcery', bolts: 'Piercing', censer: 'Devotion',
   core: 'Embers', talon: 'Dragons', banner: 'Plunder', coin: 'Wealth', charm: 'Harvest',
   lance: 'Charging', vial: 'Plague', glaive: 'Storms',
+  fang: 'the Rift', halo: 'the Heavens', brand: 'Doom', tide: 'the Abyss',
   shard: 'Mana', moon: 'Luck', skull: 'Reaping',
 };
 
@@ -575,6 +648,9 @@ const MODE_GATES = [
 const MODE_BY_ID = {};
 const MODE_BY_WARD = {};
 for (const m of MODE_GATES) { MODE_BY_ID[m.id] = m; MODE_BY_WARD[m.wardKey] = m; }
+
+/* the four outer cardinal wards, in purchase order — each gates one ward unit */
+const OUTER_WARD_KEYS = MODE_GATES.map(m => m.wardKey);
 
 /* roads: a kingsroad cross spanning the whole world */
 const ROAD_X = 80, ROAD_Y = 60;
@@ -948,6 +1024,7 @@ const PRESTIGE_TREE = (() => {
   n('xwar8', 4, 'war', 1, 'Momentum', 'Each kill grants +2% ALL unit damage for 10s. Stacks up to 25 times.', { req: 'xwar4', side: 1 });
   n('warg2', 4, 'war', 1, 'Golden Legions', 'Archer & Ballista damage x2.');
   n('xtow3', 4, 'war', 1, 'Resonant Blade', 'TOWER OF DOOM: every floor drops an item, and PERFECT hits deal x5 damage.', { req: 'xtow2', side: -1 });
+  n('xreap1', 4, 'war', 1, 'Legion of Doom', 'WARD UNIT: Doomforged Reaper damage x2.', { req: 'xtow3', side: -1 });
   n('warg3', 4, 'war', 2, 'Champion of Gold', 'Click damage x2.', { req: ['warg2', 'xwar4'] });
   n('xwar12', 4, 'war', 2, 'Cavalier Banners', 'Knight & Valkyrie damage +75%.', { req: 'warg2', side: 1 });
   n('prosg1', 4, 'pros', 0, 'Gold Standard', 'ALL gold x1.5.');
@@ -960,12 +1037,14 @@ const PRESTIGE_TREE = (() => {
   n('xfor8', 4, 'for', 1, 'Jackpot Chests', 'Chests have a 10% chance to be JACKPOTS: x10 Gold & resources, items +2 tiers.', { req: 'xfor4', side: 1 });
   n('forg2', 4, 'for', 1, 'Affix Fusion', 'FORGE 🔓: fuse two same-tier items with DIFFERENT affixes into one item carrying BOTH.');
   n('xrift3', 4, 'for', 1, 'Cartomancer', 'RIFT PORTAL: the Rift\'s bargains offer FOUR cards to choose from (instead of three).', { req: 'xrift2', side: -1 });
+  n('xreav1', 4, 'for', 1, 'Riftborn Legion', 'WARD UNIT: Rift Reaver damage x2.', { req: 'xrift3', side: -1 });
   n('forg3', 4, 'for', 2, 'Deep Pockets', 'Item drop chance +40%.', { req: ['forg2', 'xfor4'] });
   n('mysg1', 4, 'mys', 0, 'Gold-Threaded Robes', 'Mana production x2.');
   n('xmys4', 4, 'mys', 0, 'Scholarly Circle', 'Mana production +3% per Arcane Skill learned.', { req: 'mysg1', side: 1 });
   n('mysg2', 4, 'mys', 1, 'Sun Sigils', 'Day gold bonus another +100% stronger.');
   n('mysg3', 4, 'mys', 2, 'Arcane Bazaar', 'Arcane Skills cost another 50% less Mana.', { req: ['mysg2', 'xmys4'] });
   n('xmys11', 4, 'mys', 1, 'Alchemy of War', 'Plague Alchemist damage x2.', { req: 'mysg2', side: 1 });
+  n('xlev1', 4, 'mys', 1, 'Pact of the Deep', 'WARD UNIT: Drowned Leviathan damage x2.', { req: 'xmys11', side: 1 });
   n('indg1', 4, 'ind', 0, 'Golden Mills', 'Wood & Stone production +75%.');
   n('xind4', 4, 'ind', 0, 'Boomtowns', 'Each building\'s satellite growth tier grants it +10% production.', { req: 'indg1', side: 1 });
   n('xind7', 4, 'ind', 1, 'Blueprints', 'City planning perfected: building costs grow x1.14 per owned instead of x1.15.', { req: 'xind4', side: 1 });
@@ -979,6 +1058,7 @@ const PRESTIGE_TREE = (() => {
   n('xspirit4', 4, 'spirit', 0, 'Twin Hauntings', 'Spirit clicks have a 15% chance to strike TWICE.', { req: 'spiritg1', side: 1 });
   n('spiritg2', 4, 'spirit', 1, 'Golden Geists', 'Spirit clicks deal +150% damage.');
   n('xspire3', 4, 'spirit', 1, 'Zephyr Crown', 'SILVER SPIRE: launch power another +10%.', { req: 'xspire2', side: -1 });
+  n('xser1', 4, 'spirit', 1, 'Seraphic Host', 'WARD UNIT: Skyward Seraph damage x2.', { req: 'xspire3', side: -1 });
   n('spiritg3', 4, 'spirit', 2, 'Soul Harvest', 'Spirit CRITS deal x5 damage (instead of x3).', { req: ['spiritg2', 'xspirit4'] });
   n('auto10', 4, 'auto', 0, 'Court of Cogs', 'MAX buying handles up to 5,000 at once (instead of 1,000).');
   n('auto11', 4, 'auto', 1, 'Standing Reserves', 'RIFT PORTAL: a defeat auto-revives your team with Phoenix Feathers, if you carry them.');
@@ -1010,6 +1090,7 @@ const PRESTIGE_TREE = (() => {
   n('xind5', 5, 'ind', 1, 'Automated Looms', 'ALL production +0.5% per building-upgrade level owned across the city.', { req: 'inds2', side: 1 });
   n('inds3', 5, 'ind', 2, 'Thunder Drills', 'Stone production x2.');
   n('crown13', 5, 'crown', 0, 'Eternal Throne', 'MASTER: another +3% ALL production & bounties per Sigil ever earned.');
+  n('xward1', 5, 'crown', 0, 'Warden of the Wards', 'WARD UNITS: Reavers, Seraphs, Reapers & Leviathan each deal +15% damage per District owned.', { req: 'crown13', side: 1 });
   n('crown14', 5, 'crown', 1, 'Crown of Crowns', 'Per-Sigil MASTER bonuses another +50% stronger.');
   n('xcrown5', 5, 'crown', 1, 'Census of Storms', 'Sigils ever earned count +20% HIGHER for MASTER bonuses.', { req: 'crown14', side: 1 });
   n('crown15', 5, 'crown', 2, 'Auric Memory', 'Lifetime gold counts +25% higher for Sigil gain.');

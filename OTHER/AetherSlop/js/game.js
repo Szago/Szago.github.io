@@ -19,6 +19,7 @@ function defaultRunState() {
     buildings: {},                    // id -> count
     sword: 0, archer: 0, mage: 0, magePower: 0, turret: 0, cleric: 0, golem: 0, dragon: 0,
     knight: 0, plague: 0, valkyrie: 0, walls: 0,
+    reaver: 0, seraph: 0, reaper: 0, leviathan: 0,   // ward units (unlocked by claiming outer wards)
     skills: {},                       // skill id -> true
     unitUp: {},                       // sub-upgrade id -> level
     bUp: {},                          // building upgrade id -> level
@@ -66,6 +67,10 @@ function ensureShape(s) {
   if (!s.inv) s.inv = {};
   /* outer gamemode gates: persist across ascension once unsealed */
   if (!s.modeTiles) s.modeTiles = {};
+  /* ward units: persist across ascension once their ward is first claimed */
+  if (!s.wardUnits) s.wardUnits = {};
+  /* migration: any outer ward currently owned permanently unlocks its unit */
+  for (const k of OUTER_WARD_KEYS) if (s.districts && s.districts.includes(k)) s.wardUnits[k] = true;
   /* lifetime cosmetic counters (drive city density / wandering NPCs) */
   if (typeof s.totalBuildingsBought !== 'number') s.totalBuildingsBought = 0;
   if (typeof s.totalUnitsBought !== 'number') s.totalUnitsBought = 0;
@@ -201,7 +206,7 @@ function unitActive(uid) {
 }
 
 function equipBonus() {
-  const E = { click: 0, archer: 0, mage: 0, turret: 0, cleric: 0, golem: 0, dragon: 0, knight: 0, plague: 0, valkyrie: 0, bounty: 0, gold: 0, res: 0, mana: 0, luck: 0, boss: 0 };
+  const E = { click: 0, archer: 0, mage: 0, turret: 0, cleric: 0, golem: 0, dragon: 0, knight: 0, plague: 0, valkyrie: 0, reaver: 0, seraph: 0, reaper: 0, leviathan: 0, bounty: 0, gold: 0, res: 0, mana: 0, luck: 0, boss: 0 };
   for (const uid in state.equip) {
     if (!unitActive(uid)) continue; // unrecruited units give nothing
     for (const it of state.equip[uid]) {
@@ -551,6 +556,59 @@ function calc() {
   if (hasTree('war3')) wallDps *= 1.5;
   wallDps *= allUnit;
 
+  /* ---- WARD UNITS: each scales with the PROGRESS of its outer ward's realm ---- */
+  // Rift Reavers — scale with the Rift Portal's best stage
+  let reaverDps = state.reaver * 700 * Math.pow(1.15, uUp('rendfang'));
+  reaverDps *= Math.pow(1.25, uUp('voidcall'));        // Voidcalling training
+  if (uUp('riftpact')) reaverDps *= 1.5;
+  reaverDps *= 1 + 0.04 * wardProgPortal();            // +4% per Rift best stage
+  reaverDps *= 1 + 0.05 * bCount('magetower') + 0.03 * bCount('observatory'); // rift conduits
+  reaverDps *= 1 + 0.10 * bUp('magetower_rifts');
+  if (hasSkill('riftsurge')) reaverDps *= 2;           // Rift Surge
+  if (hasSkill('riftmaw')) reaverDps *= 1 + 0.01 * portalCardsHeld(); // The Hungering Maw
+  if (hasTree('xreav1')) reaverDps *= 2;               // Riftborn Legion
+  if (hasTree('xward1')) reaverDps *= 1 + 0.15 * (state.districts.length - 1); // Warden of the Wards
+  reaverDps *= (1 + E.reaver / 100) * allUnit;
+
+  // Skyward Seraphs — scale with the Silver Spire's best altitude
+  let seraphDps = state.seraph * 1100 * Math.pow(1.15, uUp('radiant'));
+  seraphDps *= Math.pow(1.25, uUp('skysong'));         // Choir of the Spire training
+  if (uUp('skyrite')) seraphDps *= 1.5;
+  seraphDps *= 1 + 0.01 * wardProgSpire();             // +1% per 5m climbed
+  seraphDps *= 1 + 0.05 * bCount('cathedral') + 0.03 * bCount('observatory'); // celestial choirs
+  seraphDps *= 1 + 0.10 * bUp('obs_seraphs');
+  if (hasSkill('judgment')) seraphDps *= 2;            // Judgment
+  if (state.spire && state.spire.crowned) seraphDps *= 1.5; // the Spire's crown empowers them
+  if (hasTree('xser1')) seraphDps *= 2;                // Seraphic Host
+  if (hasTree('xward1')) seraphDps *= 1 + 0.15 * (state.districts.length - 1);
+  seraphDps *= (1 + E.seraph / 100) * allUnit;
+
+  // Doomforged Reapers — scale with the Tower of Doom's best floor
+  let reaperDps = state.reaper * 1500 * Math.pow(1.15, uUp('scythes'));
+  reaperDps *= Math.pow(1.25, uUp('infernrite'));      // Infernal Rites training
+  if (uUp('doompact')) reaperDps *= 1.5;
+  reaperDps *= 1 + 0.04 * wardProgTower();             // +4% per Tower best floor
+  reaperDps *= 1 + 0.05 * bCount('foundry') + 0.05 * bCount('siegeworkshop'); // hellforges
+  reaperDps *= 1 + 0.10 * bUp('foundry_doom');
+  if (hasSkill('reaping')) reaperDps *= 2;             // Grim Reaping
+  if (hasSkill('doombrand') && night) reaperDps *= 2;  // Brand of Night
+  if (hasTree('xreap1')) reaperDps *= 2;               // Legion of Doom
+  if (hasTree('xward1')) reaperDps *= 1 + 0.15 * (state.districts.length - 1);
+  reaperDps *= (1 + E.reaper / 100) * allUnit;
+
+  // Drowned Leviathan — wakes with every Ascension (the sealed Sunken Ward)
+  let leviathanDps = state.leviathan * 2600 * Math.pow(1.15, uUp('barbtide'));
+  leviathanDps *= Math.pow(1.25, uUp('deepcall'));     // The Deep Calls training
+  if (uUp('abysspact')) leviathanDps *= 1.5;
+  leviathanDps *= 1 + 0.20 * wardProgSunken();         // +20% per Ascension
+  leviathanDps *= 1 + 0.05 * bCount('harbor') + 0.03 * bCount('wharf') + 0.03 * bCount('fishmarket'); // deep tides
+  leviathanDps *= 1 + 0.10 * bUp('harbor_leviathan');
+  if (hasSkill('tidefury')) leviathanDps *= 2;         // Tidefury
+  if (hasSkill('drowning')) leviathanDps *= 1 + 0.02 * state.districts.length; // Drowned Kingdom
+  if (hasTree('xlev1')) leviathanDps *= 2;             // Pact of the Deep
+  if (hasTree('xward1')) leviathanDps *= 1 + 0.15 * (state.districts.length - 1);
+  leviathanDps *= (1 + E.leviathan / 100) * allUnit;
+
   /* units slain in the Rift fight for nothing until they recover */
   if (typeof portalUnitDead === 'function') {
     if (portalUnitDead('archer')) archerDps = 0;
@@ -563,6 +621,10 @@ function calc() {
     if (portalUnitDead('plague')) plagueDps = 0;
     if (portalUnitDead('valkyrie')) valkyrieDps = 0;
     if (portalUnitDead('walls')) wallDps = 0;
+    if (portalUnitDead('reaver')) reaverDps = 0;
+    if (portalUnitDead('seraph')) seraphDps = 0;
+    if (portalUnitDead('reaper')) reaperDps = 0;
+    if (portalUnitDead('leviathan')) leviathanDps = 0;
   }
 
   c.archerDps = archerDps;
@@ -575,8 +637,13 @@ function calc() {
   c.plagueDps = plagueDps;
   c.valkyrieDps = valkyrieDps;
   c.wallDps = wallDps;
+  c.reaverDps = reaverDps;
+  c.seraphDps = seraphDps;
+  c.reaperDps = reaperDps;
+  c.leviathanDps = leviathanDps;
   c.dps = archerDps + mageDps + turretDps + clericDps + golemDps + dragonDps +
-    knightDps + plagueDps + valkyrieDps + wallDps;
+    knightDps + plagueDps + valkyrieDps + wallDps +
+    reaverDps + seraphDps + reaperDps + leviathanDps;
 
   // click damage
   let click = (1 + state.sword) * Math.pow(2, Math.floor(state.sword / 25));
@@ -678,13 +745,40 @@ function unitDpsValue(uid) {
     case 'knight': return C.knightDps;
     case 'plague': return C.plagueDps;
     case 'valkyrie': return C.valkyrieDps;
+    case 'reaver': return C.reaverDps;
+    case 'seraph': return C.seraphDps;
+    case 'reaper': return C.reaperDps;
+    case 'leviathan': return C.leviathanDps;
     default: return C.wallDps;
   }
 }
 
 function unitUnlocked(u) {
-  return !u.unlock || state.highestZone >= u.unlock.zone;
+  if (!u.unlock) return true;
+  if (u.unlock.ward) return wardUnitUnlocked(u.unlock.ward);
+  return state.highestZone >= u.unlock.zone;
 }
+
+/* ward units unlock when their outer ward is first claimed — and STAY
+   unlocked forever after (like the gamemode gates), even though the ward
+   itself resets on Ascension. */
+function wardUnitUnlocked(key) {
+  return !!(state.wardUnits && state.wardUnits[key]) || state.districts.includes(key);
+}
+
+/* lock-screen blurb for a unit that isn't unlocked yet */
+function unitUnlockText(u) {
+  if (u.unlock && u.unlock.ward)
+    return 'Claim the ' + (DISTRICT_NAMES[u.unlock.ward] || 'ward') + ' to recruit';
+  return 'Unlocks at Zone ' + (u.unlock ? u.unlock.zone : 0) + ' (best: ' + state.highestZone + ')';
+}
+
+/* ---- ward progress: drives ward-unit scaling (all lifetime/permanent) ---- */
+function wardProgPortal() { return (state.portal && state.portal.best) || 0; }   // best Rift stage
+function wardProgTower()  { return (state.tower && state.tower.best) || 0; }     // best Tower floor
+function wardProgSpire()  { return Math.floor(((state.spire && state.spire.bestM) || 0) / 5); } // per 5m
+function wardProgSunken() { return state.ascensions || 0; }                      // Ascensions performed
+function portalCardsHeld() { return (state.portal && state.portal.cards && state.portal.cards.length) || 0; }
 
 /* ---------------- economy ---------------- */
 
@@ -2216,6 +2310,22 @@ function buildUnitDetail(unitId) {
       lines.push(['Valkyries', lvl]);
       lines.push(['Storm DPS', fmt(C.valkyrieDps)]);
       lines.push(['Observatory bonus', '+' + (bCount('observatory') * 5) + '%']);
+    } else if (u.id === 'reaver') {
+      lines.push(['Reavers', lvl]);
+      lines.push(['Rift DPS', fmt(C.reaverDps)]);
+      lines.push(['Rift Portal best stage', wardProgPortal() + ' (+' + (wardProgPortal() * 4) + '%)']);
+    } else if (u.id === 'seraph') {
+      lines.push(['Seraphs', lvl]);
+      lines.push(['Radiant DPS', fmt(C.seraphDps)]);
+      lines.push(['Spire best altitude', Math.round(((state.spire && state.spire.bestM) || 0)) + 'm (+' + wardProgSpire() + '%)']);
+    } else if (u.id === 'reaper') {
+      lines.push(['Reapers', lvl]);
+      lines.push(['Doom DPS', fmt(C.reaperDps)]);
+      lines.push(['Tower of Doom best floor', wardProgTower() + ' (+' + (wardProgTower() * 4) + '%)']);
+    } else if (u.id === 'leviathan') {
+      lines.push(['Leviathans', lvl]);
+      lines.push(['Abyss DPS', fmt(C.leviathanDps)]);
+      lines.push(['Ascensions', wardProgSunken() + ' (+' + (wardProgSunken() * 20) + '%)']);
     } else {
       lines.push(['Wall level', lvl]);
       lines.push(['Wall DPS', fmt(C.wallDps)]);
@@ -2229,7 +2339,7 @@ function buildUnitDetail(unitId) {
   box.appendChild(makeAmtToggle('unit'));
   upgradeRow(box, {
     name: u.main.name,
-    info: unitUnlocked(u) ? u.main.info : '🔒 reach Zone ' + (u.unlock ? u.unlock.zone : 0) + ' to recruit. ' + u.main.info,
+    info: unitUnlocked(u) ? u.main.info : '🔒 ' + unitUnlockText(u) + '. ' + u.main.info,
     lvlText: () => 'Lv.' + state[u.statKey],
     cost: () => subBatch(u.main.cost, state[u.statKey], Infinity, 'unit').cost,
     costPrefix: () => 'Buy x' + subBatch(u.main.cost, state[u.statKey], Infinity, 'unit').n + ': ',
@@ -2829,7 +2939,7 @@ function refreshUnitCards() {
     if (!unitUnlocked(u)) {
       ui.card.classList.add('locked-unit');
       setText(ui, 'lvl', ui.lvlEl, '🔒');
-      setText(ui, 'dps', ui.dpsEl, 'Unlocks at Zone ' + u.unlock.zone + ' (best: ' + state.highestZone + ')');
+      setText(ui, 'dps', ui.dpsEl, unitUnlockText(u));
       setText(ui, 'share', ui.shareEl, '');
       ui.plus.style.display = 'none';
       continue;
@@ -2884,6 +2994,7 @@ function buyDistrict(key) {
   state.districts.push(key);
   toast('LAND DEED: ' + DISTRICT_NAMES[key] + ' joins Aetherholm! (+' + Math.round(DISTRICT_GOLD_BONUS * 100) + '% all gold)');
   unlockModeForWard(key); // cardinal wards open their gamemode gate for good
+  unlockWardUnit(key);    // outer wards permanently unlock their ward unit
   maybeTerrain(true);
   renderCity();
   refreshShop();
@@ -3010,6 +3121,15 @@ function unlockModeForWard(key) {
   if (!m || !m.open || modeTileBought(m.id)) return;
   state.modeTiles[m.id] = true;
   toast('GATE OPEN: ' + m.name + ' awaits at the edge of ' + DISTRICT_NAMES[key] + '!');
+}
+
+/* outer wards permanently unlock their bound ward unit (kept through Ascension) */
+function unlockWardUnit(key) {
+  if (!OUTER_WARD_KEYS.includes(key) || (state.wardUnits && state.wardUnits[key])) return;
+  if (!state.wardUnits) state.wardUnits = {};
+  state.wardUnits[key] = true;
+  const u = UNITS.find(x => x.unlock && x.unlock.ward === key);
+  if (u) toast('NEW RECRUITS: ' + u.name + ' answer the call of ' + DISTRICT_NAMES[key] + '!');
 }
 
 /* dim & disable gate icons whose ward isn't claimed yet (called after gates exist) */
@@ -3414,6 +3534,7 @@ function renderMenu() {
         ['— Archers / Mages / Clerics', () => fmt(C.archerDps) + ' / ' + fmt(C.mageDps) + ' / ' + fmt(C.clericDps)],
         ['— Ballistae / Golem / Dragons / Walls', () => fmt(C.turretDps) + ' / ' + fmt(C.golemDps) + ' / ' + fmt(C.dragonDps) + ' / ' + fmt(C.wallDps)],
         ['— Knights / Alchemists / Valkyries', () => fmt(C.knightDps) + ' / ' + fmt(C.plagueDps) + ' / ' + fmt(C.valkyrieDps)],
+        ['— Reavers / Seraphs / Reapers / Leviathan', () => fmt(C.reaverDps) + ' / ' + fmt(C.seraphDps) + ' / ' + fmt(C.reaperDps) + ' / ' + fmt(C.leviathanDps)],
         ['Kill bounty multiplier', () => 'x' + C.killMult.toFixed(2)],
         ['Monsters slain', () => state.totalKills],
         ['Bosses slain', () => state.stats.bossKills],

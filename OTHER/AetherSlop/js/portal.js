@@ -26,6 +26,9 @@ const PORTAL_UNIT_ROLE = {
   hero: 'fighter', golem: 'fighter', walls: 'fighter', knight: 'fighter',
   archer: 'ranged', turret: 'ranged', dragon: 'ranged', valkyrie: 'ranged',
   mage: 'aoe', cleric: 'aoe', plague: 'aoe',
+  /* ward units */
+  reaver: 'fighter', leviathan: 'fighter',
+  seraph: 'ranged', reaper: 'aoe',
 };
 
 /* each unit's special — fires automatically when energy reaches its COST
@@ -42,6 +45,11 @@ const PORTAL_SPECIALS = {
   knight: { name: 'Lance Charge',   cost: 110, desc: 'x3 damage to its front-row target.' },
   plague: { name: 'Toxic Cloud',    cost: 100, desc: 'x2.2 damage to ALL enemies.' },
   valkyrie: { name: 'Thunder Dive', cost: 120, desc: 'x1.6 damage to ALL enemies.' },
+  /* ward units — fancier kits */
+  reaver:    { name: 'Rift Rend',      cost: 100, desc: 'x2 damage to its target AND marks ALL enemies VULNERABLE: +30% damage taken for 4s.' },
+  seraph:    { name: 'Radiant Judgment', cost: 110, desc: 'x1.4 damage to ALL enemies and heals your most-hurt ally for 20% max HP.' },
+  reaper:    { name: 'Soul Reap',       cost: 120, desc: 'x2 damage to ALL enemies; any enemy left below 18% HP is EXECUTED.' },
+  leviathan: { name: 'Tidal Crush',     cost: 130, desc: 'x2.5 damage PLUS 12% of the target\'s MAX HP — drowns even bosses.' },
 };
 
 /* enemy specials, by role — shown on their cards so you know what's coming */
@@ -580,6 +588,7 @@ function makeAlly(uid, slot) {
     hp: st.hp, maxHp: st.hp, dmg: st.dmg, spd: st.spd,
     energy: 0, energyMax: PORTAL_SPECIALS[uid].cost,
     cd: st.spd * (0.4 + Math.random() * 0.5), alive: true, boss: false,
+    vuln: 0, vulnM: 1,
   };
 }
 
@@ -588,6 +597,7 @@ function makeFoe(e, i) {
     ...e, side: 'enemy', gridSlot: i,
     maxHp: e.hp, energy: 0, energyMax: PORTAL_ENEMY_SPECIALS[e.role].cost,
     cd: e.spd * (0.6 + Math.random() * 0.6), alive: true,
+    vuln: 0, vulnM: 1,
   };
 }
 
@@ -675,6 +685,7 @@ function pfFlash(c) {
 
 function hurtC(c, dmg, opts) {
   if (!c.alive) return;
+  if (c.vuln > 0) dmg *= c.vulnM;     // Rift Rend vulnerability
   c.hp -= dmg;
   if (opts && opts.quiet) { /* damage-over-time: no floater spam */ }
   else {
@@ -760,6 +771,29 @@ function doSpecial(c, team, foes, isAlly) {
       case 'cleric':
         for (const a of team) healC(a, a.maxHp * 0.25);
         break;
+      case 'reaver': {
+        hitOne(pickTargets(c, foes)[0], 2);
+        for (const f of aliveFoes) { f.vuln = 4; f.vulnM = 1.3; pfFloat(f, '✦ VULNERABLE', 'shout'); } // +30% dmg taken
+        break;
+      }
+      case 'seraph': {
+        hitMany(aliveFoes, 1.4);
+        const hurt = team.filter(a => a.alive).sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0];
+        if (hurt) healC(hurt, hurt.maxHp * 0.20);
+        break;
+      }
+      case 'reaper': {
+        hitMany(aliveFoes, 2);
+        for (const f of foes) {                          // EXECUTE the weakened
+          if (f.alive && f.hp <= f.maxHp * 0.18) { pfFloat(f, '☠ EXECUTED', 'crit'); hurtC(f, f.hp + 1); }
+        }
+        break;
+      }
+      case 'leviathan': {
+        const t = pickTargets(c, foes)[0];
+        if (t) { hitOne(t, 2.5); if (t.alive) hurtC(t, t.maxHp * 0.12); } // % max HP — boss shredder
+        break;
+      }
     }
   } else {
     /* enemy specials match what their card advertises */
@@ -780,6 +814,7 @@ function battleTick(dt) {
   ]) {
     for (const c of team) {
       if (!c.alive) continue;
+      if (c.vuln > 0) { c.vuln -= dt; if (c.vuln <= 0) c.vulnM = 1; }
       const rate = PORTAL_ENERGY_RATE * (isAlly ? 1 + 0.25 * portalCardCount('c_rate') : 1);
       c.energy += rate * dt;
       c.cd -= dt;
