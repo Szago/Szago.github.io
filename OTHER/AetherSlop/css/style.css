@@ -37,7 +37,7 @@ canvas.pix, canvas { image-rendering: pixelated; }
 
 #game {
   display: grid;
-  grid-template-columns: minmax(290px, 1fr) auto minmax(330px, 1fr);
+  grid-template-columns: minmax(290px, 1fr) minmax(0, 2.2fr) minmax(330px, 1fr);
   gap: 8px;
   height: 100vh;
   padding: 8px;
@@ -46,10 +46,10 @@ canvas.pix, canvas { image-rendering: pixelated; }
 #city {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  justify-self: center;
+  justify-self: stretch;
   align-self: stretch;
   height: 100%;
-  width: auto;
+  width: 100%;
 }
 
 .panel {
@@ -324,12 +324,10 @@ canvas.pix, canvas { image-rendering: pixelated; }
 
 #city-view {
   position: relative;
-  flex: 0 0 auto;
   align-self: stretch;
-  justify-self: center;
+  justify-self: stretch;
   height: 100%;
-  width: auto;
-  aspect-ratio: 1 / 1;
+  width: 100%;
   overflow: hidden;
   background: #10180c;
   cursor: grab;
@@ -1622,7 +1620,7 @@ body.night #cycle-chip { color: #9fb4d8; }
   }
   #city-view {
     width: 100%;
-    height: auto;
+    height: 70vh;
   }
   .panel { min-height: 320px; }
 }
