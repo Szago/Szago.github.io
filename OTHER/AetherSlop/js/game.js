@@ -64,6 +64,8 @@ function ensureShape(s) {
   const run = defaultRunState();
   for (const k in run) if (s[k] === undefined) s[k] = run[k];
   if (!s.inv) s.inv = {};
+  /* outer gamemode gates: persist across ascension once unsealed */
+  if (!s.modeTiles) s.modeTiles = {};
   /* lifetime cosmetic counters (drive city density / wandering NPCs) */
   if (typeof s.totalBuildingsBought !== 'number') s.totalBuildingsBought = 0;
   if (typeof s.totalUnitsBought !== 'number') s.totalUnitsBought = 0;
@@ -2881,6 +2883,7 @@ function buyDistrict(key) {
   pay(cost);
   state.districts.push(key);
   toast('LAND DEED: ' + DISTRICT_NAMES[key] + ' joins Aetherholm! (+' + Math.round(DISTRICT_GOLD_BONUS * 100) + '% all gold)');
+  unlockModeForWard(key); // cardinal wards open their gamemode gate for good
   maybeTerrain(true);
   renderCity();
   refreshShop();
@@ -2919,23 +2922,30 @@ function buildDistrictDetail(key) {
   statsEl.className = 'detail-stats';
   box.appendChild(statsEl);
   const builds = (DISTRICT_BUILDS[key] || []).map(id => BUILDINGS.find(b => b.id === id).name);
+  const mg = MODE_BY_WARD[key];
   viewUpdaters.push(() => {
     const next = nextDistrictKey();
     const lines = [
       ['Status', owned ? 'OWNED' : key === next ? 'FOR SALE (next in line)' : 'Locked — buy ' + DISTRICT_NAMES[next] + ' first'],
       ['District bonus', '+' + Math.round(DISTRICT_GOLD_BONUS * 100) + '% ALL gold each'],
-      ['Districts owned', state.districts.length + ' / 9'],
+      ['Districts owned', state.districts.length + ' / ' + (DISTRICT_ORDER.length + 1)],
       ['Wall requirement', 'Wall Lv.' + DISTRICT_WALL_REQ + ' (now ' + state.walls + ')'],
-      ['Unlocks buildings', builds.length ? String(builds.length) : 'none (royal gardens)'],
+      [mg ? 'Gamemode gate' : 'Unlocks buildings',
+        mg ? (mg.open ? mg.name + (modeTileUnlocked(mg.id) ? ' (OPEN)' : ' (unlocks on purchase)') : 'Sealed — coming soon')
+           : (builds.length ? String(builds.length) : 'none (royal gardens)')],
     ];
     statsEl.innerHTML = lines.map(l => '<div class="stat-row"><span>' + l[0] + '</span><b>' + l[1] + '</b></div>').join('');
   });
 
   const note = document.createElement('div');
   note.className = 'detail-note';
-  note.textContent = builds.length
-    ? 'Unlocks: ' + builds.join(', ') + ' — plus room for more cottages.'
-    : 'No new buildings here — but more cottages, parkland, and the district gold bonus.';
+  note.textContent = mg
+    ? (mg.open
+        ? 'At the far edge of this ward stands ' + mg.name + '. Claim the ward and its gate opens — permanently, even through Ascension.'
+        : 'A sealed gate stands at the far edge — its realm is not yet built. Claiming the ward still grants the district gold bonus.')
+    : builds.length
+      ? 'Unlocks: ' + builds.join(', ') + ' — plus room for more cottages.'
+      : 'No new buildings here — but more cottages, parkland, and the district gold bonus.';
   box.appendChild(note);
 
   sectionTitle(box, 'LAND DEED');
@@ -2954,12 +2964,13 @@ function renderDistrictOverlays() {
   const box = $('districts');
   box.innerHTML = '';
   const next = nextDistrictKey();
-  for (let dy = 1; dy <= 3; dy++) {
-    for (let dx = 1; dx <= 3; dx++) {
-      const key = dKey(dx, dy);
-      if (ownsDistrict(key)) continue;
+  for (const key of DISTRICT_ORDER) {
+    if (ownsDistrict(key)) continue;
+    const [dx, dy] = key.split(',').map(Number);
+    {
       const el = document.createElement('div');
       const buyable = key === next;
+      const mg = MODE_BY_WARD[key];
       el.className = 'district-ov' + (buyable ? ' buyable' : '');
       el.style.left = (dx * DISTRICT_W / MAP_W * 100) + '%';
       el.style.top = (dy * DISTRICT_H / MAP_H * 100) + '%';
@@ -2976,11 +2987,37 @@ function renderDistrictOverlays() {
         el.title = DISTRICT_NAMES[key] + ' — wards unlock in order';
       }
       const builds = (DISTRICT_BUILDS[key] || []).map(id => BUILDINGS.find(b => b.id === id).name).join(', ');
+      const tag = mg ? '<br><span class="district-builds">' + (mg.open ? '✦ ' + mg.name : '✦ ??? (sealed)') + '</span>' : '';
       el.innerHTML = '<span class="district-label">' + DISTRICT_NAMES[key] + '<br>' + sub +
-        (builds ? '<br><span class="district-builds">' + builds + '</span>' : '') + '</span>';
+        (builds ? '<br><span class="district-builds">' + builds + '</span>' : '') + tag + '</span>';
       el.onclick = () => { if (!mapDragged) openDistrict(key); };
       box.appendChild(el);
     }
+  }
+}
+
+/* ---------------- outer gamemode gates ----------------
+   A gamemode unlocks when its cardinal ward is bought. The unlock is stored
+   permanently (so the gate stays open even after wards reset on Ascension),
+   but the ward itself is just a normal land deed bought via the Land Office. */
+
+function modeTileBought(id) { return !!(state.modeTiles && state.modeTiles[id]); }
+function modeTileUnlocked(id) { return modeTileBought(id); } // gate is clickable once unlocked
+
+/* called whenever a ward is bought: light up its gamemode gate for good */
+function unlockModeForWard(key) {
+  const m = MODE_BY_WARD[key];
+  if (!m || !m.open || modeTileBought(m.id)) return;
+  state.modeTiles[m.id] = true;
+  toast('GATE OPEN: ' + m.name + ' awaits at the edge of ' + DISTRICT_NAMES[key] + '!');
+}
+
+/* dim & disable gate icons whose ward isn't claimed yet (called after gates exist) */
+function refreshModeGates() {
+  for (const m of MODE_GATES) {
+    if (!m.gateId) continue;
+    const gate = $(m.gateId);
+    if (gate) gate.classList.toggle('mode-locked', !modeTileUnlocked(m.id));
   }
 }
 
@@ -3130,6 +3167,7 @@ function renderCity() {
     }
   }
   renderDistrictOverlays();
+  refreshModeGates();
   maybeTerrain(false);
   if (typeof ambientRebuild === 'function') ambientRebuild();
 }
@@ -3403,7 +3441,7 @@ function renderMenu() {
         ['Buildings standing', () => totalBuildings()],
         ['Buildings built (lifetime)', () => fmt(state.totalBuildingsBought)],
         ['Units raised (lifetime)', () => fmt(state.totalUnitsBought)],
-        ['Districts owned', () => state.districts.length + ' / 9 (+' + Math.round(DISTRICT_GOLD_BONUS * 100 * (state.districts.length - 1)) + '% gold)'],
+        ['Districts owned', () => state.districts.length + ' / ' + (DISTRICT_ORDER.length + 1) + ' (+' + Math.round(DISTRICT_GOLD_BONUS * 100 * (state.districts.length - 1)) + '% gold)'],
         ['Ascensions', () => state.ascensions],
         ['Crown Sigils (held / ever)', () => state.sigils + ' / ' + state.sigilsEver],
         ['Pending Sigils', () => pendingSigils()],

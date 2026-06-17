@@ -378,6 +378,11 @@ canvas.pix, canvas { image-rendering: pixelated; }
 .district-ov:hover { border-style: solid; }
 .district-builds { color: rgba(159, 180, 216, 0.8); font-size: 6px; display: block; margin-top: 3px; }
 
+/* a gamemode gate whose ward isn't claimed yet: dimmed and click-through,
+   so the click falls to the ward's land overlay (the Land Office) beneath it */
+.mode-locked { pointer-events: none; }
+.mode-locked canvas { filter: grayscale(0.85) brightness(0.55) !important; animation: none !important; }
+
 /* treasure chests */
 #chests { position: absolute; inset: 0; pointer-events: none; }
 .chest {

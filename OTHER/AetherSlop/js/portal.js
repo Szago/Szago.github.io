@@ -58,7 +58,7 @@ const PORTAL_BOSS_EVERY = 10;
 const PORTAL_DEATH_MS = 10 * 60 * 1000;  // lost teams stay dead 10 minutes
 const PORTAL_ENERGY_RATE = 9;            // passive energy per second
 const PORTAL_ENERGY_HIT = 8;             // bonus energy per attack landed
-const PORTAL_GATE_TILE = [80, 3];        // north end of the vertical kingsroad
+const PORTAL_GATE_TILE = [80, 3];        // far north edge of the Riftgate Ward
 
 const PORTAL_ENEMY_ROLE = {
   fighter: { hpM: 1.6, dmgM: 1.2 },
@@ -988,8 +988,14 @@ function makePortalGate() {
   el.style.top = ((ty + 1) / MAP_H * 100) + '%';
   el.title = 'The Rift Portal — enter the arena! (Stage ' + portalStageN() + ')';
   el.appendChild(spriteCanvas('portal', 3));
-  el.onclick = (ev) => { ev.stopPropagation(); if (!mapDragged) openPortal(); };
+  el.onclick = (ev) => {
+    ev.stopPropagation();
+    if (mapDragged) return;
+    if (typeof modeTileUnlocked === 'function' && !modeTileUnlocked('portal')) return; // claim Riftgate Ward first
+    openPortal();
+  };
   $('map-world').appendChild(el);
+  if (typeof refreshModeGates === 'function') refreshModeGates();
 }
 
 /* ---------------- init (runs after game.js init) ---------------- */

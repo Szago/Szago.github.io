@@ -533,7 +533,14 @@ const DISTRICT_GOLD_BONUS = 0.05; // +5% all gold per extra district
 
 function dKey(dx, dy) { return dx + ',' + dy; }
 function districtOf(x, y) { return [Math.floor(x / DISTRICT_W), Math.floor(y / DISTRICT_H)]; }
-function isCityDistrict(dx, dy) { return dx >= 1 && dx <= 3 && dy >= 1 && dy <= 3; }
+/* the city is a PLUS: the 3x3 core plus four cardinal "gamemode" wards
+   reaching out along the kingsroad arms (N, W, E, S). */
+function isCityDistrict(dx, dy) {
+  if (dx >= 1 && dx <= 3 && dy >= 1 && dy <= 3) return true;      // core 3x3
+  if (dx === 2 && (dy === 0 || dy === 4)) return true;           // N / S arms
+  if (dy === 2 && (dx === 0 || dx === 4)) return true;           // W / E arms
+  return false;
+}
 
 function districtCost(nOwnedExtra) {
   return {
@@ -546,10 +553,28 @@ function districtCost(nOwnedExtra) {
 const DISTRICT_NAMES = {
   '2,2': 'Old Town', '1,2': 'West Ward', '3,2': 'East Ward', '2,1': 'North Ward', '2,3': 'South Ward',
   '1,1': 'Wolfgate Ward', '3,1': 'Rivergate Ward', '1,3': 'Orchard Ward', '3,3': 'Harvest Ward',
+  /* outer cardinal "gamemode" wards reaching down the kingsroad arms */
+  '2,0': 'Riftgate Ward', '0,2': 'Spirewatch Ward', '2,4': 'Doomgate Ward', '4,2': 'Sunken Ward',
 };
 
-/* FIXED purchase order — each ward is adjacent to the previous union */
-const DISTRICT_ORDER = ['1,2', '3,2', '2,1', '2,3', '1,1', '3,1', '1,3', '3,3'];
+/* FIXED purchase order — each ward is adjacent to the previous union.
+   The four gamemode wards come LAST, in the order portal -> spire -> tower -> ??? */
+const DISTRICT_ORDER = ['1,2', '3,2', '2,1', '2,3', '1,1', '3,1', '1,3', '3,3', '2,0', '0,2', '2,4', '4,2'];
+
+/* ---- GAMEMODE GATES ----
+   Each gamemode lives at the FAR (outer) edge of its own cardinal ward.
+   Buying that ward (a normal land deed, last in the purchase order) is what
+   unlocks the gamemode — permanently, even after the ward resets on Ascension.
+   The fourth ward (Sunken) is a sealed placeholder for a realm not yet built. */
+const MODE_GATES = [
+  { id: 'portal',  name: 'The Rift Portal',   sprite: 'portal', open: 'openPortal', gateId: 'portal-gate', tile: [80, 3],   wardKey: '2,0' },
+  { id: 'spire',   name: 'The Silver Spire',  sprite: 'spire',  open: 'openSpire',  gateId: 'spire-gate',  tile: [3, 60],   wardKey: '0,2' },
+  { id: 'tower',   name: 'The Tower of Doom', sprite: 'tower',  open: 'openTower',  gateId: 'tower-gate',  tile: [80, 116], wardKey: '2,4' },
+  { id: 'mystery', name: 'The Sealed Gate',   sprite: null,     open: null,         gateId: null,          tile: [155, 60], wardKey: '4,2' },
+];
+const MODE_BY_ID = {};
+const MODE_BY_WARD = {};
+for (const m of MODE_GATES) { MODE_BY_ID[m.id] = m; MODE_BY_WARD[m.wardKey] = m; }
 
 /* roads: a kingsroad cross spanning the whole world */
 const ROAD_X = 80, ROAD_Y = 60;

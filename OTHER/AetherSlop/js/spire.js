@@ -13,7 +13,7 @@
 
 'use strict';
 
-const SPIRE_GATE_TILE = [3, 60];     // west end of the horizontal kingsroad
+const SPIRE_GATE_TILE = [3, 60];     // far west edge of the Spirewatch Ward
 const SPIRE_W = 520;                 // world width (px)
 const SPIRE_H = 16000;               // world height — a LONG climb
 const SPIRE_G = 1800;                // gravity px/s^2
@@ -404,8 +404,14 @@ function makeSpireGate() {
   el.style.top = ((ty + 1) / MAP_H * 100) + '%';
   el.title = 'The Silver Spire — climb to the Crown! (best: ' + (state.spire ? state.spire.bestM.toFixed(0) : 0) + 'm of ' + spireTotalM().toFixed(0) + 'm)';
   el.appendChild(spriteCanvas('spire', 3));
-  el.onclick = (ev) => { ev.stopPropagation(); if (!mapDragged) openSpire(); };
+  el.onclick = (ev) => {
+    ev.stopPropagation();
+    if (mapDragged) return;
+    if (typeof modeTileUnlocked === 'function' && !modeTileUnlocked('spire')) return; // claim Spirewatch Ward first
+    openSpire();
+  };
   $('map-world').appendChild(el);
+  if (typeof refreshModeGates === 'function') refreshModeGates();
 }
 
 /* ---------------- init (after game.js) ---------------- */

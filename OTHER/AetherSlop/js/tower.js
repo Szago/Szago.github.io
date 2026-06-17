@@ -16,7 +16,7 @@
 
 /* ---------------- tuning ---------------- */
 
-const TOWER_GATE_TILE = [80, 116];     // south end of the vertical kingsroad
+const TOWER_GATE_TILE = [80, 116];     // far south edge of the Doomgate Ward
 const TW_COLS = 6, TW_ROWS = 4;        // note grid
 const TW_WIN = { perfect: 0.09, great: 0.18, ok: 0.28 }; // timing windows (s)
 const TW_DMG_MULT = { perfect: 4, great: 2, ok: 1 };
@@ -563,8 +563,14 @@ function makeTowerGate() {
   el.style.top = ((ty + 1) / MAP_H * 100) + '%';
   el.title = 'The Tower of Doom — rhythm boss gauntlet! (Floor ' + towerFloorN() + ')';
   el.appendChild(spriteCanvas('tower', 3));
-  el.onclick = (ev) => { ev.stopPropagation(); if (!mapDragged) openTower(); };
+  el.onclick = (ev) => {
+    ev.stopPropagation();
+    if (mapDragged) return;
+    if (typeof modeTileUnlocked === 'function' && !modeTileUnlocked('tower')) return; // claim Doomgate Ward first
+    openTower();
+  };
   $('map-world').appendChild(el);
+  if (typeof refreshModeGates === 'function') refreshModeGates();
 }
 
 /* ---------------- init (after game.js & portal.js) ---------------- */
