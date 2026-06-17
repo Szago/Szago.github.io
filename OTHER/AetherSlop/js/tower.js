@@ -30,17 +30,24 @@ const TW_BLESS_STEP = 1.05;            // each beaten floor: +5% production on o
    size: big & clustered early; spacing: the note grid SPREADS out
    each floor (more cursor travel), starting at half pitch. */
 function towerParams(floorN) {
+  const help = Math.min(0.45, (0.003 * bCount('beatfoundry') + 0.012 * bUp('beat_calibration')) * doomWorksMult());
   return {
     bpm: Math.min(220, 88 + 3 * (floorN - 1)),
-    approach: Math.max(0.45, 1.5 - 0.026 * (floorN - 1)),
-    size: Math.max(36, 116 - 2.4 * (floorN - 1)),
+    approach: Math.max(0.45, 1.5 - 0.026 * (floorN - 1)) * (1 + help * 0.5),
+    size: Math.max(36, 116 - 2.4 * (floorN - 1)) * (1 + help),
     spacing: Math.min(1, 0.5 + 0.03 * (floorN - 1)),
   };
 }
 
 /* ascension-tree hooks */
-function twMissHp() { return hasTree('xtow2') ? 0.08 : TW_MISS_HP; }       // Steel Tempo
-function twHitMult(j) { return j === 'perfect' && hasTree('xtow3') ? 5 : TW_DMG_MULT[j]; } // Resonant Blade
+function twMissHp() {
+  const mercy = Math.min(0.5, (0.002 * bCount('nightmetronome') + 0.02 * bUp('metronome_mercy')) * doomWorksMult());
+  return (hasTree('xtow2') ? 0.08 : TW_MISS_HP) * (1 - mercy);
+}       // Steel Tempo
+function twHitMult(j) {
+  const base = j === 'perfect' && hasTree('xtow3') ? 5 : TW_DMG_MULT[j];
+  return base * (1 + 0.01 * bUp('doomforge_quench') * doomWorksMult());
+} // Resonant Blade
 
 function towerBoss(floorN, clickDmg) {
   const type = BOSS_TYPES[(floorN - 1) % BOSS_TYPES.length];
@@ -100,8 +107,8 @@ function showTowerScreen(name) {
   towerScreen = name;
   for (const id of ['tower-lobby', 'tower-play', 'tower-result'])
     $(id).classList.toggle('hidden', id !== 'tower-' + name);
-  $('tower-title').textContent = 'THE TOWER OF DOOM — FLOOR ' + towerFloorN() +
-    (state.tower.best > 0 ? '  (BEST: ' + state.tower.best + ')' : '');
+  $('tower-title').textContent = 'THE TOWER OF DOOM — FLOOR ' + fmt(towerFloorN()) +
+    (state.tower.best > 0 ? '  (BEST: ' + fmt(state.tower.best) + ')' : '');
   if (name === 'lobby') renderTowerLobby();
 }
 
@@ -482,7 +489,8 @@ function towerWin() {
   if (state.tower.floor > state.tower.best) state.tower.best = state.tower.floor;
 
   const lines = [];
-  const plunder = hasTree('xtow1') ? 2 : 1; // Tower Plunder
+  const towerCityReward = 1 + (0.02 * bCount('bloodtreasury') + 0.05 * bUp('blood_vaults')) * doomWorksMult();
+  const plunder = (hasTree('xtow1') ? 2 : 1) * towerCityReward; // Tower Plunder
   const g = Math.pow(ZONE_GOLD_GROWTH, floorN - 1);
   const goldGain = 6 * g * 40 * (C ? C.killMult : 1) * plunder;
   earnGold(goldGain);
@@ -493,7 +501,9 @@ function towerWin() {
     state.stone += stone;
     lines.push('+' + fmt(wood) + ' Wood · +' + fmt(stone) + ' Stone');
   }
-  if (hasTree('xtow3') || Math.random() < Math.min(0.95, 0.6 * (C ? C.dropMult : 1))) { // Resonant Blade: guaranteed
+  const itemChance = Math.min(0.98, 0.6 * (C ? C.dropMult : 1) *
+    (1 + (0.01 * bCount('reliquarypress') + 0.02 * bUp('reliq_imprint'))));
+  if (hasTree('xtow3') || Math.random() < itemChance) { // Resonant Blade: guaranteed
     const d = rollDrop();
     invAdd(d.t, d.tier, 1, d.a);
     state.stats.itemsFound++;
@@ -502,12 +512,13 @@ function towerWin() {
   /* the floor's blessing: +5% production on a random non-gold resource, forever */
   towerEnsure(state);
   const bless = TW_BLESS_RES[Math.floor(Math.random() * TW_BLESS_RES.length)];
-  state.tower.resMult[bless] *= TW_BLESS_STEP;
+  const blessStep = TW_BLESS_STEP + 0.002 * bUp('doomforge_quench') * doomWorksMult();
+  state.tower.resMult[bless] *= blessStep;
   lines.push('<span style="color:' + RES_META[bless].color + '">★ BLESSING: +' +
-    ((TW_BLESS_STEP - 1) * 100).toFixed(0) + '% ' + RES_META[bless].name +
+    ((blessStep - 1) * 100).toFixed(0) + '% ' + RES_META[bless].name +
     ' production, forever (now x' + state.tower.resMult[bless].toFixed(2) + ')</span>');
-  lines.push('<span class="dim">' + counts.perfect + ' PERFECT · ' + counts.great + ' GREAT · ' +
-    counts.ok + ' OK · ' + counts.miss + ' MISS — max combo ' + maxCombo + 'x</span>');
+  lines.push('<span class="dim">' + fmt(counts.perfect) + ' PERFECT · ' + fmt(counts.great) + ' GREAT · ' +
+    fmt(counts.ok) + ' OK · ' + fmt(counts.miss) + ' MISS — max combo ' + fmt(maxCombo) + 'x</span>');
 
   twStopFight();
   showTowerResult(true, lines);
@@ -561,7 +572,7 @@ function makeTowerGate() {
   el.id = 'tower-gate';
   el.style.left = ((tx + 0.5) / MAP_W * 100) + '%';
   el.style.top = ((ty + 1) / MAP_H * 100) + '%';
-  el.title = 'The Tower of Doom — rhythm boss gauntlet! (Floor ' + towerFloorN() + ')';
+  el.title = 'The Tower of Doom — rhythm boss gauntlet! (Floor ' + fmt(towerFloorN()) + ')';
   el.appendChild(spriteCanvas('tower', 3));
   el.onclick = (ev) => {
     ev.stopPropagation();

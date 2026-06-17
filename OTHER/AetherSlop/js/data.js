@@ -92,6 +92,34 @@ const BUILDINGS = [
   { id: 'crystalmine', name: 'Crystal Mine', sprite: 'quarry',   pal: { s: '#5fd9ff', S: '#2e8fd6', k: '#234a92' },           cost: { gold: 8e7, stone: 40000 },           prod: { stone: 15, mana: 2 }, desc: 'Veins of frozen starlight.', special: '+3% Mage damage each' },
   { id: 'bank',      name: 'Royal Bank',    sprite: 'mint',      pal: { s: '#e8e4d4', S: '#b8b4a0' },                         cost: { gold: 1.5e8, wood: 50000, stone: 50000, mana: 30000 }, prod: { gold: 100000 }, desc: 'Vaults below, marble above.', special: '+5% all gold each' },
   { id: 'wonder',    name: 'Wonder of the Ages', sprite: 'wonder', cost: { gold: 1e9, wood: 200000, stone: 200000, mana: 100000 }, prod: { gold: 1e6 }, desc: 'They will speak of Aetherholm forever.', special: '+10% all gold each' },
+
+  /* ---- Riftgate Ward: Portal endgame ---- */
+  { id: 'riftbeacon', name: 'Rift Beacon', sprite: 'portal', pal: { p: '#c66cff', P: '#7d4ea0', m: '#ffffff' }, cost: { gold: 2e9, stone: 120000, mana: 120000 }, prod: { mana: 18 }, desc: 'A city anchor hammered into the Rift.', special: '+1% Rift Portal team HP & damage each; output scales with best Rift stage' },
+  { id: 'riftapothecary', name: 'Rift Apothecary', sprite: 'alchemist', pal: { p: '#a85ccc', P: '#5c3677', M: '#ff8cff' }, cost: { gold: 2.8e9, wood: 150000, mana: 160000 }, prod: { mana: 14, gold: 120000 }, desc: 'Bottles disasters before they happen.', special: 'Improves Portal potion drops and passively brews Portal supplies' },
+  { id: 'voidmarket', name: 'Void Market', sprite: 'market', pal: { o: '#a85ccc', p: '#ff8cff', r: '#3c6ed6', y: '#ffd23e' }, cost: { gold: 4e9, wood: 220000, mana: 200000 }, prod: { gold: 450000 }, desc: 'A bazaar where tomorrow buys yesterday.', special: '+2% all gold each; Portal victories pay more' },
+  { id: 'echoarsenal', name: 'Echo Arsenal', sprite: 'smith', pal: { F: '#a85ccc', f: '#e6ccff', s: '#6d4f92', S: '#3b2757' }, cost: { gold: 6e9, stone: 300000, mana: 260000 }, prod: { gold: 300000, stone: 35 }, desc: 'Weapons that remember every timeline.', special: '+3% Rift Reaver damage each; boosts Portal fighters' },
+  { id: 'reliquarypress', name: 'Reliquary Press', sprite: 'library', pal: { m: '#a85ccc', M: '#5fd9ff', W: '#f2e6ff' }, cost: { gold: 9e9, wood: 320000, stone: 320000, mana: 360000 }, prod: { mana: 22 }, desc: 'Prints small miracles into the city bag.', special: 'Passively creates bag items; faster with Rift progress' },
+
+  /* ---- Spirewatch Ward: Silver Spire endgame ---- */
+  { id: 'skyhookyard', name: 'Skyhook Yard', sprite: 'spire', pal: { g: '#ffe96b', b: '#d8f6ff' }, cost: { gold: 2.2e9, wood: 140000, stone: 160000, mana: 100000 }, prod: { wood: 35, mana: 10 }, desc: 'Winches, halos and very long ropes.', special: 'Silver Spire launch power improves with each yard' },
+  { id: 'wayhouse', name: 'Angelic Wayhouse', sprite: 'temple', pal: { W: '#f2f4fa', w: '#c7cede', y: '#ffd23e' }, cost: { gold: 3e9, stone: 220000, mana: 180000 }, prod: { gold: 220000, mana: 14 }, desc: 'Pilgrims leave feathers at the door.', special: 'Adds Spire waystone safety even before the ascension node' },
+  { id: 'cloudfoundry', name: 'Cloud Foundry', sprite: 'smith', pal: { s: '#c7cede', S: '#8e98b8', F: '#9fd4ff', f: '#f2f4fa' }, cost: { gold: 5e9, stone: 360000, mana: 240000 }, prod: { stone: 42, mana: 16 }, desc: 'Turns thunderheads into marble.', special: '+3% Skyward Seraph damage each' },
+  { id: 'dawnprism', name: 'Dawn Prism', sprite: 'magetower', pal: { p: '#e8e4d4', P: '#ffd23e', M: '#9fd4ff' }, cost: { gold: 7.5e9, stone: 400000, mana: 320000 }, prod: { gold: 520000, mana: 18 }, desc: 'Bends first light into coin and courage.', special: 'Day gold bonus rises; at night it feeds item luck' },
+  { id: 'crownarchive', name: 'Crown Archive', sprite: 'library', pal: { m: '#f2f4fa', M: '#ffd23e', W: '#fff0a0' }, cost: { gold: 1.1e10, wood: 420000, stone: 420000, mana: 420000 }, prod: { gold: 700000, mana: 24 }, desc: 'Every failed climb becomes a useful footnote.', special: 'Spire best altitude boosts its production and all gold' },
+
+  /* ---- Doomgate Ward: Tower endgame ---- */
+  { id: 'doomforge', name: 'Doom Forge', sprite: 'smith', pal: { F: '#ff4a3c', f: '#ffd23e', s: '#4a3a5b', S: '#1c1622' }, cost: { gold: 3e9, stone: 240000, mana: 160000 }, prod: { stone: 35, gold: 260000 }, desc: 'Hammerfalls keep time with the Tower.', special: '+3% Doomforged Reaper damage each; Tower hits strike harder' },
+  { id: 'beatfoundry', name: 'Beat Foundry', sprite: 'tower', pal: { r: '#ff8c2e', R: '#8d1f1f', K: '#332842' }, cost: { gold: 4.5e9, wood: 180000, stone: 320000, mana: 220000 }, prod: { gold: 360000, stone: 30 }, desc: 'Metronomes the size of houses.', special: 'Tower notes become a little larger and easier to read' },
+  { id: 'reapercloister', name: 'Reaper Cloister', sprite: 'cathedral', pal: { W: '#c0c8d4', w: '#7a838f', m: '#8d1f1f', M: '#ff4a3c' }, cost: { gold: 7e9, stone: 420000, mana: 300000 }, prod: { mana: 18, gold: 420000 }, desc: 'A quiet place for loud endings.', special: '+4% Doomforged Reaper damage each; stronger at night' },
+  { id: 'bloodtreasury', name: 'Blood Treasury', sprite: 'mint', pal: { y: '#ff4a3c', Y: '#ffd23e', s: '#332842', S: '#1c1622' }, cost: { gold: 1e10, wood: 360000, stone: 480000, mana: 360000 }, prod: { gold: 850000 }, desc: 'Floor trophies, audited in red ink.', special: '+2% all gold each; Tower rewards pay more' },
+  { id: 'nightmetronome', name: 'Night Metronome', sprite: 'magetower', pal: { p: '#1c1622', P: '#332842', M: '#ff4a3c', y: '#ffd23e' }, cost: { gold: 1.4e10, stone: 520000, mana: 520000 }, prod: { mana: 28 }, desc: 'The city sleeps in perfect time.', special: 'Tower misses hurt less; night strengthens clicks and Reapers' },
+
+  /* ---- Sunken Ward: sealed-sea endgame ---- */
+  { id: 'tidebreaker', name: 'Tidebreaker Dock', sprite: 'wharf', pal: { M: '#5fd9ff', m: '#1c5a8a', b: '#6b4e26' }, cost: { gold: 5e9, wood: 320000, stone: 180000, mana: 140000 }, prod: { wood: 48, gold: 320000 }, desc: 'Ships moor where roads cannot.', special: '+3% Drowned Leviathan damage each; better chest resources' },
+  { id: 'pearlexchange', name: 'Pearl Exchange', sprite: 'market', pal: { o: '#d8f6ff', W: '#f2f4fa', p: '#5fd9ff', y: '#ffd23e' }, cost: { gold: 7e9, wood: 360000, mana: 220000 }, prod: { gold: 650000 }, desc: 'Every pearl has heard a secret.', special: '+2% all gold each; Sunken buildings scale with ascensions' },
+  { id: 'abyssalvault', name: 'Abyssal Vault', sprite: 'quarry', pal: { s: '#1c5a8a', S: '#0a2436', k: '#02131f' }, cost: { gold: 1.05e10, stone: 520000, mana: 300000 }, prod: { stone: 60, mana: 16 }, desc: 'Locked below the riverbed and the law.', special: 'Boosts item drops and strengthens passive item printing' },
+  { id: 'moonpool', name: 'Moonpool Sanctum', sprite: 'manawell', pal: { M: '#d8f6ff', m: '#5fd9ff', s: '#1c5a8a', S: '#0a2436' }, cost: { gold: 1.45e10, stone: 580000, mana: 420000 }, prod: { mana: 36 }, desc: 'The night sky, reflected from beneath.', special: 'Mana rises; night item-drop bonuses grow stronger' },
+  { id: 'leviathannest', name: 'Leviathan Nursery', sprite: 'worldtree', pal: { l: '#2e8fd6', L: '#5fd9ff', t: '#0a2436', T: '#1c5a8a', M: '#d8f6ff' }, cost: { gold: 2e10, wood: 600000, stone: 600000, mana: 600000 }, prod: { gold: 900000, mana: 30 }, desc: 'A cradle for something that can swallow eras.', special: '+5% Drowned Leviathan damage each; ascensions deepen its output' },
 ];
 
 const COST_GROWTH = 1.15;
@@ -311,6 +339,90 @@ const BUILDING_UPGRADES = {
   wonder: [
     { id: 'wonder_heroes', name: 'Monument of Heroes', max: 10, cost: l => ({ gold: 1.5e9 * Math.pow(3, l), mana: 50000 * Math.pow(2, l) }),
       info: '+10% ALL unit damage per level.' },
+  ],
+  riftbeacon: [
+    { id: 'riftbeacon_lenses', name: 'Fracture Lenses', max: 10, cost: l => ({ gold: 2.2e9 * Math.pow(3, l), mana: 120000 * Math.pow(2, l) }),
+      info: 'Rift Beacons +20% Mana and Portal team HP/damage +2% per level.' },
+  ],
+  riftapothecary: [
+    { id: 'riftapoth_stills', name: 'Paradox Stills', max: 10, cost: l => ({ gold: 3e9 * Math.pow(3, l), wood: 120000 * Math.pow(2.2, l), mana: 140000 * Math.pow(2, l) }),
+      info: 'Rift Apothecaries +20% production and passive Portal-supply brewing +15% per level.' },
+    { id: 'riftapoth_favor', name: 'Bottled Favors', max: 5, cost: l => ({ gold: 8e9 * Math.pow(4, l), mana: 260000 * Math.pow(2, l) }),
+      info: 'Portal victory potion chances +3% per level.' },
+  ],
+  voidmarket: [
+    { id: 'voidmarket_contracts', name: 'Impossible Contracts', max: 10, cost: l => ({ gold: 4.4e9 * Math.pow(3, l), mana: 180000 * Math.pow(2, l) }),
+      info: 'Void Markets +20% gold and Portal victory gold +5% per level.' },
+  ],
+  echoarsenal: [
+    { id: 'echoarsenal_edges', name: 'Echoing Edges', max: 10, cost: l => ({ gold: 6.4e9 * Math.pow(3, l), stone: 180000 * Math.pow(2.2, l), mana: 200000 * Math.pow(2, l) }),
+      info: 'Rift Reavers +10% damage and Portal fighter damage +3% per level.' },
+  ],
+  reliquarypress: [
+    { id: 'reliq_imprint', name: 'Runic Imprints', max: 10, cost: l => ({ gold: 9.5e9 * Math.pow(3, l), mana: 260000 * Math.pow(2, l) }),
+      info: 'Reliquary Presses +20% Mana and passive item printing +15% per level.' },
+    { id: 'reliq_affixes', name: 'Ink of Many Names', max: 5, cost: l => ({ gold: 1.8e10 * Math.pow(4, l), mana: 500000 * Math.pow(2, l) }),
+      info: 'Passive printed items have +10% affix chance per level, even before Mystic Forging.' },
+  ],
+  skyhookyard: [
+    { id: 'skyhook_tension', name: 'Halo Tensioners', max: 10, cost: l => ({ gold: 2.5e9 * Math.pow(3, l), wood: 100000 * Math.pow(2.2, l), mana: 100000 * Math.pow(2, l) }),
+      info: 'Skyhook Yards +20% production and Silver Spire launch power +1.5% per level.' },
+  ],
+  wayhouse: [
+    { id: 'wayhouse_feathers', name: 'Feathered Rails', max: 10, cost: l => ({ gold: 3.2e9 * Math.pow(3, l), stone: 140000 * Math.pow(2.2, l), mana: 140000 * Math.pow(2, l) }),
+      info: 'Wayhouses +20% production and Spire waystones become more frequent.' },
+  ],
+  cloudfoundry: [
+    { id: 'cloudfoundry_anvils', name: 'Nimbus Anvils', max: 10, cost: l => ({ gold: 5.3e9 * Math.pow(3, l), stone: 220000 * Math.pow(2.2, l), mana: 180000 * Math.pow(2, l) }),
+      info: 'Cloud Foundries +20% production and Skyward Seraphs +10% damage per level.' },
+  ],
+  dawnprism: [
+    { id: 'dawnprism_facets', name: 'Sun-Cut Facets', max: 10, cost: l => ({ gold: 8e9 * Math.pow(3, l), mana: 240000 * Math.pow(2, l) }),
+      info: 'Dawn Prisms +20% production, day gold bonus +1% and night item luck +2% per level.' },
+  ],
+  crownarchive: [
+    { id: 'crownarchive_ledgers', name: 'Altitude Ledgers', max: 10, cost: l => ({ gold: 1.15e10 * Math.pow(3, l), mana: 320000 * Math.pow(2, l) }),
+      info: 'Crown Archives +20% production and all gold +1% per level.' },
+  ],
+  doomforge: [
+    { id: 'doomforge_quench', name: 'Doom Quenching', max: 10, cost: l => ({ gold: 3.2e9 * Math.pow(3, l), stone: 150000 * Math.pow(2.2, l), mana: 120000 * Math.pow(2, l) }),
+      info: 'Doom Forges +20% production, Reapers +10% damage and Tower hits +1% per level.' },
+  ],
+  beatfoundry: [
+    { id: 'beat_calibration', name: 'Beat Calibration', max: 10, cost: l => ({ gold: 4.8e9 * Math.pow(3, l), stone: 200000 * Math.pow(2.2, l), mana: 170000 * Math.pow(2, l) }),
+      info: 'Beat Foundries +20% production and Tower notes are larger/slower per level.' },
+  ],
+  reapercloister: [
+    { id: 'reaper_litany', name: 'Litany of Endings', max: 10, cost: l => ({ gold: 7.5e9 * Math.pow(3, l), mana: 220000 * Math.pow(2, l) }),
+      info: 'Reaper Cloisters +20% production and Doomforged Reapers +10% damage per level.' },
+  ],
+  bloodtreasury: [
+    { id: 'blood_vaults', name: 'Scarlet Vaults', max: 10, cost: l => ({ gold: 1.05e10 * Math.pow(3, l), stone: 280000 * Math.pow(2.2, l), mana: 220000 * Math.pow(2, l) }),
+      info: 'Blood Treasuries +20% gold and Tower rewards +5% per level.' },
+  ],
+  nightmetronome: [
+    { id: 'metronome_mercy', name: 'Merciful Tempo', max: 10, cost: l => ({ gold: 1.5e10 * Math.pow(3, l), mana: 360000 * Math.pow(2, l) }),
+      info: 'Night Metronomes +20% Mana, Tower misses hurt less and night click/Reaper power rises.' },
+  ],
+  tidebreaker: [
+    { id: 'tidebreaker_cranes', name: 'Tidal Cranes', max: 10, cost: l => ({ gold: 5.4e9 * Math.pow(3, l), wood: 190000 * Math.pow(2.2, l), stone: 130000 * Math.pow(2.2, l) }),
+      info: 'Tidebreaker Docks +20% production and chest Wood/Stone rewards +5% per level.' },
+  ],
+  pearlexchange: [
+    { id: 'pearl_ledgers', name: 'Mother-of-Pearl Ledgers', max: 10, cost: l => ({ gold: 7.4e9 * Math.pow(3, l), mana: 170000 * Math.pow(2, l) }),
+      info: 'Pearl Exchanges +20% gold and all gold +1% per level.' },
+  ],
+  abyssalvault: [
+    { id: 'abyssal_index', name: 'Abyssal Index', max: 10, cost: l => ({ gold: 1.1e10 * Math.pow(3, l), stone: 300000 * Math.pow(2.2, l), mana: 220000 * Math.pow(2, l) }),
+      info: 'Abyssal Vaults +20% production, item drops +2% and passive item printing +10% per level.' },
+  ],
+  moonpool: [
+    { id: 'moonpool_tides', name: 'Lunar Undertow', max: 10, cost: l => ({ gold: 1.5e10 * Math.pow(3, l), mana: 320000 * Math.pow(2, l) }),
+      info: 'Moonpools +20% Mana and night item-drop bonuses +3% per level.' },
+  ],
+  leviathannest: [
+    { id: 'leviathan_lullaby', name: 'Abyssal Lullaby', max: 10, cost: l => ({ gold: 2.1e10 * Math.pow(3, l), wood: 350000 * Math.pow(2.2, l), mana: 420000 * Math.pow(2, l) }),
+      info: 'Leviathan Nurseries +20% production and Drowned Leviathan +10% damage per level.' },
   ],
 };
 
@@ -696,6 +808,14 @@ const BUILDING_PLOT = {
   mint: [44, 82], groves: [36, 76], beekeeper: [54, 76], winery: [38, 90], druid: [54, 90],
   /* Harvest (3,3): 96..127 x 72..95 */
   granary: [100, 76], crystalmine: [120, 76], worldtree: [110, 84], bank: [100, 90], wonder: [118, 92],
+  /* Riftgate (2,0): 64..95 x 0..23 */
+  riftbeacon: [72, 10], riftapothecary: [88, 10], voidmarket: [68, 18], echoarsenal: [92, 18], reliquarypress: [84, 21],
+  /* Spirewatch (0,2): 0..31 x 48..71 */
+  skyhookyard: [12, 54], wayhouse: [24, 54], crownarchive: [18, 49], cloudfoundry: [12, 66], dawnprism: [24, 66],
+  /* Doomgate (2,4): 64..95 x 96..119 */
+  doomforge: [72, 102], beatfoundry: [88, 102], nightmetronome: [82, 107], reapercloister: [70, 112], bloodtreasury: [90, 112],
+  /* Sunken (4,2): 128..159 x 48..71 */
+  tidebreaker: [145, 54], pearlexchange: [156, 54], leviathannest: [132, 64], abyssalvault: [144, 66], moonpool: [154, 66],
 };
 
 const PLOTS = {};
@@ -722,10 +842,16 @@ const SAT_KINDS = {
   quarry: 'rocks', stonecutter: 'rocks', deepmine: 'rocks',
   crystalmine: 'crystal', manawell: 'crystal', magetower: 'crystal', academy: 'crystal',
   enchanter: 'crystal', scriptorium: 'crystal', alchemist: 'crystal', druid: 'crystal',
-  observatory: 'crystal', worldtree: 'crystal',
+  observatory: 'crystal', worldtree: 'crystal', riftbeacon: 'crystal', riftapothecary: 'crystal',
+  reliquarypress: 'crystal', skyhookyard: 'crystal', cloudfoundry: 'crystal', dawnprism: 'crystal',
+  crownarchive: 'crystal', nightmetronome: 'crystal', abyssalvault: 'crystal', moonpool: 'crystal',
   library: 'garden', temple: 'garden', monastery: 'garden', cathedral: 'garden', shrine: 'garden',
+  wayhouse: 'garden', reapercloister: 'garden',
   beekeeper: 'hives',
   keep: 'banner', barracks: 'banner', armory: 'banner', warcollege: 'banner', wonder: 'banner',
+  echoarsenal: 'banner', doomforge: 'banner', beatfoundry: 'banner', bloodtreasury: 'banner',
+  leviathannest: 'crystal',
+  tidebreaker: 'crates', voidmarket: 'crates', pearlexchange: 'crates',
   /* everything else (trade & industry) defaults to crates */
 };
 const SAT_OFFSETS = [[-2, 0], [2, 0], [0, 2], [-2, 2], [2, 2], [-1, -2], [2, -2], [-3, 1]];
@@ -1025,6 +1151,7 @@ const PRESTIGE_TREE = (() => {
   n('warg2', 4, 'war', 1, 'Golden Legions', 'Archer & Ballista damage x2.');
   n('xtow3', 4, 'war', 1, 'Resonant Blade', 'TOWER OF DOOM: every floor drops an item, and PERFECT hits deal x5 damage.', { req: 'xtow2', side: -1 });
   n('xreap1', 4, 'war', 1, 'Legion of Doom', 'WARD UNIT: Doomforged Reaper damage x2.', { req: 'xtow3', side: -1 });
+  n('xtow4', 4, 'war', 1, 'Doomworks', 'DOOMGATE BUILDINGS: Tower timing, reward and Reaper bonuses are 50% stronger.', { req: 'xreap1', side: -1 });
   n('warg3', 4, 'war', 2, 'Champion of Gold', 'Click damage x2.', { req: ['warg2', 'xwar4'] });
   n('xwar12', 4, 'war', 2, 'Cavalier Banners', 'Knight & Valkyrie damage +75%.', { req: 'warg2', side: 1 });
   n('prosg1', 4, 'pros', 0, 'Gold Standard', 'ALL gold x1.5.');
@@ -1078,11 +1205,13 @@ const PRESTIGE_TREE = (() => {
   n('fors1', 5, 'for', 0, 'Storm Salvage', '20% of item drops come TWO tiers higher.');
   n('fors2', 5, 'for', 1, 'Twin Drops', 'Item drops have a 25% chance to be doubled.');
   n('xrift4', 5, 'for', 1, "Alchemist's Favor", 'RIFT PORTAL: potion drop chances from victories are DOUBLED.', { req: 'xrift3', side: -1 });
+  n('xrift5', 5, 'for', 1, 'Rift Infrastructure', 'RIFTGATE BUILDINGS: Portal reward, supply-brewing and item-printing bonuses are 50% stronger.', { req: 'xrift4', side: -1 });
   n('xfor5', 5, 'for', 1, 'Lightning Luck', 'The night item-drop bonus is another +50% stronger.', { req: 'fors2', side: 1 });
   n('fors3', 5, 'for', 2, 'Tempered Affixes', 'Affixes carry FULL value (100%).');
   n('myss1', 5, 'mys', 0, 'Storm Mana', 'Mana production x2.');
   n('myss2', 5, 'mys', 1, 'Maelstrom', 'Mage damage x2.');
   n('xmys5', 5, 'mys', 1, 'Charged Air', 'Mana production +3% per Zone reached this run.', { req: 'myss2', side: 1 });
+  n('xdeep1', 5, 'mys', 1, 'Abyssal Holdings', 'SUNKEN BUILDINGS: production from the sealed ward gains +5% per Ascension (cap +250%).', { req: 'xlev1', side: 1 });
   n('xmys8', 5, 'mys', 2, 'Long Dusk', 'The day\'s gold bonus LINGERS through the first 60s of every night.', { req: 'xmys5', side: 1 });
   n('myss3', 5, 'mys', 2, "Night's Embrace", 'Night bounty AND night drop bonuses +50% stronger.');
   n('inds1', 5, 'ind', 0, 'Storm Engines', 'ALL production +25%.');
@@ -1097,13 +1226,14 @@ const PRESTIGE_TREE = (() => {
   n('spirits1', 5, 'spirit', 0, 'Geist Storm', 'Spirit Hands click +6 more times per second.');
   n('spirits2', 5, 'spirit', 1, 'Spirit Avatar', 'Each spirit click also deals +10% of your idle DPS.');
   n('xspire4', 5, 'spirit', 1, 'Gilded Crown', 'SILVER SPIRE: the Crown\'s blessing becomes GOLD x3 (instead of x2).', { req: 'xspire3', side: -1 });
+  n('xspire5', 5, 'spirit', 1, 'Spireworks', 'SPIREWATCH BUILDINGS: launch power, waystones and Seraph bonuses are 50% stronger.', { req: 'xspire4', side: -1 });
   n('xspirit5', 5, 'spirit', 1, 'Spirit Lanterns', 'Ghost-lights line the streets: +25% ALL gold at NIGHT.', { req: 'spirits2', side: 1 });
   n('spirits3', 5, 'spirit', 2, 'Deathless Vigil', 'Spirit crit chance +15% (absolute).');
   n('auto13', 5, 'auto', 0, 'The Brass Steward', 'TOGGLE: automatically buys BUILDING UPGRADES (cheapest first) every 5s.');
   n('auto14', 5, 'auto', 1, 'The Iron Quartermaster', 'TOGGLE: automatically buys UNIT UPGRADES (cheapest first) every 5s.');
   n('auto15', 5, 'auto', 2, 'The Clockwork Architect', 'TOGGLE: automatically builds the cheapest BUILDINGS every 5s.');
-  n('xauto1', 5, 'auto', 2, 'Fast Foremen', 'AUTO BUILD runs every 2s instead of every 5s.', { req: 'auto15', side: -1 });
-  n('xauto2', 5, 'auto', 2, 'Instant Blueprints', 'AUTO BUILD runs every 1s.', { req: 'xauto1', side: 1 });
+  n('xauto1', 5, 'auto', 2, 'Fast Foremen', 'AUTO BUILD works continuously at up to 7.5 buildings per second.', { req: 'auto15', side: -1 });
+  n('xauto2', 5, 'auto', 2, 'Instant Blueprints', 'AUTO BUILD works continuously at up to 50 buildings per second.', { req: 'xauto1', side: 1 });
 
   /* ===== GATE + ERA 6 — AGE OF AETHER ===== */
   gate('era6', 6, 'Age of Aether', '+150% ALL gold. The kingsroads glow with aether. The final ring.');
@@ -1132,6 +1262,7 @@ const PRESTIGE_TREE = (() => {
   n('crown16', 6, 'crown', 0, 'Apotheosis', 'MASTER: another +5% ALL production & bounties per Sigil ever earned.');
   n('xcrown6', 6, 'crown', 0, 'Throne of Ages', '+1% ALL production & bounties per Advancement node owned.', { req: 'crown16', side: 1 });
   n('xcrown7', 6, 'crown', 1, 'Coronation Largesse', 'Every Ascension grants +1 BONUS Sigil per Era gate owned.', { req: 'xcrown6', side: 1 });
+  n('xward2', 6, 'crown', 1, 'Outer Works Mandate', 'OUTER-WARD building upgrade levels grant +0.25% ALL production & bounties each.', { req: 'xward1', side: -1 });
   n('crown17', 6, 'crown', 1, 'The Crown Remembers', 'Carry 1% of your Gold through each Ascension.');
   n('crown18', 6, 'crown', 2, 'Sovereign of Ages', 'ALL production & bounties x2.', { req: ['crown17', 'xcrown6'] });
   n('spirita1', 6, 'spirit', 0, 'Legion Eternal', 'Spirit Hands click rate DOUBLED.');
@@ -1141,7 +1272,8 @@ const PRESTIGE_TREE = (() => {
   n('auto16', 6, 'auto', 0, 'The Arcane Vizier', 'TOGGLE: automatically learns ARCANE SKILLS the moment you can afford them.');
   n('auto17', 6, 'auto', 1, 'The Phantom Smith', 'TOGGLE: automatically FORGES your whole bag every 10s.');
   n('auto19', 6, 'auto', 1, 'The Fusion Loom', 'TOGGLE: automatically FUSES compatible affixed items every 10s.', { req: 'auto17', side: 1 });
-  n('auto18', 6, 'auto', 2, 'The Grand Automaton', 'All automatons work EVERY SECOND, and ALL production +25%.');
+  n('auto18', 6, 'auto', 2, 'The other automatons work EVERY SECOND, AUTO BUILD works continuously at up to 100 buildings per second, and ALL production +25%.');
+  n('auto20', 6, 'auto', 2, 'Crown Planner', 'ASCENSION: unlocks BUY ALL NODES, buying the cheapest available Advancement nodes first.', { req: 'auto18', side: 1 });
 
   return T;
 })();

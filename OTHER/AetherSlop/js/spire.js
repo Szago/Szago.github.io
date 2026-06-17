@@ -55,9 +55,16 @@ function spVcap() {
   let v = SPIRE_VCAP;
   if (hasTree('xspire1')) v *= 1.1; // Featherweight
   if (hasTree('xspire3')) v *= 1.1; // Zephyr Crown
+  v *= 1 + Math.min(0.35, (0.003 * bCount('skyhookyard') + 0.015 * bUp('skyhook_tension')) * spireWorksMult());
   return v;
 }
 function spCrownMult() { return hasTree('xspire4') ? 3 : 2; } // Gilded Crown
+
+function spWaystoneStep() {
+  if (!hasTree('xspire2') && !bCount('wayhouse')) return 0;
+  const base = hasTree('xspire2') ? 50 : 90;
+  return Math.max(30, base - (0.25 * bCount('wayhouse') + 2 * bUp('wayhouse_feathers')) * spireWorksMult());
+}
 
 /* ---------------- the map (deterministic for everyone) ---------------- */
 
@@ -168,9 +175,10 @@ function buildSpireWorld() {
     world.appendChild(el);
   }
   /* Angelic Waystones: dashed save lines every 50m */
-  if (hasTree('xspire2')) {
+  const wayStep = spWaystoneStep();
+  if (wayStep) {
     const total = spireTotalM();
-    for (let alt = 50; alt < total; alt += 50) {
+    for (let alt = wayStep; alt < total; alt += wayStep) {
       const wy = SPIRE_H - 24 - SPIRE_PH - alt * SPIRE_PXM;
       const way = document.createElement('div');
       way.className = 'sp-way';
@@ -265,9 +273,10 @@ function spLand(ny) {
   sp.grounded = true;
   const gained = sp.jumpY - ny;
   if (gained < -500) {
-    /* Angelic Waystones: a long fall stops at the last 50m line you passed */
-    if (hasTree('xspire2')) {
-      const wayAlt = Math.floor(spireAltM(sp.jumpY) / 50) * 50;
+    /* Angelic Waystones: a long fall stops at the last line you passed */
+    const wayStep = spWaystoneStep();
+    if (wayStep) {
+      const wayAlt = Math.floor(spireAltM(sp.jumpY) / wayStep) * wayStep;
       if (wayAlt > 0 && spireAltM(ny) < wayAlt) {
         const p = spWaystonePlat(wayAlt);
         if (p) {

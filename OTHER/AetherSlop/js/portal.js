@@ -154,6 +154,24 @@ function portalUnitPower(uid) {
   return Math.max(1, C ? unitDpsValue(uid) : 1);
 }
 
+function portalCityHpMult() {
+  return 1 + (0.01 * bCount('riftbeacon') + 0.02 * bUp('riftbeacon_lenses')) * riftWorksMult();
+}
+
+function portalCityDmgMult(role) {
+  let m = 1 + (0.01 * bCount('riftbeacon') + 0.02 * bUp('riftbeacon_lenses')) * riftWorksMult();
+  if (role === 'fighter') m *= 1 + (0.02 * bCount('echoarsenal') + 0.03 * bUp('echoarsenal_edges')) * riftWorksMult();
+  return m;
+}
+
+function portalRewardMult() {
+  return 1 + (0.02 * bCount('voidmarket') + 0.05 * bUp('voidmarket_contracts')) * riftWorksMult();
+}
+
+function portalPotionBonus() {
+  return (0.005 * bCount('riftapothecary') + 0.03 * bUp('riftapoth_favor')) * riftWorksMult();
+}
+
 function portalUnitStats(uid) {
   const role = PORTAL_UNIT_ROLE[uid];
   const r = PORTAL_ROLES[role];
@@ -165,8 +183,8 @@ function portalUnitStats(uid) {
   const P = portalUnitPower(uid);
   return {
     role,
-    hp: Math.ceil(P * r.hpM * perm * cardHp * banners),
-    dmg: Math.max(1, P * r.dmgM * perm * cardDmg * banners),
+    hp: Math.ceil(P * r.hpM * perm * cardHp * banners * portalCityHpMult()),
+    dmg: Math.max(1, P * r.dmgM * perm * cardDmg * banners * portalCityDmgMult(role)),
     spd: r.spd,
   };
 }
@@ -241,8 +259,8 @@ function showPortalScreen(name) {
   for (const id of ['portal-lobby', 'portal-battle', 'portal-result', 'portal-cards'])
     $(id).classList.toggle('hidden', id !== 'portal-' + name);
   const p = state.portal;
-  $('portal-title').textContent = 'THE RIFT PORTAL — STAGE ' + portalStageN() +
-    (p.best > 0 ? '  (BEST: ' + p.best + ')' : '');
+  $('portal-title').textContent = 'THE RIFT PORTAL — STAGE ' + fmt(portalStageN()) +
+    (p.best > 0 ? '  (BEST: ' + fmt(p.best) + ')' : '');
   if (name === 'lobby') renderPortalLobby();
 }
 
@@ -304,7 +322,7 @@ function renderPortalLobby() {
   /* --- the battlefield: your 2x2 slots vs their 2x2 positions --- */
   const secF = document.createElement('div');
   secF.className = 'pl-section';
-  secF.innerHTML = '<div class="pl-head">THE BATTLEFIELD — <b>STAGE ' + stageN + '</b>' +
+  secF.innerHTML = '<div class="pl-head">THE BATTLEFIELD — <b>STAGE ' + fmt(stageN) + '</b>' +
     (bossStage ? ' <b style="color:var(--hp)">BOSS STAGE!</b>' : '') +
     ' — drag your units into position</div>';
   const field = document.createElement('div');
@@ -518,7 +536,7 @@ function renderPortalLobby() {
     const el = document.createElement('div');
     el.className = 'pl-pot';
     el.title = PORTAL_POTS[k].desc;
-    el.innerHTML = PORTAL_POTS[k].name + ': <b>' + (p.pots[k] || 0) + '</b>';
+    el.innerHTML = PORTAL_POTS[k].name + ': <b>' + fmt(p.pots[k] || 0) + '</b>';
     pots.appendChild(el);
   }
   if (p.pots.energy > 0 || p.flaskArmed) {
@@ -539,7 +557,7 @@ function renderPortalLobby() {
     const el = document.createElement('div');
     el.className = 'pl-pot';
     el.title = card.desc;
-    el.innerHTML = '🃏 ' + card.name + (cardCounts[id] > 1 ? ' <b>x' + cardCounts[id] + '</b>' : '');
+    el.innerHTML = '🃏 ' + card.name + (cardCounts[id] > 1 ? ' <b>x' + fmt(cardCounts[id]) + '</b>' : '');
     pots.appendChild(el);
   }
   secP.appendChild(pots);
@@ -628,7 +646,7 @@ function portalStartBattle() {
 }
 
 function buildBattleDom() {
-  $('pb-stagebar').textContent = 'STAGE ' + portalStageN() + ' — THE RIFT';
+  $('pb-stagebar').textContent = 'STAGE ' + fmt(portalStageN()) + ' — THE RIFT';
   $('pb-foot').innerHTML = 'Closing the portal mid-fight counts as <b>DEFEAT</b>!';
   for (const [holder, team, frontCol] of [
     [$('pb-allies'), battle.allies, 2],   // allies face right: front = right column
@@ -870,7 +888,7 @@ function portalWin() {
   const lines = [];
   const g = Math.pow(ZONE_GOLD_GROWTH, stageN - 1);
   const goldGain = 6 * g * 25 * (C ? C.killMult : 1) * (1 + 0.25 * portalCardCount('c_gold')) * (bossStage ? 3 : 1) *
-    (hasTree('xrift2') ? 1.5 : 1); // Rift Plunder
+    (hasTree('xrift2') ? 1.5 : 1) * portalRewardMult(); // Rift Plunder
   earnGold(goldGain);
   lines.push('<span class="gold">+' + fmt(goldGain) + ' Gold</span>');
 
@@ -882,7 +900,7 @@ function portalWin() {
   }
 
   const dropC = Math.min(0.95, (bossStage ? 1 : 0.4) * (C ? C.dropMult : 1) * (1 + 0.20 * portalCardCount('c_drop')) *
-    (hasTree('xrift2') ? 1.25 : 1)); // Rift Plunder
+    (hasTree('xrift2') ? 1.25 : 1) * (1 + (0.01 * bCount('reliquarypress') + 0.02 * bUp('reliq_imprint')) * riftWorksMult())); // Rift Plunder
   if (Math.random() < dropC) {
     const d = rollDrop();
     invAdd(d.t, d.tier, 1, d.a);
@@ -893,6 +911,7 @@ function portalWin() {
   /* consumable drops — the Rift's real prize */
   const potRoll = (chance, key) => {
     if (hasTree('xrift4')) chance = Math.min(1, chance * 2); // Alchemist's Favor
+    chance = Math.min(1, chance + portalPotionBonus());
     if (Math.random() >= chance) return;
     p.pots[key]++;
     lines.push('<span class="item">🧪 ' + PORTAL_POTS[key].name + '</span> <span class="dim">— ' + PORTAL_POTS[key].desc + '</span>');
@@ -1021,7 +1040,7 @@ function makePortalGate() {
   el.id = 'portal-gate';
   el.style.left = ((tx + 0.5) / MAP_W * 100) + '%';
   el.style.top = ((ty + 1) / MAP_H * 100) + '%';
-  el.title = 'The Rift Portal — enter the arena! (Stage ' + portalStageN() + ')';
+  el.title = 'The Rift Portal — enter the arena! (Stage ' + fmt(portalStageN()) + ')';
   el.appendChild(spriteCanvas('portal', 3));
   el.onclick = (ev) => {
     ev.stopPropagation();
