@@ -5,6 +5,19 @@
    the renderer treats missing cells as transparent.
    ============================================================ */
 
+/* Raster sprites can coexist with the programmatic atlas. Display widths are
+   keyed by the scale values already used by City Defense, Portal and Tower. */
+const RASTER_SPRITES = {
+  starmaiden: {
+    src: 'assets/enemies/celestine-starblade.png',
+    display: { 4: 112, 6: 176, 9: 221 },
+  },
+  riftwitch: {
+    src: 'assets/enemies/kurohana-rift-witch.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+  },
+};
+
 const SPRITES = {
 
   /* ---------------- BUILDINGS (16-wide-ish) ---------------- */
@@ -295,6 +308,359 @@ const SPRITES = {
       '....rrroyorr....',
       '...rRr.oo.rRr...',
       '...rr......rr...',
+    ],
+  },
+
+  /* additional monsters and bosses */
+  wolf: {
+    pal: { d: '#4b5360', D: '#2c3038', k: '#11151a', w: '#c9d0d8', y: '#ffd23e' },
+    rows: [
+      '..d.........d...',
+      '.ddd.......ddd..',
+      '.ddddddddddddd..',
+      '..ddydddddydd...',
+      '..ddddkdddddd...',
+      '.DDddddddddDD...',
+      'ddd.dddddd.ddd..',
+      '..dd......dd....',
+      '.dd........dd...',
+    ],
+  },
+
+  spider: {
+    pal: { p: '#684079', P: '#3b2447', k: '#161019', r: '#ff5050' },
+    rows: [
+      'p...p......p...p',
+      '.p..pp....pp..p.',
+      '..p.PppppppP.p..',
+      '...ppprrppp.....',
+      '..ppppkkpppp....',
+      '.p..PppppP..p...',
+      'p..p.pppp.p..p..',
+      '..p........p....',
+    ],
+  },
+
+  wraith: {
+    pal: { c: '#88d8e8', C: '#477b91', w: '#d9fbff', k: '#17272d', p: '#6f4e91' },
+    rows: [
+      '.....cccc.......',
+      '...ccwwwwcc.....',
+      '..ccwkwkwccc....',
+      '..cccccccccc....',
+      '...ccCppCcc.....',
+      '..ccCccccCcc....',
+      '.ccC.cccc.Ccc...',
+      '..C..c..c..C....',
+      '.....c..c.......',
+    ],
+  },
+
+  mushroom: {
+    pal: { r: '#b93e57', R: '#76283a', w: '#f4d9c4', k: '#32202a', b: '#96704d' },
+    rows: [
+      '....rrrrrr......',
+      '..rrwrrwrrrr....',
+      '.rrrrrrrrrrrrr...',
+      'rrRrrRrrRrrRrr..',
+      '...wwwwwwww.....',
+      '....wkwkw.......',
+      '...wwwwwww......',
+      '..bwwwbwwwb.....',
+      '..bb.....bb.....',
+    ],
+  },
+
+  lizard: {
+    pal: { g: '#4f9b63', G: '#2f6542', k: '#122519', y: '#f3cf4d', b: '#765433' },
+    rows: [
+      '..........gg....',
+      '..ggggggggggg...',
+      '.ggyggggggkgg...',
+      '..gggggggggg....',
+      '...GGggGGgg..b..',
+      '..ggggggggg.bb..',
+      '.gg.ggggg.gg.b..',
+      '...gg....gg.....',
+      '..gg......gg....',
+    ],
+  },
+
+  cultist: {
+    pal: { p: '#713b7e', P: '#44234d', k: '#171019', r: '#e34c55', s: '#a8adb8' },
+    rows: [
+      '.....pppp.......',
+      '....pPPPPp......',
+      '...ppkkkkpp.....',
+      '...ppkrkkpp.....',
+      '..pppppppppp.s..',
+      '..pPppppppPp.ss.',
+      '.ppPppppppPpp.s.',
+      '...pp....pp...s.',
+      '..pp......pp....',
+    ],
+  },
+
+  mimic: {
+    pal: { b: '#9a6234', B: '#5f3b22', y: '#d6aa3b', k: '#1a1010', r: '#d74444', W: '#f2ead8' },
+    rows: [
+      '..bbbbbbbbbbbb..',
+      '.bByyyyyyyyyBb..',
+      '.bbBbbbbbbBbbb..',
+      '.bbkbbkkbbkbbb..',
+      '.brrrrrrrrrrrb..',
+      '.brWrWrWrWrWrb..',
+      '.brrrrrrrrrrrb..',
+      '..BBb......bBB..',
+      '.bbb........bbb.',
+    ],
+  },
+
+  harpy: {
+    pal: { b: '#9a693f', B: '#60432c', f: '#e8b98f', k: '#251c18', y: '#ffd23e' },
+    rows: [
+      'b............b..',
+      'bbb....BB....bbb',
+      '.bbbb.BffB.bbbb.',
+      '..bb..fkyf..bb..',
+      '...bbbffffbbb....',
+      '..bb.bffffb.bb...',
+      '.bb...BffB...bb..',
+      '.....bb..bb......',
+      '....by....yb.....',
+    ],
+  },
+
+  scorpion: {
+    pal: { o: '#bb6238', O: '#763b27', k: '#24130e', y: '#ffd23e', s: '#c6b7a6' },
+    rows: [
+      '...........OOo..',
+      '............Ooo.',
+      '..oo......OOoo..',
+      '.oOOooooooOOo...',
+      'oOOoyoooooyOOo..',
+      '.ooookkkooooo...',
+      'o..oo....oo..o..',
+      '..oo......oo....',
+      '.ss........ss...',
+    ],
+  },
+
+  frostling: {
+    pal: { c: '#73cbe8', C: '#397b9c', w: '#e8fbff', k: '#173142', p: '#7958a5' },
+    rows: [
+      '..c..........c..',
+      '...c..cccc..c...',
+      '....ccwwwwcc....',
+      '...ccwkwkwcc....',
+      '..CccccccccC....',
+      '..CCcppppcCC....',
+      '.CCccppppccCC...',
+      '...cc....cc.....',
+      '..cc......cc....',
+    ],
+  },
+
+  treant: {
+    pal: { b: '#6e472b', B: '#432c1d', g: '#4f8b3d', G: '#2f5d2a', y: '#e7c84d' },
+    rows: [
+      'ggg....ggg......',
+      '.ggg..ggg.......',
+      '..gggggg........',
+      '..gbbbbbg.......',
+      '.gbbybbybbg.....',
+      'ggbbbbbbbbgg....',
+      '..bBbbbbBb......',
+      '..bb....bb......',
+      '.bbb....bbb.....',
+    ],
+  },
+
+  watcher: {
+    pal: { p: '#9757b5', P: '#59346e', w: '#f4e8ff', k: '#22132a', r: '#ff4d6d' },
+    rows: [
+      '.....pppp.......',
+      '...ppPPPPpp.....',
+      '..pppwwwwppp....',
+      '.pppwrrrrwppp...',
+      '..ppwrkkkrwpp...',
+      '...pwwrrwwp.....',
+      '..PPppppppPP....',
+      '.P..pp..pp..P...',
+      '....p....p......',
+    ],
+  },
+
+  hydra: {
+    pal: { g: '#477d4a', G: '#294d31', y: '#ffd23e', r: '#d34a45' },
+    rows: [
+      '..gg...gg...gg..',
+      '.gygg.ggyg.ggyg.',
+      '.ggg...gg...ggg.',
+      '..ggg.ggg.ggg...',
+      '...ggggggggg....',
+      '..GGgggggggGG...',
+      '.GGGggrrrggGGG..',
+      '..gggggggggg....',
+      '.ggg..gg..ggg...',
+      '.gg...gg...gg...',
+    ],
+  },
+
+  lich: {
+    pal: { p: '#71458e', P: '#3f2855', W: '#e8e4d4', k: '#17121d', c: '#63d6df', y: '#ffd23e' },
+    rows: [
+      '.....yyyy.......',
+      '...yyWyyWyy.....',
+      '....WWWWW.......',
+      '....WkWkW...c...',
+      '...ppWWWpp..ccc.',
+      '..pPpppppPp..c..',
+      '.pPpppppppPp.c..',
+      '...pp....pp..c..',
+      '..pp......pp.c..',
+    ],
+  },
+
+  titan: {
+    pal: { b: '#6b4b35', B: '#3e2d24', g: '#557d3b', G: '#334e2b', y: '#f0ca4d' },
+    rows: [
+      '..gggggggggg....',
+      '.ggGggggggGgg...',
+      '.gggyggggyg.gg...',
+      '.gggggBBggggg...',
+      'gggBBBbbBBBggg..',
+      'ggBbbbbbbbbBgg..',
+      '.gBbbBbbBbbBg...',
+      '..bbb....bbb....',
+      '.bbbb....bbbb...',
+    ],
+  },
+
+  kraken: {
+    pal: { p: '#73519a', P: '#402e5c', c: '#4db6c7', C: '#2d7180', k: '#171425', y: '#ffd23e' },
+    rows: [
+      '....pppppp......',
+      '..ppPPppPPpp....',
+      '.ppyppppppypp...',
+      '.pppppkkppppp...',
+      '..pppppppppp....',
+      '.cCcppppppcCc...',
+      'cCcc.pppp.ccCc..',
+      '.cc..c..c..cc...',
+      'c...cc..cc...c..',
+    ],
+  },
+
+  phoenix: {
+    pal: { r: '#d84a35', R: '#8c2c24', o: '#ff8c2e', y: '#ffd23e', Y: '#fff0a0', k: '#32130d' },
+    rows: [
+      'r......yy......r',
+      'rr...yyyyyy...rr',
+      '.rr.oyoYYoyo.rr.',
+      '..rroyyyyyorr...',
+      '...rrykykrr.....',
+      '..rrroyyorrr....',
+      '.rr..ryyr..rr...',
+      'r...rr..rr...r..',
+      '...oo....oo.....',
+    ],
+  },
+
+  voidlord: {
+    pal: { k: '#15101f', K: '#28203b', p: '#7845a1', P: '#b45cff', r: '#ff4568', s: '#aeb4c2' },
+    rows: [
+      '....KkKKkK......',
+      '...KkkkkkkK.....',
+      '..KkPkkkkPkK....',
+      '..KkkkrrkkkkK...',
+      '.KkkkKkkKkkkkK..',
+      '.KkKkkkkkkkkKk..',
+      '..KkkKppKkkK....',
+      '..sssKkkKsss....',
+      '.ss..K..K..ss...',
+    ],
+  },
+
+  starmaiden: {
+    pal: {
+      k: '#2b2030', K: '#4a354f',
+      y: '#e9ad38', Y: '#ffe887', h: '#fff6bd',
+      f: '#eeb58f', F: '#ffd5ad', r: '#d86c82',
+      e: '#65d9ff', E: '#287fb7',
+      w: '#f8f4ff', W: '#c9cce9',
+      b: '#537edf', B: '#294b92', n: '#172c61',
+      p: '#e878c4', P: '#9d4f9b',
+      s: '#dce7f5', S: '#788ba8',
+    },
+    rows: [
+      '.........yy.............',
+      '.......yyYYyy...........',
+      '......yYhYYhYy..........',
+      '.....yYyyyyyyYy.........',
+      '.....yyFFFFFyyy.........',
+      '....yyFkeFekFyy.........',
+      '....yyFFrFFfFyy.........',
+      '.....yFfffffFy..........',
+      '......kkfffkk...........',
+      '......wwkkkww......s....',
+      '.....wWwbbbwwW....ss....',
+      '....wwBbbbbBwww..sSs....',
+      '...ppwBbwPwbBwp..sSs....',
+      '..pPPwbbbbbbbwPp.sSs....',
+      '..pPwwbBbbBbbwwp.sSs....',
+      '...wwbbbppbbbww..sSs....',
+      '....wbbbbbbbbw...sSs....',
+      '....WbbBbbBbbW...sSs....',
+      '.....bbBbbBbb....sSs....',
+      '.....bBBbbBBb....sSs....',
+      '....bbBbbbbBbb...sSs....',
+      '...wwWBb..bBWww..sSs....',
+      '..wwWWW....WWWww.sSs....',
+      '....BB......BB...sSs....',
+      '...BBB......BBB..sSs....',
+      '..nnn........nnn.sss....',
+    ],
+  },
+
+  riftwitch: {
+    pal: {
+      k: '#17111f', K: '#31203d',
+      v: '#7141a0', V: '#3b235c', q: '#ad63d1',
+      f: '#eeb08e', F: '#ffd0aa', r: '#cf607a',
+      e: '#ef73e8', E: '#8e3dad',
+      p: '#d85aad', P: '#7e357c',
+      c: '#63dbe8', C: '#258a9f', a: '#c8fbff',
+      w: '#f4ecff', W: '#aaa0c7',
+      g: '#41364e', G: '#211a29',
+    },
+    rows: [
+      '...vv........vv.........',
+      '....vvv....vvv..........',
+      '.....vVvvvvVv...........',
+      '....vVVVvvVVVv..........',
+      '...vVvFFFFFFvVv.........',
+      '...vvFkeFekFvv..........',
+      '..vVvFFrFFFfvVv.........',
+      '..vvvFfffffFvvv.........',
+      '..vVVkkfffkkVVv....c....',
+      '..vvvppkkkppvv....ccc...',
+      '.vvvPpppppppPvv..cCaCc..',
+      'vvVVppvpppvppVVv.ccccc..',
+      'vVVvppvPpPvppvVv..cC....',
+      '.vvppppppppppvv...cC....',
+      '..vppPppppPppv....cC....',
+      '..vvpppqqpppvv....cC....',
+      '...vpppqqpppv.....cC....',
+      '...VppPppPppV.....cC....',
+      '....ppPppPpp......cC....',
+      '...ppPPppPPpp.....cC....',
+      '..gggPp..pPggg....cC....',
+      '.ggGGg....gGGgg...cC....',
+      '..ggg......ggg....cC....',
+      '..GG........GG....cC....',
+      '.GGG........GGG...cC....',
+      'kkk..........kkk..CCC...',
     ],
   },
 
@@ -889,6 +1255,24 @@ function drawSprite(canvas, sprite, scale, palOver) {
 
 /* Convenience: make a fresh canvas element with a sprite drawn on it. */
 function spriteCanvas(spriteName, scale, palOver) {
+  const raster = RASTER_SPRITES[spriteName];
+  if (raster) {
+    const img = document.createElement('img');
+    img.className = 'pix raster-sprite';
+    img.src = raster.src;
+    img.alt = '';
+    img.draggable = false;
+    img.decoding = 'async';
+    img.style.width = (raster.display[scale] || raster.display[4] || 112) + 'px';
+    img.style.height = 'auto';
+    img.onerror = () => {
+      const fallback = document.createElement('canvas');
+      fallback.className = 'pix';
+      drawSprite(fallback, SPRITES[spriteName], scale, palOver);
+      img.replaceWith(fallback);
+    };
+    return img;
+  }
   const c = document.createElement('canvas');
   c.className = 'pix';
   drawSprite(c, SPRITES[spriteName], scale, palOver);

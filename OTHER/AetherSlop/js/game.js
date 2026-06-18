@@ -348,11 +348,11 @@ function softCapValue(raw, cap) {
 function itemDropChance(isBoss) {
   const base = (isBoss ? BOSS_DROP_CHANCE * (hasTree('for6') ? 2 : 1) : DROP_CHANCE) +
     (bUp('alch_phil') ? 0.005 : 0);
-  let chance = base * C.dropMult;
-  if (hasTree('xfor9')) chance *= 1.25;                // Overflowing Fortune
-  if (hasTree('xfor10')) chance *= 1.5;                // Fortune Without End
-  if (isBoss && hasTree('xfor3')) chance = Math.max(1, chance);
-  return chance;
+  let rawChance = base * C.dropMult;
+  if (hasTree('xfor9')) rawChance *= 1.25;             // Overflowing Fortune
+  if (hasTree('xfor10')) rawChance *= 1.5;             // Fortune Without End
+  if (isBoss && hasTree('xfor3')) rawChance = Math.max(1, rawChance);
+  return rawChance <= 1 ? rawChance : 1 + Math.log(rawChance);
 }
 
 function rollItemDropCount(isBoss) {
@@ -2138,7 +2138,9 @@ function spawnMonster() {
   }
   if (C && C.enemyHpMult < 1) m.hp = Math.ceil(m.hp * C.enemyHpMult); // hero aura
   state.monster = { ...m, maxHp: m.hp };
-  drawSprite($('monster-canvas'), SPRITES[m.sprite], 9);
+  const visual = $('monster-visual');
+  visual.innerHTML = '';
+  visual.appendChild(spriteCanvas(m.sprite, 9));
   $('monster-name').textContent = (m.night ? '☽ ' : '') + m.name;
   $('monster-area').classList.toggle('boss', m.isBoss);
   renderPips();
@@ -2776,6 +2778,7 @@ let fuseSel = null;              // {t,tier,a} item armed for Affix Fusion in th
 let viewUpdaters = [];           // per-tick updaters for the open detail/bag
 
 function setRightTab(tab) {
+  if (tab === 'bag' && (rightTab !== 'bag' || currentDetail)) bagVisibleCount = BAG_PAGE_SIZE;
   rightTab = tab;
   currentDetail = null;
   picker = null;
@@ -3282,6 +3285,48 @@ function sectionTitle(parent, text) {
 
 /* ---------------- BAG (inventory) ---------------- */
 
+const BAG_PAGE_SIZE = 20;
+let bagVisibleCount = BAG_PAGE_SIZE;
+let bagEntryCount = 0;
+
+function bagEntryQualityCompare(a, b) {
+  const affixDiff = affixList(b.a).length - affixList(a.a).length;
+  if (affixDiff) return affixDiff;
+  if (b.tier !== a.tier) return b.tier - a.tier;
+  return itemName(a.t, a.tier, a.a).localeCompare(itemName(b.t, b.tier, b.a));
+}
+
+function sortBagEntries(entries) {
+  const groups = new Map();
+  for (const entry of entries) {
+    if (!groups.has(entry.t)) groups.set(entry.t, []);
+    groups.get(entry.t).push(entry);
+  }
+  const orderedGroups = [...groups.entries()]
+    .map(([type, items]) => ({ type, items: items.sort(bagEntryQualityCompare) }))
+    .sort((a, b) => bagEntryQualityCompare(a.items[0], b.items[0]) ||
+      ITEMS[a.type].name.localeCompare(ITEMS[b.type].name));
+  const sorted = [];
+  for (let rank = 0; sorted.length < entries.length; rank++) {
+    for (const group of orderedGroups) {
+      if (group.items[rank]) sorted.push(group.items[rank]);
+    }
+  }
+  return sorted;
+}
+
+function loadMoreBagItems() {
+  if (rightTab !== 'bag' || currentDetail || bagVisibleCount >= bagEntryCount) return;
+  bagVisibleCount = Math.min(bagEntryCount, bagVisibleCount + BAG_PAGE_SIZE);
+  renderBag();
+}
+
+function handleBagScroll() {
+  if (rightTab !== 'bag' || currentDetail) return;
+  const rb = $('right-body');
+  if (rb.scrollHeight - rb.scrollTop - rb.clientHeight < 180) loadMoreBagItems();
+}
+
 function unequipAll() {
   let n = 0;
   for (const uid in state.equip) {
@@ -3384,10 +3429,11 @@ function renderBag() {
   actions.appendChild(unequipBtn);
   list.appendChild(actions);
 
-  const entries = Object.entries(state.inv)
+  const entries = sortBagEntries(Object.entries(state.inv)
     .map(([k, n]) => Object.assign(invParse(k), { n }))
-    .filter(e => e.n > 0)
-    .sort((a, b) => a.t === b.t ? b.tier - a.tier : a.t.localeCompare(b.t));
+    .filter(e => e.n > 0));
+  bagEntryCount = entries.length;
+  bagVisibleCount = Math.min(Math.max(BAG_PAGE_SIZE, bagVisibleCount), bagEntryCount);
   const fusionKeys = hasTree('forg2') ? fusionPartnerKeys(entries) : new Set();
   if (hasTree('forg2') && fusionKeys.size === 0) {
     fuseBtn.disabled = true;
@@ -3421,7 +3467,7 @@ function renderBag() {
     list.appendChild(note);
   }
 
-  for (const e of entries) {
+  for (const e of entries.slice(0, bagVisibleCount)) {
     const def = ITEMS[e.t];
     const affs = affixList(e.a);
     const row = document.createElement('div');
@@ -3500,6 +3546,12 @@ function renderBag() {
       }
     }
     list.appendChild(row);
+  }
+  if (bagVisibleCount < entries.length) {
+    const more = document.createElement('div');
+    more.className = 'bag-load-status';
+    more.textContent = 'Showing ' + fmt(bagVisibleCount) + ' of ' + fmt(entries.length);
+    list.appendChild(more);
   }
   invDirty = false;
   rb.scrollTop = keepScroll;
@@ -4443,6 +4495,54 @@ function debugGrantItems(n) {
   return count;
 }
 
+function debugEnemyPreviewGroup(title, types, boss) {
+  const group = document.createElement('div');
+  group.className = 'debug-enemy-group';
+  const heading = document.createElement('div');
+  heading.className = 'debug-enemy-heading';
+  heading.textContent = title + ' (' + types.length + ')';
+  group.appendChild(heading);
+
+  const grid = document.createElement('div');
+  grid.className = 'debug-enemy-grid';
+  for (const type of types) {
+    const card = document.createElement('div');
+    card.className = 'debug-enemy-card' + (boss ? ' boss' : '');
+    card.title = type.name + ' — sprite: ' + type.sprite +
+      (type.portalRole ? ', Portal role: ' + type.portalRole.toUpperCase() : '');
+
+    const stage = document.createElement('div');
+    stage.className = 'debug-enemy-stage';
+    stage.appendChild(spriteCanvas(type.sprite, 4));
+    card.appendChild(stage);
+
+    const name = document.createElement('div');
+    name.className = 'debug-enemy-name';
+    name.textContent = type.name;
+    card.appendChild(name);
+
+    const meta = document.createElement('div');
+    meta.className = 'debug-enemy-meta';
+    meta.textContent = type.sprite +
+      (type.portalRole ? ' · ' + type.portalRole.toUpperCase() : '');
+    card.appendChild(meta);
+    grid.appendChild(card);
+  }
+  group.appendChild(grid);
+  return group;
+}
+
+function debugEnemyPreviewSection() {
+  const sec = document.createElement('div');
+  sec.className = 'menu-section';
+  sec.innerHTML =
+    '<div class="menu-section-title">ENEMY SPRITE PREVIEW</div>' +
+    '<div class="menu-note">Live preview of the shared enemy pools used by City Defense, the Rift Portal and the Tower of Doom.</div>';
+  sec.appendChild(debugEnemyPreviewGroup('MONSTERS', MONSTER_TYPES, false));
+  sec.appendChild(debugEnemyPreviewGroup('BOSSES', BOSS_TYPES, true));
+  return sec;
+}
+
 function ensurePerformanceOverlay() {
   let panel = $('perf-overlay');
   if (panel) return panel;
@@ -4597,6 +4697,7 @@ function debugRender() {
     '<button id="dbg-pots" class="menu-btn">ADD PORTAL SUPPLIES</button>' +
     '</div>';
   body.appendChild(sec);
+  body.appendChild(debugEnemyPreviewSection());
 
   let renderedSnapshot = null;
   const renderPerf = () => {
@@ -5004,6 +5105,7 @@ function init() {
   $('tab-upgr').onclick = () => setRightTab('upgr');
   $('tab-bag').onclick = () => setRightTab('bag');
   $('tab-auto').onclick = () => setRightTab('auto');
+  $('right-body').addEventListener('scroll', handleBagScroll, { passive: true });
   $('detail-back').onclick = closeDetail;
   initTreePan();
 

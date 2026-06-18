@@ -935,20 +935,47 @@ const ROAMERS = [
 const KILLS_PER_ZONE = 10;
 
 const MONSTER_TYPES = [
-  { sprite: 'slime',    name: 'Gloop Slime' },
-  { sprite: 'bat',      name: 'Cave Bat' },
-  { sprite: 'goblin',   name: 'Goblin Raider' },
-  { sprite: 'skeleton', name: 'Restless Bones' },
-  { sprite: 'orc',      name: 'Orc Marauder' },
-  { sprite: 'imp',      name: 'Ember Imp' },
+  { sprite: 'slime',     name: 'Gloop Slime',       portalRole: 'fighter' },
+  { sprite: 'bat',       name: 'Cave Bat',          portalRole: 'ranged' },
+  { sprite: 'goblin',    name: 'Goblin Raider',     portalRole: 'fighter' },
+  { sprite: 'skeleton',  name: 'Restless Bones',    portalRole: 'ranged' },
+  { sprite: 'orc',       name: 'Orc Marauder',      portalRole: 'fighter' },
+  { sprite: 'imp',       name: 'Ember Imp',         portalRole: 'aoe' },
+  { sprite: 'wolf',      name: 'Duskfang Wolf',     portalRole: 'fighter' },
+  { sprite: 'spider',    name: 'Gloomweb Spider',   portalRole: 'ranged' },
+  { sprite: 'wraith',    name: 'Moorland Wraith',   portalRole: 'aoe' },
+  { sprite: 'mushroom',  name: 'Sporecap Brute',    portalRole: 'fighter' },
+  { sprite: 'lizard',    name: 'Marshscale Hunter', portalRole: 'ranged' },
+  { sprite: 'cultist',   name: 'Ashen Cultist',     portalRole: 'aoe' },
+  { sprite: 'mimic',     name: 'Hungry Mimic',      portalRole: 'fighter' },
+  { sprite: 'harpy',     name: 'Storm Harpy',       portalRole: 'ranged' },
+  { sprite: 'scorpion',  name: 'Cinder Scorpion',   portalRole: 'fighter' },
+  { sprite: 'frostling', name: 'Rimebound Hexer',   portalRole: 'aoe' },
+  { sprite: 'treant',    name: 'Thornbark Ancient', portalRole: 'fighter' },
+  { sprite: 'watcher',   name: 'Rift Watcher',      portalRole: 'ranged' },
 ];
 
 const BOSS_TYPES = [
-  { sprite: 'golem',  name: 'Runic Golem' },
-  { sprite: 'dragon', name: 'Wyrm of the Pass' },
+  { sprite: 'golem',      name: 'Runic Golem',           portalRole: 'fighter' },
+  { sprite: 'dragon',     name: 'Wyrm of the Pass',      portalRole: 'ranged' },
+  { sprite: 'hydra',      name: 'Fen-Crowned Hydra',     portalRole: 'fighter' },
+  { sprite: 'lich',       name: 'The Ossuary King',      portalRole: 'aoe' },
+  { sprite: 'titan',      name: 'Ironroot Colossus',     portalRole: 'fighter' },
+  { sprite: 'kraken',     name: 'Abyssal Manymaw',      portalRole: 'aoe' },
+  { sprite: 'phoenix',    name: 'Sunscar Phoenix',       portalRole: 'ranged' },
+  { sprite: 'voidlord',   name: 'Lord of the Last Door', portalRole: 'aoe' },
+  { sprite: 'starmaiden', name: 'Celestine Starblade',   portalRole: 'ranged' },
+  { sprite: 'riftwitch',  name: 'Kurohana, Rift Witch',  portalRole: 'aoe' },
 ];
 
-const ZONE_NAMES = ['Greenfields', 'Dark Forest', 'Mistmoor', 'Cursed Crypts', 'Ashen Peaks', 'Demon Gate'];
+const ZONE_NAMES = [
+  'Greenfields', 'Dark Forest', 'Mistmoor', 'Cursed Crypts', 'Ashen Peaks', 'Demon Gate',
+  'Moonlit Fen', 'Thornwild', 'Shatterstone Vale', 'Whispering Barrows', 'Frostfang Pass', 'Sunken March',
+  'Witchwood', 'Ember Wastes', 'Stormbreak Coast', 'Hollow Crown', 'Obsidian Reach', 'Starfall Basin',
+  'Grimharbor', 'Silverpine Expanse', 'Blightroot Hollow', 'Crimson Steppe', 'Echoing Chasm', 'Dragonbone Ridge',
+  'Drowned Kingdom', 'Aurora Tundra', 'Gloamspire', 'Riftglass Desert', 'Celestial Ruins', 'Worldscar',
+  'Nightmare Garden', 'Iron Tempest', 'Voidtide Shore', 'Astral Labyrinth', 'Last Horizon', 'Aetherheart',
+];
 
 const ZONE_HP_GROWTH = 1.62;    // monster HP multiplier per zone
 const ZONE_GOLD_GROWTH = 1.14;  // main-zone bounty growth after the opening zones
@@ -957,10 +984,30 @@ const BOSS_HP_MULT = 12;
 const BOSS_GOLD_MULT = 5;
 const ZONE_INCOME_BONUS = 0.02; // city income bonus per zone reached
 
+function romanNumeral(value) {
+  if (!Number.isFinite(value) || value < 1) return '';
+  if (value >= 4000) return 'Cycle ' + Math.floor(value);
+  const numerals = [
+    [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+    [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+    [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+  ];
+  let n = Math.floor(value);
+  let out = '';
+  for (const [amount, glyph] of numerals) {
+    while (n >= amount) {
+      out += glyph;
+      n -= amount;
+    }
+  }
+  return out;
+}
+
 function zoneName(zone) {
-  const base = ZONE_NAMES[(zone - 1) % ZONE_NAMES.length];
-  const loop = Math.floor((zone - 1) / ZONE_NAMES.length);
-  return loop > 0 ? base + ' ' + 'II III IV V VI VII VIII IX X'.split(' ')[loop - 1] : base;
+  const safeZone = Math.max(1, Math.floor(Number(zone) || 1));
+  const base = ZONE_NAMES[(safeZone - 1) % ZONE_NAMES.length];
+  const cycle = Math.floor((safeZone - 1) / ZONE_NAMES.length) + 1;
+  return cycle > 1 ? base + ' ' + romanNumeral(cycle) : base;
 }
 
 function monsterFor(zone, idx) {
@@ -1191,7 +1238,7 @@ const PRESTIGE_TREE = (() => {
   n('xfor4', 4, 'for', 0, 'Hoard Sense', 'Item drop chance +10% per Era gate owned.', { req: 'forg1', side: 1 });
   n('xfor8', 4, 'for', 1, 'Jackpot Chests', 'Chests have a 10% chance to be JACKPOTS: x10 Gold & resources, items +2 tiers.', { req: 'xfor4', side: 1 });
   n('forg2', 4, 'for', 1, 'Affix Fusion', 'FORGE 🔓: fuse two same-tier items with DIFFERENT affixes into one item carrying BOTH.');
-  n('xfor9', 4, 'for', 1, 'Overflowing Fortune', 'Item drop chance x1.25. Chance above 100% guarantees items and rolls the remainder for another.', { req: 'forg2', side: 1 });
+  n('xfor9', 4, 'for', 1, 'Overflowing Fortune', 'Item drop chance x1.25. Chance above 100% grants extra items with logarithmic diminishing returns.', { req: 'forg2', side: 1 });
   n('xrift3', 4, 'for', 1, 'Cartomancer', 'RIFT PORTAL: the Rift\'s bargains offer FOUR cards to choose from (instead of three).', { req: 'xrift2', side: -1 });
   n('xreav1', 4, 'for', 1, 'Riftborn Legion', 'WARD UNIT: Rift Reaver damage x2.', { req: 'xrift3', side: -1 });
   n('forg3', 4, 'for', 2, 'Deep Pockets', 'Item drop chance +40%.', { req: ['forg2', 'xfor4'] });
@@ -1281,7 +1328,7 @@ const PRESTIGE_TREE = (() => {
   n('fora1', 6, 'for', 0, 'Master Forging', 'Affixes are GUARANTEED on every drop.');
   n('xfor6', 6, 'for', 0, 'Reliquary Straps', 'The HERO carries +1 item. (Granted immediately when bought!)', { req: 'fora1', side: 1 });
   n('fora2', 6, 'for', 1, 'Artificer God', 'ALL item values another +50%.');
-  n('xfor10', 6, 'for', 1, 'Fortune Without End', 'Item drop chance x1.5. Multi-drop chance has no upper limit.', { req: 'xfor9', side: 1 });
+  n('xfor10', 6, 'for', 1, 'Fortune Without End', 'Item drop chance x1.5. Multi-drop overflow continues scaling logarithmically.', { req: 'xfor9', side: 1 });
   n('fora3', 6, 'for', 2, 'Aether Reliquary', 'ALL item drops come one tier higher (stacks with other tier-ups).', { req: ['fora2', 'xfor6'] });
   n('mysa1', 6, 'mys', 0, 'Aether Mind', 'Mana production x2.');
   n('xmys6', 6, 'mys', 0, 'Aether Tide', '+1% ALL gold per 1,000 Mana you currently hold (cap +100%).', { req: 'mysa1', side: 1 });

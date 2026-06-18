@@ -205,10 +205,12 @@ function portalEnemyTeam(stageN) {
   const team = [];
   for (let i = 0; i < 4; i++) {
     const boss = bossStage && i === 0;
-    const type = boss
-      ? BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)]
-      : MONSTER_TYPES[Math.floor(Math.random() * MONSTER_TYPES.length)];
-    const role = boss ? 'fighter' : roles[i];
+    const requestedRole = roles[i];
+    const pool = boss
+      ? BOSS_TYPES
+      : MONSTER_TYPES.filter(type => !type.portalRole || type.portalRole === requestedRole);
+    const type = pool[Math.floor(Math.random() * pool.length)];
+    const role = type.portalRole || requestedRole;
     const rm = PORTAL_ENEMY_ROLE[role];
     team.push({
       name: type.name + (boss ? ' [BOSS]' : ''),
