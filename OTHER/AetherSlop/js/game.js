@@ -346,14 +346,29 @@ function softCapValue(raw, cap) {
 }
 
 function itemDropChance(isBoss) {
-  if (isBoss && hasTree('xfor3')) return 1;
   const base = (isBoss ? BOSS_DROP_CHANCE * (hasTree('for6') ? 2 : 1) : DROP_CHANCE) +
     (bUp('alch_phil') ? 0.005 : 0);
-  const raw = base * C.dropMult;
-  const capBoost = (hasTree('xfor9') ? 0.10 : 0) + (hasTree('xfor10') ? 0.15 : 0);
-  const cap = Math.min(0.95, (isBoss ? 0.75 : 0.50) + capBoost);
-  if (raw <= cap) return raw;
-  return Math.min(0.995, cap + (1 - cap) * (1 - Math.exp(-(raw - cap) / Math.max(0.01, 1 - cap) * 0.35)));
+  let chance = base * C.dropMult;
+  if (hasTree('xfor9')) chance *= 1.25;                // Overflowing Fortune
+  if (hasTree('xfor10')) chance *= 1.5;                // Fortune Without End
+  if (isBoss && hasTree('xfor3')) chance = Math.max(1, chance);
+  return chance;
+}
+
+function rollItemDropCount(isBoss) {
+  const chance = Math.max(0, itemDropChance(isBoss));
+  const guaranteed = Math.floor(chance);
+  return guaranteed + (Math.random() < chance - guaranteed ? 1 : 0);
+}
+
+function itemDropChanceText(isBoss) {
+  const chance = itemDropChance(isBoss);
+  const guaranteed = Math.floor(chance);
+  const remainder = (chance - guaranteed) * 100;
+  const total = (chance * 100).toFixed(1) + '%';
+  if (!guaranteed) return total;
+  return total + ' (' + guaranteed + ' guaranteed' +
+    (remainder > 0.05 ? ' + ' + remainder.toFixed(1) + '% another' : '') + ')';
 }
 
 /* a unit's items only work if the unit actually exists.
@@ -1874,19 +1889,19 @@ function rollDrop(extraTier, extraAffixChance) {
   return { t, tier, a };
 }
 
-function dropItem(isBoss) {
+function dropItem(isBoss, deferAutoEquip) {
   const d = rollDrop();
   invAdd(d.t, d.tier, 1, d.a);
   state.stats.itemsFound++;
   toast('LOOT: ' + itemName(d.t, d.tier, d.a) + (isBoss ? ' (boss)' : '') + '!', 'item');
   spawnFloater('ITEM!', 'item');
-  autoEquipDrop(d.t, d.tier, d.a); // Animated Armory
+  if (!deferAutoEquip) autoEquipDrop(d.t, d.tier, d.a); // Animated Armory
   if (hasTree('fors2') && Math.random() < 0.25) {     // Twin Drops
     const d2 = rollDrop();
     invAdd(d2.t, d2.tier, 1, d2.a);
     state.stats.itemsFound++;
     toast('TWIN DROP: ' + itemName(d2.t, d2.tier, d2.a) + '!', 'item');
-    autoEquipDrop(d2.t, d2.tier, d2.a);
+    if (!deferAutoEquip) autoEquipDrop(d2.t, d2.tier, d2.a);
   }
 }
 
@@ -2164,16 +2179,15 @@ function killMonster() {
   if (m.isBoss) state.stats.bossKills++;
   spawnFloater('+' + fmt(bounty) + ' gold', 'gold');
 
-  let dropped = false;
-  if (m.isBoss && hasTree('xfor3')) dropped = true; // Trophy Cases: bosses always drop
-  else if (Math.random() < itemDropChance(m.isBoss)) dropped = true;
-  if (hasTree('xfor7') && !dropped) {              // Pity of the Gods
+  let dropCount = rollItemDropCount(m.isBoss);
+  if (hasTree('xfor7') && dropCount === 0) {         // Pity of the Gods
     state.dryKills = (state.dryKills || 0) + 1;
-    if (state.dryKills >= 30) dropped = true;
+    if (state.dryKills >= 30) dropCount = 1;
   }
-  if (dropped) {
+  if (dropCount > 0) {
     state.dryKills = 0;
-    dropItem(m.isBoss);
+    for (let i = 0; i < dropCount; i++) dropItem(m.isBoss, true);
+    autoEquipBest('item');
   }
 
   state.killIdx++;
@@ -4724,8 +4738,7 @@ function renderMenu() {
         ['Chests looted', () => fmt(state.stats.chestsFound)],
         ['Hero leadership aura', () => '+' + C.heroAura.toFixed(1) + '% / +' + fmt(C.heroAuraCap) +
           '% soft cap (raw +' + C.heroAuraRaw.toFixed(1) + '%)'],
-        ['Drop chance now', () => (itemDropChance(false) * 100).toFixed(1) + '% (' +
-          (itemDropChance(true) * 100).toFixed(1) + '% boss)'],
+        ['Drop chance now', () => itemDropChanceText(false) + ' / boss ' + itemDropChanceText(true)],
       ]],
       ['THE CROWN', [
         ['Buildings standing', () => fmt(totalBuildings())],

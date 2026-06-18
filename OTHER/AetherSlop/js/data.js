@@ -1103,7 +1103,7 @@ const PRESTIGE_TREE = (() => {
   n('xfor7', 2, 'for', 1, 'Pity of the Gods', '30 kills without loot GUARANTEES the next kill drops an item.', { req: 'xfor2', side: 1 });
   n('for5', 2, 'for', 1, "Magpie's Instinct", 'Item drop chance +30%.');
   n('xrift1', 2, 'for', 1, 'Riftward Banners', 'RIFT PORTAL: your units fight with +20% HP & damage.', { req: 'for5', side: -1 });
-  n('for6', 2, 'for', 2, 'Boss Trophies', 'Bosses drop items twice as often.', { req: ['for5', 'xfor2'] });
+  n('for6', 2, 'for', 2, 'Boss Trophies', 'Boss item drop rate x2, including multi-drop overflow.', { req: ['for5', 'xfor2'] });
   n('mys4', 2, 'mys', 0, 'Mana Springs', 'Mana production +50%.');
   n('xmys2', 2, 'mys', 0, 'Starfall Hours', 'Mages deal +50% damage at NIGHT.', { req: 'mys4', side: 1 });
   n('mys5', 2, 'mys', 1, 'Eternal Flame', 'Mage damage x2.');
@@ -1145,7 +1145,7 @@ const PRESTIGE_TREE = (() => {
   n('for7', 3, 'for', 0, 'Mystic Forging', 'Item drops have a 50% chance to roll a random AFFIX (second effect at half value).');
   n('for8', 3, 'for', 1, 'Star Metal', 'ALL item values +25%.');
   n('xrift2', 3, 'for', 1, 'Rift Plunder', 'RIFT PORTAL: victories pay +50% Gold and item drop chance +25%.', { req: 'xrift1', side: -1 });
-  n('xfor3', 3, 'for', 1, 'Trophy Cases', 'BOSSES always drop an item.', { req: 'for8', side: 1 });
+  n('xfor3', 3, 'for', 1, 'Trophy Cases', 'BOSSES always drop at least one item; excess chance can still grant more.', { req: 'for8', side: 1 });
   n('for9', 3, 'for', 2, 'Master Smith', '50% of item drops come one tier higher.');
   n('mys7', 3, 'mys', 0, 'Leyline Network', 'Mana production x2.');
   n('mys8', 3, 'mys', 1, 'Storm Callers', 'Mage damage x2.');
@@ -1191,7 +1191,7 @@ const PRESTIGE_TREE = (() => {
   n('xfor4', 4, 'for', 0, 'Hoard Sense', 'Item drop chance +10% per Era gate owned.', { req: 'forg1', side: 1 });
   n('xfor8', 4, 'for', 1, 'Jackpot Chests', 'Chests have a 10% chance to be JACKPOTS: x10 Gold & resources, items +2 tiers.', { req: 'xfor4', side: 1 });
   n('forg2', 4, 'for', 1, 'Affix Fusion', 'FORGE 🔓: fuse two same-tier items with DIFFERENT affixes into one item carrying BOTH.');
-  n('xfor9', 4, 'for', 1, 'Overflowing Fortune', 'Raises normal and boss item-drop soft caps by 10 percentage points; overflow chance has diminishing returns.', { req: 'forg2', side: 1 });
+  n('xfor9', 4, 'for', 1, 'Overflowing Fortune', 'Item drop chance x1.25. Chance above 100% guarantees items and rolls the remainder for another.', { req: 'forg2', side: 1 });
   n('xrift3', 4, 'for', 1, 'Cartomancer', 'RIFT PORTAL: the Rift\'s bargains offer FOUR cards to choose from (instead of three).', { req: 'xrift2', side: -1 });
   n('xreav1', 4, 'for', 1, 'Riftborn Legion', 'WARD UNIT: Rift Reaver damage x2.', { req: 'xrift3', side: -1 });
   n('forg3', 4, 'for', 2, 'Deep Pockets', 'Item drop chance +40%.', { req: ['forg2', 'xfor4'] });
@@ -1281,7 +1281,7 @@ const PRESTIGE_TREE = (() => {
   n('fora1', 6, 'for', 0, 'Master Forging', 'Affixes are GUARANTEED on every drop.');
   n('xfor6', 6, 'for', 0, 'Reliquary Straps', 'The HERO carries +1 item. (Granted immediately when bought!)', { req: 'fora1', side: 1 });
   n('fora2', 6, 'for', 1, 'Artificer God', 'ALL item values another +50%.');
-  n('xfor10', 6, 'for', 1, 'Fortune Without End', 'Raises normal and boss item-drop soft caps by another 15 percentage points.', { req: 'xfor9', side: 1 });
+  n('xfor10', 6, 'for', 1, 'Fortune Without End', 'Item drop chance x1.5. Multi-drop chance has no upper limit.', { req: 'xfor9', side: 1 });
   n('fora3', 6, 'for', 2, 'Aether Reliquary', 'ALL item drops come one tier higher (stacks with other tier-ups).', { req: ['fora2', 'xfor6'] });
   n('mysa1', 6, 'mys', 0, 'Aether Mind', 'Mana production x2.');
   n('xmys6', 6, 'mys', 0, 'Aether Tide', '+1% ALL gold per 1,000 Mana you currently hold (cap +100%).', { req: 'mysa1', side: 1 });
