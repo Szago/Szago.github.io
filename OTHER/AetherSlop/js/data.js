@@ -968,6 +968,15 @@ const BOSS_TYPES = [
   { sprite: 'riftwitch',  name: 'Kurohana, Rift Witch',  portalRole: 'aoe' },
   { sprite: 'thornempress', name: 'Morgathra, Thorn Empress', portalRole: 'aoe' },
   { sprite: 'gravemoon', name: 'Vespera, the Grave Moon', portalRole: 'ranged' },
+  { sprite: 'velvetfang', name: 'Nyxara, the Velvet Fang', portalRole: 'fighter' },
+  { sprite: 'quickpurse', name: 'Pipra Quickpurse', portalRole: 'fighter' },
+  { sprite: 'velvetsin', name: 'Seraphyne, the Velvet Sin', portalRole: 'aoe' },
+  { sprite: 'severedhalo', name: 'Elyssia, the Severed Halo', portalRole: 'aoe' },
+  { sprite: 'brokencovenant', name: 'Vaeloria, the Broken Covenant', portalRole: 'aoe' },
+  { sprite: 'ninthsky', name: 'Caelora, Queen of the Ninth Sky', portalRole: 'aoe' },
+  { sprite: 'jubilantooze', name: 'Mellumi, the Jubilant Ooze', portalRole: 'fighter' },
+  { sprite: 'hollowreaper', name: 'Luvia, the Hollow Reaper', portalRole: 'fighter' },
+  { sprite: 'silentsigil', name: 'Aria, the Silent Sigil', portalRole: 'aoe' },
 ];
 
 const ZONE_NAMES = [

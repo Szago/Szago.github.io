@@ -36,3 +36,66 @@
 - Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
 - Post-processing: flat green chroma key converted to PNG transparency
 - Prompt summary: adult ash-violet gothic necromancer with a crescent bone scythe, soul lantern and skull magic
+
+## Nyxara, the Velvet Fang
+
+- File: `nyxara-velvet-fang.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult plum-black fantasy assassin in a forward-leaning attack pose with two ornate knives
+
+## Pipra Quickpurse
+
+- File: `pipra-quickpurse.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: petite adult smiling fantasy thief in shorts and an off-shoulder shirt carrying an oversized coin bag
+
+## Seraphyne, the Velvet Sin
+
+- File: `seraphyne-velvet-sin.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult midnight-blue and magenta succubus casting charm magic with empty hands, wings and heart-tipped tail
+
+## Elyssia, the Severed Halo
+
+- File: `elyssia-severed-halo.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: petite adult black-and-white fallen angel with a cracked halo, mismatched torn wings, empty hands and a ruined angelic dress, rendered with stronger deliberate pixel clusters
+
+## Vaeloria, the Broken Covenant
+
+- File: `vaeloria-broken-covenant.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: regal adult fallen angel and elder sister to Elyssia, with an ornate black-and-white gown, mismatched wings, long white hair and a shattered halo
+
+## Caelora, Queen of the Ninth Sky
+
+- File: `caelora-queen-ninth-sky.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult elemental cloud queen wrapped in opaque living cloud magic, surrounded by a spiraling storm stream with tiny lightning accents
+
+## Mellumi, the Jubilant Ooze
+
+- File: `mellumi-jubilant-ooze.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat magenta chroma key converted to PNG transparency
+- Prompt summary: cheerful small-statured adult aqua slime adventurer with liquid hair, a slime crown, floating droplets and a broad bouncing puddle tail
+
+## Luvia, the Hollow Reaper
+
+- File: `luvia-hollow-reaper.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult dead-eyed anime reaper in blue-black armor with a geometric chest opening, holding two crossed hand scythes, rendered with Elyssia-style deliberate pixel clusters
+
+## Aria, the Silent Sigil
+
+- File: `aria-silent-sigil.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: serene young adult sigil mage with floor-length straight silver hair, silver eyelashes, purple eyes, a white cutout dress, black thigh highs and purple sigil magic in her left hand

@@ -26,6 +26,51 @@ const RASTER_SPRITES = {
     display: { 4: 112, 6: 176, 9: 256 },
     fallback: 'starmaiden',
   },
+  velvetfang: {
+    src: 'assets/enemies/nyxara-velvet-fang.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'riftwitch',
+  },
+  quickpurse: {
+    src: 'assets/enemies/pipra-quickpurse.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'starmaiden',
+  },
+  velvetsin: {
+    src: 'assets/enemies/seraphyne-velvet-sin.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'riftwitch',
+  },
+  severedhalo: {
+    src: 'assets/enemies/elyssia-severed-halo.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'starmaiden',
+  },
+  brokencovenant: {
+    src: 'assets/enemies/vaeloria-broken-covenant.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'severedhalo',
+  },
+  ninthsky: {
+    src: 'assets/enemies/caelora-queen-ninth-sky.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'starmaiden',
+  },
+  jubilantooze: {
+    src: 'assets/enemies/mellumi-jubilant-ooze.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'quickpurse',
+  },
+  hollowreaper: {
+    src: 'assets/enemies/luvia-hollow-reaper.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'severedhalo',
+  },
+  silentsigil: {
+    src: 'assets/enemies/aria-silent-sigil.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'starmaiden',
+  },
 };
 
 const SPRITES = {
