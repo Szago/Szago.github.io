@@ -42,6 +42,7 @@ const MapPal = {
 /* shared with the ambient animation layer */
 let WATER_TILES = [];
 let LAMP_POINTS = [];   // street lamp heads (night glow)
+const DISTRICT_TREE_CACHE = new Map();
 
 function inField(x, y) {
   return FIELDS.some(f => x >= f.x1 && x <= f.x2 && y >= f.y1 && y <= f.y2);
@@ -305,6 +306,9 @@ function buildWallSet(ownedKeys) {
 
 /* deterministic per-district tree generation */
 function districtTrees(dx, dy, ownedKeys) {
+  const cacheKey = dx + ',' + dy;
+  const cached = DISTRICT_TREE_CACHE.get(cacheKey);
+  if (cached) return cached;
   const rnd = mulberry32(7919 + dx * 131 + dy * 977);
   const biome = districtBiome(dx, dy);
   const density = { forest: 28, rocky: 12, riverlands: 12, farmland: 8, meadow: 12, city: 5 }[biome] || 8;
@@ -324,6 +328,7 @@ function districtTrees(dx, dy, ownedKeys) {
     }
     trees.push([x, y]);
   }
+  DISTRICT_TREE_CACHE.set(cacheKey, trees);
   return trees;
 }
 
@@ -417,15 +422,20 @@ function renderTerrain(canvas, tier, houseCount, ownedKeys, builtIds, era, satTi
   era = era || 0;
   satTiers = satTiers || {};
   propTier = propTier || 0;
-  canvas.width = MAP_W * TILE;
-  canvas.height = MAP_H * TILE;
+  const width = MAP_W * TILE, height = MAP_H * TILE;
+  const resized = canvas.width !== width || canvas.height !== height;
+  if (resized) {
+    canvas.width = width;
+    canvas.height = height;
+  }
   const ctx = canvas.getContext('2d');
+  if (!resized) ctx.clearRect(0, 0, width, height);
   ctx.imageSmoothingEnabled = false;
   const rnd = mulberry32(1337);
   const px = (x, y, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1); };
   const rect = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
 
-  WATER_TILES = [];
+  const collectWaterTiles = WATER_TILES.length === 0;
   LAMP_POINTS = [];
 
   /* --- pass 1: ground tiles --- */
@@ -437,7 +447,7 @@ function renderTerrain(canvas, tier, houseCount, ownedKeys, builtIds, era, satTi
         rect(ox, oy, TILE, TILE, MapPal.water);
         for (let i = 0; i < 3; i++) px(ox + (rnd() * 16 | 0), oy + (rnd() * 16 | 0), MapPal.waterLight);
         if (!isWater(tx, ty + 1)) rect(ox, oy + 14, TILE, 2, MapPal.waterDark);
-        WATER_TILES.push([tx, ty]);
+        if (collectWaterTiles) WATER_TILES.push([tx, ty]);
         continue;
       }
 

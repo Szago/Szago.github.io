@@ -2261,8 +2261,7 @@ function ascend() {
 
   C = calc();
   spawnMonster();
-  renderCity();
-  maybeTerrain(true);
+  renderCity(true);
   buildShop();
   buildUnitCards();
   closeDetail();
@@ -3749,8 +3748,7 @@ function buyDistrict(key) {
   toast('LAND DEED: ' + DISTRICT_NAMES[key] + ' joins Aetherholm! (+' + Math.round(DISTRICT_GOLD_BONUS * 100) + '% all gold)');
   unlockModeForWard(key); // cardinal wards open their gamemode gate for good
   unlockWardUnit(key);    // outer wards permanently unlock their ward unit
-  maybeTerrain(true);
-  renderCity();
+  renderCity(true);
   refreshShop();
   rebuildDetail();
   save();
@@ -3904,14 +3902,20 @@ function refreshModeGates() {
 /* ---------------- UI: city map (middle) ---------------- */
 
 let terrainKey = '';
+let terrainLastRenderAt = -Infinity;
+const TERRAIN_RENDER_INTERVAL_MS = 500;
 
 function eraLevel() {
   return hasTree('era6') ? 3 : hasTree('era3') ? 2 : hasTree('era2') ? 1 : 0;
 }
 
 function maybeTerrain(force) {
+  const checkStarted = perfStart();
   const tier = wallTier(state.walls);
-  const houses = Math.floor(totalBuildings() / 4);
+  /* The renderer cannot show more cottages than the owned districts have
+     slots. Using the uncapped count here used to invalidate terrain every
+     four purchases forever, even when the resulting canvas was identical. */
+  const houses = Math.min(Math.floor(totalBuildings() / 4), houseSlots(state.districts).length);
   const builtIds = BUILDINGS.filter(b => bCount(b.id) > 0 && districtOwnedFor(b.id)).map(b => b.id);
   const era = eraLevel();
   const satTiers = {};
@@ -3919,11 +3923,25 @@ function maybeTerrain(force) {
   const propTier = propTierFor(state.totalBuildingsBought);
   const key = tier + '|' + houses + '|' + state.districts.join(';') + '|' +
     builtIds.map(id => id + ':' + satTiers[id]).join(';') + '|' + era + '|' + propTier;
-  if (force || key !== terrainKey) {
-    terrainKey = key;
-    renderTerrain($('terrain'), tier, houses, state.districts, builtIds, era, satTiers, propTier);
-    if (typeof ambientRebuild === 'function') ambientRebuild();
+  const changed = force || key !== terrainKey;
+  const now = performance.now();
+  const ready = force || !terrainKey || now - terrainLastRenderAt >= TERRAIN_RENDER_INTERVAL_MS;
+  perfEnd('Terrain check', checkStarted);
+  if (!changed || !ready) return false;
+
+  /* During rapid autobuy progression, draw the newest city state rather than
+     repainting every intermediate cottage/satellite threshold. */
+  terrainKey = key;
+  terrainLastRenderAt = now;
+  const renderStarted = perfStart();
+  renderTerrain($('terrain'), tier, houses, state.districts, builtIds, era, satTiers, propTier);
+  perfEnd('Terrain render', renderStarted);
+  if (typeof ambientRebuild === 'function') {
+    const ambientStarted = perfStart();
+    ambientRebuild();
+    perfEnd('Ambient rebuild (terrain)', ambientStarted);
   }
+  return true;
 }
 
 /* ---------------- treasure chests ---------------- */
@@ -4084,7 +4102,7 @@ function renderCityBuildings(ids) {
   plots.appendChild(fragment);
 }
 
-function renderCity() {
+function renderCity(forceTerrain) {
   const plots = $('plots');
   plots.innerHTML = '';
   for (const b of BUILDINGS) {
@@ -4127,8 +4145,8 @@ function renderCity() {
   }
   renderDistrictOverlays();
   refreshModeGates();
-  maybeTerrain(false);
-  if (typeof ambientRebuild === 'function') ambientRebuild();
+  const terrainRedrawn = maybeTerrain(!!forceTerrain);
+  if (!terrainRedrawn && typeof ambientRebuild === 'function') ambientRebuild();
 }
 
 /* ---------------- UI: prestige modal ---------------- */
@@ -4374,8 +4392,7 @@ function debugAmount() {
 function debugRefresh(msg) {
   C = calc();
   if (!state.monster) spawnMonster();
-  if (!deferRender) renderCity();
-  maybeTerrain(true);
+  renderCity(true);
   buildShop();
   buildUnitCards();
   refreshShop();
@@ -4935,9 +4952,7 @@ function tick() {
   if (invDirty && rightTab === 'bag' && !currentDetail &&
       performance.now() - lastBagRenderAt >= 250) renderBag();
   perfEnd('Open panels refresh', perfPart);
-  perfPart = perfStart();
   maybeTerrain(false);
-  perfEnd('Terrain check/render', perfPart);
   perfEnd('Tick total', perfTick);
 }
 
@@ -4956,10 +4971,9 @@ function init() {
 
   initMapView();
   ambientInit();
-  maybeTerrain(true);
   buildShop();
   buildUnitCards();
-  renderCity();
+  renderCity(true);
   spawnMonster();
   syncRightPanel();
   updateCycleUi();
