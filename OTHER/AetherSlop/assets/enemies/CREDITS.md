@@ -99,3 +99,94 @@
 - Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
 - Post-processing: flat green chroma key converted to PNG transparency
 - Prompt summary: serene young adult sigil mage with floor-length straight silver hair, silver eyelashes, purple eyes, a white cutout dress, black thigh highs and purple sigil magic in her left hand
+
+## Lua, the Runebound Gaze
+
+- File: `lua-rune-gaze.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: tall adult rune warrior with a light-purple split bob, rough asymmetrical fantasy rune armor and two double-bladed crescent warglaives burning with white fire
+
+## Valla, the Red Hunt
+
+- File: `valla-demon-hunter.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: stone-faced adult demon hunter with red eyes, a hooded cape, dark cutout armor and two compact hand crossbows
+
+## Havia, the Sixfold Grace
+
+- File: `havia-sixfold-grace.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: floating adult ethereal ascendant with exactly six pale-blue spectral arms and a light-blue geometric cutout dress
+
+## Mirelle, the String Apostate
+
+- File: `mirelle-string-apostate.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult cursed marionette duelist in an asymmetrical gothic stage costume, controlling crimson puppet strings tipped with hooked needles
+
+## Thessa, the Carrion Bloom
+
+- File: `thessa-carrion-bloom.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult corrupted dryad with a carnivorous corpse-flower collar, thorn claw, living flower whip and toxic spores
+
+## Nymora, the Velvet Undertow
+
+- File: `nymora-velvet-undertow.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult abyssal siren corsair with an eel tail, black-coral crown, soul pearl and hooked coral boarding weapon
+
+## Zafira, the Cinder Verdict
+
+- File: `zafira-cinder-verdict.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult ash-ifrit execution dancer in black, crimson and gold, wielding two flaming execution chakrams
+
+## Calyra, the Broken Mercy
+
+- File: `calyra-broken-mercy.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult corrupt fallen chain-saint with a cracked halo, mismatched wings, ritual censer and hooked reliquary chain
+
+## Eiraxa, the Plaguewing Matron
+
+- File: `eiraxa-plaguewing-matron.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult moth-demon plague apothecary with four tattered eye-spotted wings, an injector staff and a sealed plague censer
+
+## Karessa, the Gilded Due
+
+- File: `karessa-gilded-due.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult jackal-demon debt tyrant in ivory, black and gold, wielding a hooked coin-blade and a cursed coin chain
+
+## Velune, the Shattered Reflection
+
+- File: `velune-shattered-reflection.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult living mirror wraith in violet masquerade couture, wielding two broad shard fans amid floating broken reflections
+
+## Sythra, the Widow Below
+
+- File: `sythra-widow-below.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult dark-elf drider silk assassin with six red eyes, eight spider legs, an obsidian dagger and silver garrote
+
+## Isolde, the Rime Betrothed
+
+- File: `isolde-rime-betrothed.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: adult revenant frost bride with a black-rose crown, ruined bridal gown, icy parasol-spear and bouquet of icicle daggers

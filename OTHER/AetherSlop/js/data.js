@@ -977,6 +977,19 @@ const BOSS_TYPES = [
   { sprite: 'jubilantooze', name: 'Mellumi, the Jubilant Ooze', portalRole: 'fighter' },
   { sprite: 'hollowreaper', name: 'Luvia, the Hollow Reaper', portalRole: 'fighter' },
   { sprite: 'silentsigil', name: 'Aria, the Silent Sigil', portalRole: 'aoe' },
+  { sprite: 'runegaze', name: 'Lua, the Runebound Gaze', portalRole: 'fighter' },
+  { sprite: 'redhunt', name: 'Valla, the Red Hunt', portalRole: 'ranged' },
+  { sprite: 'sixfoldgrace', name: 'Havia, the Sixfold Grace', portalRole: 'aoe' },
+  { sprite: 'stringapostate', name: 'Mirelle, the String Apostate', portalRole: 'aoe' },
+  { sprite: 'carrionbloom', name: 'Thessa, the Carrion Bloom', portalRole: 'fighter' },
+  { sprite: 'velvetundertow', name: 'Nymora, the Velvet Undertow', portalRole: 'ranged' },
+  { sprite: 'cinderverdict', name: 'Zafira, the Cinder Verdict', portalRole: 'fighter' },
+  { sprite: 'brokenmercy', name: 'Calyra, the Broken Mercy', portalRole: 'aoe' },
+  { sprite: 'plaguewing', name: 'Eiraxa, the Plaguewing Matron', portalRole: 'aoe' },
+  { sprite: 'gildeddue', name: 'Karessa, the Gilded Due', portalRole: 'fighter' },
+  { sprite: 'shatteredreflection', name: 'Velune, the Shattered Reflection', portalRole: 'ranged' },
+  { sprite: 'widowbelow', name: 'Sythra, the Widow Below', portalRole: 'fighter' },
+  { sprite: 'rimebetrothed', name: 'Isolde, the Rime Betrothed', portalRole: 'ranged' },
 ];
 
 const ZONE_NAMES = [

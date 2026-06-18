@@ -71,6 +71,71 @@ const RASTER_SPRITES = {
     display: { 4: 112, 6: 176, 9: 256 },
     fallback: 'starmaiden',
   },
+  runegaze: {
+    src: 'assets/enemies/lua-rune-gaze.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'silentsigil',
+  },
+  redhunt: {
+    src: 'assets/enemies/valla-demon-hunter.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'velvetfang',
+  },
+  sixfoldgrace: {
+    src: 'assets/enemies/havia-sixfold-grace.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'silentsigil',
+  },
+  stringapostate: {
+    src: 'assets/enemies/mirelle-string-apostate.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'velvetsin',
+  },
+  carrionbloom: {
+    src: 'assets/enemies/thessa-carrion-bloom.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'thornempress',
+  },
+  velvetundertow: {
+    src: 'assets/enemies/nymora-velvet-undertow.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'gravemoon',
+  },
+  cinderverdict: {
+    src: 'assets/enemies/zafira-cinder-verdict.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'runegaze',
+  },
+  brokenmercy: {
+    src: 'assets/enemies/calyra-broken-mercy.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'brokencovenant',
+  },
+  plaguewing: {
+    src: 'assets/enemies/eiraxa-plaguewing-matron.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'velvetsin',
+  },
+  gildeddue: {
+    src: 'assets/enemies/karessa-gilded-due.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'cinderverdict',
+  },
+  shatteredreflection: {
+    src: 'assets/enemies/velune-shattered-reflection.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'silentsigil',
+  },
+  widowbelow: {
+    src: 'assets/enemies/sythra-widow-below.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'velvetfang',
+  },
+  rimebetrothed: {
+    src: 'assets/enemies/isolde-rime-betrothed.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'gravemoon',
+  },
 };
 
 const SPRITES = {
