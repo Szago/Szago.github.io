@@ -9,12 +9,22 @@
    keyed by the scale values already used by City Defense, Portal and Tower. */
 const RASTER_SPRITES = {
   starmaiden: {
-    src: 'assets/enemies/celestine-starblade.png',
+    src: 'assets/enemies/celestine-starblade-generated.png',
     display: { 4: 112, 6: 176, 9: 221 },
   },
   riftwitch: {
     src: 'assets/enemies/kurohana-rift-witch.png',
     display: { 4: 112, 6: 176, 9: 256 },
+  },
+  thornempress: {
+    src: 'assets/enemies/morgathra-thorn-empress.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'riftwitch',
+  },
+  gravemoon: {
+    src: 'assets/enemies/vespera-grave-moon.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'starmaiden',
   },
 };
 
@@ -1268,7 +1278,7 @@ function spriteCanvas(spriteName, scale, palOver) {
     img.onerror = () => {
       const fallback = document.createElement('canvas');
       fallback.className = 'pix';
-      drawSprite(fallback, SPRITES[spriteName], scale, palOver);
+      drawSprite(fallback, SPRITES[raster.fallback || spriteName], scale, palOver);
       img.replaceWith(fallback);
     };
     return img;

@@ -953,19 +953,21 @@ const MONSTER_TYPES = [
   { sprite: 'frostling', name: 'Rimebound Hexer',   portalRole: 'aoe' },
   { sprite: 'treant',    name: 'Thornbark Ancient', portalRole: 'fighter' },
   { sprite: 'watcher',   name: 'Rift Watcher',      portalRole: 'ranged' },
+  { sprite: 'golem',     name: 'Runic Golem',           portalRole: 'fighter' },
+  { sprite: 'dragon',    name: 'Wyrm of the Pass',      portalRole: 'ranged' },
+  { sprite: 'hydra',     name: 'Fen-Crowned Hydra',     portalRole: 'fighter' },
+  { sprite: 'lich',      name: 'The Ossuary King',      portalRole: 'aoe' },
+  { sprite: 'titan',     name: 'Ironroot Colossus',     portalRole: 'fighter' },
+  { sprite: 'kraken',    name: 'Abyssal Manymaw',      portalRole: 'aoe' },
+  { sprite: 'phoenix',   name: 'Sunscar Phoenix',       portalRole: 'ranged' },
+  { sprite: 'voidlord',  name: 'Lord of the Last Door', portalRole: 'aoe' },
 ];
 
 const BOSS_TYPES = [
-  { sprite: 'golem',      name: 'Runic Golem',           portalRole: 'fighter' },
-  { sprite: 'dragon',     name: 'Wyrm of the Pass',      portalRole: 'ranged' },
-  { sprite: 'hydra',      name: 'Fen-Crowned Hydra',     portalRole: 'fighter' },
-  { sprite: 'lich',       name: 'The Ossuary King',      portalRole: 'aoe' },
-  { sprite: 'titan',      name: 'Ironroot Colossus',     portalRole: 'fighter' },
-  { sprite: 'kraken',     name: 'Abyssal Manymaw',      portalRole: 'aoe' },
-  { sprite: 'phoenix',    name: 'Sunscar Phoenix',       portalRole: 'ranged' },
-  { sprite: 'voidlord',   name: 'Lord of the Last Door', portalRole: 'aoe' },
   { sprite: 'starmaiden', name: 'Celestine Starblade',   portalRole: 'ranged' },
   { sprite: 'riftwitch',  name: 'Kurohana, Rift Witch',  portalRole: 'aoe' },
+  { sprite: 'thornempress', name: 'Morgathra, Thorn Empress', portalRole: 'aoe' },
+  { sprite: 'gravemoon', name: 'Vespera, the Grave Moon', portalRole: 'ranged' },
 ];
 
 const ZONE_NAMES = [
