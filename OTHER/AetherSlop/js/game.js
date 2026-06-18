@@ -4661,6 +4661,14 @@ function renderPerformanceOverlay(force) {
 
 function debugRender() {
   const body = $('menu-body');
+  const worldSec = document.createElement('div');
+  worldSec.className = 'menu-section';
+  worldSec.innerHTML =
+    '<div class="menu-section-title">3D WORLD PROTOTYPE</div>' +
+    '<div class="menu-note">Launches the first-person Three.js sandbox over the game. The idle simulation is paused until the world is closed.</div>' +
+    '<div class="menu-btns"><button id="dbg-world3d" class="menu-btn">ENTER 3D WORLD</button></div>';
+  body.appendChild(worldSec);
+
   const perfSec = document.createElement('div');
   perfSec.className = 'menu-section hidden';
   perfSec.innerHTML =
@@ -4723,6 +4731,14 @@ function debugRender() {
   $('perf-reset').onclick = perfReset;
   updatePerformanceToggle();
   $('perf-toggle').onclick = () => setPerformanceOverlay(!perfOverlayOpen);
+  $('dbg-world3d').onclick = () => {
+    if (!window.AetherWorld3D) {
+      toast('The 3D world could not be loaded. Check the network connection and try again.');
+      return;
+    }
+    closeMenu();
+    window.AetherWorld3D.open();
+  };
 
   $('dbg-res').onclick = () => {
     const n = debugAmount();
@@ -4996,8 +5012,14 @@ function updateHud() {
 /* ---------------- main loop ---------------- */
 
 let autoClickAcc = 0;
+let gameSuspended = false;
+
+window.addEventListener('aetherworldchange', e => {
+  gameSuspended = !!(e.detail && e.detail.active);
+});
 
 function tick() {
+  if (gameSuspended) return;
   const perfTick = perfStart();
   let perfPart = perfStart();
   const wasNight = isNight();

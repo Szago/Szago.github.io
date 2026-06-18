@@ -1,0 +1,143 @@
+#aether-world-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  overflow: hidden;
+  background: #070a12;
+  color: #f0ecff;
+  font-family: "Press Start 2P", monospace;
+}
+
+#aether-world-overlay.hidden {
+  display: none;
+}
+
+body.aether-world-active {
+  overflow: hidden;
+}
+
+body.aether-world-active #game,
+body.aether-world-active .modal,
+body.aether-world-active #perf-overlay {
+  visibility: hidden;
+}
+
+#aether-world-viewport,
+#aether-world-viewport canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#aether-world-viewport canvas {
+  cursor: crosshair;
+  outline: none;
+}
+
+.aether-world-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  text-shadow: 2px 2px 0 #000;
+}
+
+.aether-world-title {
+  position: absolute;
+  top: 20px;
+  left: 22px;
+  color: #f3cf71;
+  font-size: clamp(10px, 1.2vw, 15px);
+  letter-spacing: 2px;
+}
+
+.aether-world-help {
+  position: absolute;
+  left: 22px;
+  bottom: 20px;
+  max-width: min(720px, calc(100vw - 44px));
+  color: #c5bfdc;
+  font-size: clamp(7px, 0.72vw, 10px);
+  line-height: 1.9;
+}
+
+.aether-world-status {
+  display: block;
+  margin-top: 5px;
+  color: #82d7ff;
+}
+
+#aether-world-close {
+  position: absolute;
+  z-index: 3;
+  top: 18px;
+  right: 20px;
+  pointer-events: auto;
+  padding: 10px 12px;
+  border: 3px solid #695c88;
+  background: rgba(15, 13, 27, 0.9);
+  color: #f0ecff;
+  font: 9px "Press Start 2P", monospace;
+  cursor: pointer;
+}
+
+#aether-world-close:hover,
+#aether-world-close:focus-visible {
+  border-color: #ef7e8f;
+  color: #ffabb7;
+  outline: none;
+}
+
+.aether-world-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  opacity: 0.85;
+}
+
+.aether-world-crosshair::before,
+.aether-world-crosshair::after {
+  content: "";
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 0 3px #000;
+}
+
+.aether-world-crosshair::before {
+  left: 6px;
+  top: 0;
+  width: 2px;
+  height: 14px;
+}
+
+.aether-world-crosshair::after {
+  left: 0;
+  top: 6px;
+  width: 14px;
+  height: 2px;
+}
+
+@media (max-width: 600px) {
+  .aether-world-title {
+    top: 16px;
+    left: 14px;
+    max-width: calc(100vw - 130px);
+    line-height: 1.5;
+  }
+
+  .aether-world-help {
+    left: 14px;
+    bottom: 12px;
+    max-width: calc(100vw - 28px);
+  }
+
+  #aether-world-close {
+    top: 12px;
+    right: 12px;
+    padding: 8px;
+    font-size: 7px;
+  }
+}
