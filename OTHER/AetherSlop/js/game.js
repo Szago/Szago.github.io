@@ -4495,6 +4495,85 @@ function debugGrantItems(n) {
   return count;
 }
 
+function debugSpritePreviewScale(spriteName) {
+  return typeof RASTER_SPRITES !== 'undefined' && RASTER_SPRITES[spriteName] ? 9 : 12;
+}
+
+function debugSpritePreviewArt(spriteName) {
+  const raster = typeof RASTER_SPRITES !== 'undefined' ? RASTER_SPRITES[spriteName] : null;
+  if (!raster) return spriteCanvas(spriteName, debugSpritePreviewScale(spriteName));
+
+  const img = document.createElement('img');
+  img.className = 'pix raster-sprite';
+  img.src = raster.src;
+  img.alt = '';
+  img.draggable = false;
+  img.decoding = 'async';
+  img.onerror = () => {
+    const fallback = spriteCanvas(raster.fallback || spriteName, 12);
+    fallback.classList.add('debug-sprite-preview-art');
+    img.replaceWith(fallback);
+  };
+  return img;
+}
+
+function ensureDebugSpritePreviewModal() {
+  let modal = $('debug-sprite-preview-modal');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'debug-sprite-preview-modal';
+  modal.className = 'debug-sprite-preview-modal hidden';
+  modal.innerHTML =
+    '<div class="debug-sprite-preview-box" role="dialog" aria-modal="true" aria-labelledby="debug-sprite-preview-title">' +
+      '<div class="debug-sprite-preview-head">' +
+        '<div id="debug-sprite-preview-title"></div>' +
+        '<button id="debug-sprite-preview-close" type="button" title="Close preview">X</button>' +
+      '</div>' +
+      '<div id="debug-sprite-preview-stage" class="debug-sprite-preview-stage"></div>' +
+      '<div id="debug-sprite-preview-meta" class="debug-sprite-preview-meta"></div>' +
+    '</div>';
+  document.body.appendChild(modal);
+
+  modal.addEventListener('click', e => {
+    if (e.target === modal) closeDebugSpritePreview();
+  });
+  $('debug-sprite-preview-close').onclick = closeDebugSpritePreview;
+  return modal;
+}
+
+function openDebugSpritePreview(type, boss) {
+  const modal = ensureDebugSpritePreviewModal();
+  const stage = $('debug-sprite-preview-stage');
+  const art = debugSpritePreviewArt(type.sprite);
+  art.classList.add('debug-sprite-preview-art');
+
+  $('debug-sprite-preview-title').textContent = type.name;
+  $('debug-sprite-preview-meta').textContent = type.sprite +
+    (type.portalRole ? ' - ' + type.portalRole.toUpperCase() : '');
+  stage.innerHTML = '';
+  stage.appendChild(art);
+  modal.classList.toggle('boss', !!boss);
+  modal.classList.remove('hidden');
+  $('debug-sprite-preview-close').focus();
+}
+
+function closeDebugSpritePreview() {
+  const modal = $('debug-sprite-preview-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  const stage = $('debug-sprite-preview-stage');
+  if (stage) stage.innerHTML = '';
+}
+
+document.addEventListener('keydown', e => {
+  const modal = $('debug-sprite-preview-modal');
+  if (!modal || modal.classList.contains('hidden') || e.key !== 'Escape') return;
+  e.preventDefault();
+  e.stopPropagation();
+  closeDebugSpritePreview();
+});
+
 function debugEnemyPreviewGroup(title, types, boss) {
   const group = document.createElement('div');
   group.className = 'debug-enemy-group';
@@ -4508,8 +4587,18 @@ function debugEnemyPreviewGroup(title, types, boss) {
   for (const type of types) {
     const card = document.createElement('div');
     card.className = 'debug-enemy-card' + (boss ? ' boss' : '');
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', 'Open full size preview for ' + type.name);
     card.title = type.name + ' — sprite: ' + type.sprite +
       (type.portalRole ? ', Portal role: ' + type.portalRole.toUpperCase() : '');
+
+    card.onclick = () => openDebugSpritePreview(type, boss);
+    card.onkeydown = e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      openDebugSpritePreview(type, boss);
+    };
 
     const stage = document.createElement('div');
     stage.className = 'debug-enemy-stage';
