@@ -8,6 +8,34 @@
   font-family: "Press Start 2P", monospace;
 }
 
+#aether-world-overlay::before,
+#aether-world-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+#aether-world-overlay::before {
+  opacity: 0.22;
+  mix-blend-mode: screen;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgba(255, 82, 37, 0.055) 0 1px, transparent 1px 7px);
+}
+
+#aether-world-overlay::after {
+  opacity: 0.31;
+  mix-blend-mode: overlay;
+  background:
+    radial-gradient(circle at 21% 17%, rgba(255, 69, 22, 0.16), transparent 2px),
+    radial-gradient(circle at 64% 38%, rgba(255, 255, 255, 0.12), transparent 1px),
+    radial-gradient(circle at 77% 72%, rgba(0, 0, 0, 0.42), transparent 2px),
+    radial-gradient(circle at 36% 82%, rgba(255, 144, 45, 0.1), transparent 1px);
+  background-size: 13px 13px, 17px 17px, 19px 19px, 23px 23px;
+}
+
 #aether-world-overlay.hidden {
   display: none;
 }
@@ -32,6 +60,8 @@ body.aether-world-active #perf-overlay {
 #aether-world-viewport canvas {
   cursor: crosshair;
   outline: none;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
 }
 
 .aether-world-hud {
