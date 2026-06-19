@@ -12,6 +12,7 @@ const DEBUG_INFINITE_VISION = true;
 const PLAYER_LIGHT_RADIUS = 0;
 const NEAR_RENDER_RADIUS = 7;
 const NEAR_RENDER_HYSTERESIS = 3;
+const WARMUP_BATCH_SIZE = 34;
 
 let overlay;
 let viewport;
@@ -24,6 +25,10 @@ let ruinMaterials;
 let animationFrame = 0;
 let previousTime = 0;
 let active = false;
+let preloadStarted = false;
+let warmupStarted = false;
+let warmupComplete = false;
+let warmupIndex = 0;
 let yaw = 0;
 let pitch = 0;
 let grounded = true;
@@ -156,6 +161,15 @@ function setObjectVisible(object, visible) {
   object.visible = visible;
 }
 
+function runWhenIdle(callback, timeout = 400) {
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(callback, { timeout });
+    return;
+  }
+
+  window.setTimeout(() => callback({ timeRemaining: () => 0 }), 16);
+}
+
 function initMaterials() {
   const roadMap = makeNoiseTexture('#423a34', [
     { color: '#211d1a', count: 180, size: random => 1 + (random() * 2 | 0) },
@@ -229,9 +243,7 @@ function makeWorld() {
   scene.add(ashenMoon);
 
   playerLight = new THREE.PointLight(0xffb16a, DEBUG_INFINITE_VISION ? 32 : 42, DEBUG_INFINITE_VISION ? 0 : PLAYER_LIGHT_RADIUS, 2.2);
-  playerLight.castShadow = true;
-  playerLight.shadow.mapSize.set(512, 512);
-  playerLight.shadow.bias = -0.002;
+  playerLight.castShadow = false;
   scene.add(playerLight);
 
   const ground = new THREE.Mesh(
@@ -788,6 +800,56 @@ function updateCulledObjects() {
   }
 }
 
+function compileVisibleScene() {
+  if (!renderer || !scene || !camera) return;
+  renderer.compile(scene, camera);
+  renderer.render(scene, camera);
+}
+
+function warmupCullables() {
+  if (!renderer || warmupComplete || active) return;
+  warmupStarted = true;
+
+  const end = Math.min(cullables.length, warmupIndex + WARMUP_BATCH_SIZE);
+  const touched = [];
+  for (let i = warmupIndex; i < end; i++) {
+    const object = cullables[i].object;
+    touched.push({ object, visible: object.visible });
+    object.visible = true;
+  }
+
+  compileVisibleScene();
+
+  for (const entry of touched) entry.object.visible = entry.visible;
+  warmupIndex = end;
+
+  if (warmupIndex >= cullables.length) {
+    warmupComplete = true;
+    updateCulledObjects();
+    return;
+  }
+
+  runWhenIdle(warmupCullables, 250);
+}
+
+function beginWarmup() {
+  if (!renderer || warmupStarted || warmupComplete) return;
+  compileVisibleScene();
+  runWhenIdle(warmupCullables, 250);
+}
+
+function preloadWorld() {
+  if (preloadStarted || renderer) return;
+  preloadStarted = true;
+  runWhenIdle(() => {
+    if (!overlay) makeOverlay();
+    if (!renderer) makeWorld();
+    resetPlayer();
+    updateCulledObjects();
+    beginWarmup();
+  }, 1200);
+}
+
 function frame(time) {
   if (!active) return;
   animationFrame = requestAnimationFrame(frame);
@@ -819,6 +881,7 @@ function open() {
 
   resetPlayer();
   updateCulledObjects();
+  compileVisibleScene();
   active = true;
   overlay.classList.remove('hidden');
   document.body.classList.add('aether-world-active');
@@ -853,3 +916,5 @@ window.AetherWorld3D = Object.freeze({
   close,
   isOpen: () => active
 });
+
+preloadWorld();
