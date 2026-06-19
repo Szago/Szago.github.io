@@ -13,10 +13,15 @@ const PLAYER_LIGHT_RADIUS = 0;
 const NEAR_RENDER_RADIUS = 7;
 const NEAR_RENDER_HYSTERESIS = 3;
 const WARMUP_BATCH_SIZE = 34;
+const LOAD_BATCH_SIZE = 96;
+const LOAD_SAMPLE_COUNT = 320;
 
 let overlay;
 let viewport;
 let status;
+let loadingPanel;
+let loadingBar;
+let loadingText;
 let renderer;
 let scene;
 let camera;
@@ -25,10 +30,13 @@ let ruinMaterials;
 let animationFrame = 0;
 let previousTime = 0;
 let active = false;
+let loading = false;
 let preloadStarted = false;
 let warmupStarted = false;
 let warmupComplete = false;
 let warmupIndex = 0;
+let loadSampleIndex = 0;
+let loadSampleIndices = [];
 let yaw = 0;
 let pitch = 0;
 let grounded = true;
@@ -59,11 +67,19 @@ function makeOverlay() {
         '<span id="aether-world-status" class="aether-world-status">CLICK THE DARKNESS TO CAPTURE THE MOUSE</span>' +
       '</div>' +
     '</div>' +
+    '<div id="aether-world-loading" class="aether-world-loading hidden">' +
+      '<div class="aether-world-loading-title">THE RUINS ARE WAKING</div>' +
+      '<div class="aether-world-loading-track"><div id="aether-world-loading-bar"></div></div>' +
+      '<div id="aether-world-loading-text" class="aether-world-loading-text">0%</div>' +
+    '</div>' +
     '<button id="aether-world-close" type="button">LEAVE RUINS</button>';
   document.body.appendChild(overlay);
 
   viewport = document.getElementById('aether-world-viewport');
   status = document.getElementById('aether-world-status');
+  loadingPanel = document.getElementById('aether-world-loading');
+  loadingBar = document.getElementById('aether-world-loading-bar');
+  loadingText = document.getElementById('aether-world-loading-text');
   document.getElementById('aether-world-close').addEventListener('click', close);
   viewport.addEventListener('click', captureMouse);
 }
@@ -159,6 +175,21 @@ function addCullable(object, x, z, radius = 1) {
 function setObjectVisible(object, visible) {
   if (object.visible === visible) return;
   object.visible = visible;
+}
+
+function setLoadingVisible(visible) {
+  if (!loadingPanel) return;
+  loadingPanel.classList.toggle('hidden', !visible);
+}
+
+function updateLoadingProgress(label = 'WARMING RUINS', pctOverride = null) {
+  if (!loadingBar || !loadingText) return;
+  const total = Math.max(1, cullables.length);
+  const pct = pctOverride === null
+    ? (warmupComplete ? 100 : Math.min(99, Math.floor((warmupIndex / total) * 100)))
+    : pctOverride;
+  loadingBar.style.width = pct + '%';
+  loadingText.textContent = label + ' // ' + pct + '%';
 }
 
 function runWhenIdle(callback, timeout = 400) {
@@ -257,6 +288,7 @@ function makeWorld() {
   addRoads();
   addFountain();
   addRuinedCity();
+  addDeadForest();
 }
 
 function addRoads() {
@@ -469,6 +501,89 @@ function addRuinedCity() {
   }
 }
 
+function addDeadForest() {
+  const random = mulberry32(0x7AEE5);
+  let placed = 0;
+
+  for (let attempt = 0; attempt < 2600 && placed < 360; attempt++) {
+    const x = (random() * 2 - 1) * WORLD_LIMIT * 0.96;
+    const z = (random() * 2 - 1) * WORLD_LIMIT * 0.96;
+    const radius = 0.75 + random() * 1.7;
+
+    if (Math.hypot(x, z) < 12 || isNearRoad(x, z, 1.8 + radius)) continue;
+    if (overlapsCollider(x - radius, x + radius, z - radius, z + radius, 0.55)) continue;
+
+    addDeadTree(x, z, random);
+    placed++;
+  }
+}
+
+function addDeadTree(x, z, random) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+
+  const height = 2.1 + random() * 4.8;
+  const trunkWidth = 0.16 + random() * 0.22;
+  const burned = random() < 0.46;
+  const leaning = (random() - 0.5) * 0.36;
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(trunkWidth * 0.55, trunkWidth, height, 5),
+    burned ? ruinMaterials.char : ruinMaterials.darkStone
+  );
+  trunk.position.y = height / 2;
+  trunk.rotation.set(leaning * 0.35, random() * Math.PI, leaning);
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  const branchCount = 3 + Math.floor(random() * 5);
+  for (let i = 0; i < branchCount; i++) {
+    const length = 0.75 + random() * 2.1;
+    const branch = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08 + random() * 0.08, 0.08 + random() * 0.08, length),
+      burned || random() < 0.55 ? ruinMaterials.char : ruinMaterials.darkStone
+    );
+    branch.position.set((random() - 0.5) * 0.28, height * (0.34 + random() * 0.55), (random() - 0.5) * 0.28);
+    branch.rotation.set((random() - 0.5) * 0.85, random() * Math.PI, 0.55 + random() * 0.75);
+    branch.castShadow = true;
+    group.add(branch);
+  }
+
+  if (random() < 0.34) {
+    const stump = new THREE.Mesh(new THREE.CylinderGeometry(trunkWidth * 1.8, trunkWidth * 2.2, 0.16, 5), ruinMaterials.char);
+    stump.position.y = 0.08;
+    group.add(stump);
+  }
+
+  if (burned) addTreeFlames(group, height, random);
+
+  addCullable(group, x, z, 2.7 + height * 0.28);
+
+  if (burned && random() < 0.42) {
+    addFire(x + (random() - 0.5) * 1.2, z + (random() - 0.5) * 1.2, 0.34 + random() * 0.42, random);
+  }
+}
+
+function addTreeFlames(group, height, random) {
+  const count = 1 + Math.floor(random() * 3);
+  for (let i = 0; i < count; i++) {
+    const flame = new THREE.Group();
+    const size = 0.45 + random() * 0.55;
+    const outer = new THREE.Mesh(
+      new THREE.PlaneGeometry(size, size * 1.7),
+      new THREE.MeshBasicMaterial({ color: 0xd9360c, transparent: true, opacity: 0.66, side: THREE.DoubleSide })
+    );
+    const inner = new THREE.Mesh(
+      new THREE.PlaneGeometry(size * 0.42, size * 0.9),
+      new THREE.MeshBasicMaterial({ color: 0xffc24b, transparent: true, opacity: 0.84, side: THREE.DoubleSide })
+    );
+    inner.position.z = 0.012;
+    flame.add(outer, inner);
+    flame.position.set((random() - 0.5) * 0.34, height * (0.18 + random() * 0.6), (random() - 0.5) * 0.34);
+    flame.rotation.set(0, random() * Math.PI, (random() - 0.5) * 0.2);
+    group.add(flame);
+  }
+}
+
 function addRuin(x, z, width, depth, random) {
   const group = new THREE.Group();
   group.position.set(x, 0, z);
@@ -509,8 +624,8 @@ function addRuin(x, z, width, depth, random) {
       group.add(scorch);
     }
 
-    if (random() < 0.88) addBurningWindows(group, spec, random);
-    if (random() < 0.64) addWallFlames(group, spec, random);
+    if (random() < 0.94) addBurningWindows(group, spec, random);
+    if (random() < 0.9) addWallFlames(group, spec, random);
   }
 
   if (random() < 0.72) {
@@ -554,10 +669,12 @@ function addRuin(x, z, width, depth, random) {
 
   addCullable(group, x, z, Math.max(width, depth) * 0.85 + 3);
 
-  const fireCount = random() < 0.78 ? 1 + Math.floor(random() * 3) : 0;
+  const fireCount = random() < 0.95 ? 2 + Math.floor(random() * 4) : 0;
   for (let i = 0; i < fireCount; i++) {
-    const fireX = x + (random() - 0.5) * width * 1.05;
-    const fireZ = z + (random() - 0.5) * depth * 1.05;
+    const alongWall = random() < 0.5;
+    const side = random() < 0.5 ? -1 : 1;
+    const fireX = alongWall ? x + (random() - 0.5) * width : x + side * width * 0.52;
+    const fireZ = alongWall ? z + side * depth * 0.52 : z + (random() - 0.5) * depth;
     addFire(fireX, fireZ, 0.52 + random() * 1.18, random);
   }
 
@@ -574,7 +691,7 @@ function addBurningWindows(group, spec, random) {
 
   for (let floor = 0; floor < floors; floor++) {
     for (let i = 0; i < count; i++) {
-      if (random() < 0.28) continue;
+      if (random() < 0.18) continue;
       const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.46 + random() * 0.18, 0.64 + random() * 0.22), ruinMaterials.windowFire);
       const along = -span * 0.38 + (span * 0.76) * ((i + random() * 0.4) / Math.max(1, count - 0.65));
       const y = 1.05 + floor * 1.95 + random() * 0.35;
@@ -595,7 +712,7 @@ function addBurningWindows(group, spec, random) {
 function addWallFlames(group, spec, random) {
   const horizontalWall = spec.side === 'north' || spec.side === 'south';
   const span = horizontalWall ? spec.w : spec.d;
-  const count = 1 + Math.floor(random() * 3);
+  const count = 2 + Math.floor(random() * 4);
 
   for (let i = 0; i < count; i++) {
     const flame = new THREE.Group();
@@ -702,6 +819,11 @@ function onMouseMove(event) {
 }
 
 function onKeyDown(event) {
+  if (!active && !loading) return;
+  if (loading && event.code === 'Escape') {
+    close();
+    return;
+  }
   if (!active) return;
   if (event.code === 'Escape' && document.pointerLockElement !== renderer.domElement) {
     close();
@@ -807,10 +929,16 @@ function compileVisibleScene() {
 }
 
 function warmupCullables() {
-  if (!renderer || warmupComplete || active) return;
+  if (!renderer || warmupComplete || active || loading) return;
   warmupStarted = true;
+  warmupBatch(WARMUP_BATCH_SIZE);
+  if (warmupComplete) return;
 
-  const end = Math.min(cullables.length, warmupIndex + WARMUP_BATCH_SIZE);
+  runWhenIdle(warmupCullables, 250);
+}
+
+function warmupBatch(size) {
+  const end = Math.min(cullables.length, warmupIndex + size);
   const touched = [];
   for (let i = warmupIndex; i < end; i++) {
     const object = cullables[i].object;
@@ -826,10 +954,42 @@ function warmupCullables() {
   if (warmupIndex >= cullables.length) {
     warmupComplete = true;
     updateCulledObjects();
-    return;
+  }
+}
+
+function warmupIndexedCullables(indices, start, count) {
+  const end = Math.min(indices.length, start + count);
+  const touched = [];
+
+  for (let i = start; i < end; i++) {
+    const entry = cullables[indices[i]];
+    if (!entry) continue;
+    touched.push({ object: entry.object, visible: entry.object.visible });
+    entry.object.visible = true;
   }
 
-  runWhenIdle(warmupCullables, 250);
+  compileVisibleScene();
+
+  for (const entry of touched) entry.object.visible = entry.visible;
+  return end;
+}
+
+function prepareLoadingSamples() {
+  const indices = new Set();
+  updateCulledObjects();
+
+  for (let i = 0; i < cullables.length; i++) {
+    if (cullables[i].object.visible) indices.add(i);
+  }
+
+  const sampleCount = Math.min(LOAD_SAMPLE_COUNT, cullables.length);
+  const stride = cullables.length / Math.max(1, sampleCount);
+  for (let i = 0; i < sampleCount; i++) {
+    indices.add(Math.min(cullables.length - 1, Math.floor(i * stride)));
+  }
+
+  loadSampleIndices = Array.from(indices).sort((a, b) => a - b);
+  loadSampleIndex = 0;
 }
 
 function beginWarmup() {
@@ -850,6 +1010,37 @@ function preloadWorld() {
   }, 1200);
 }
 
+function startWorldAfterLoading() {
+  if (!loading) return;
+  loading = false;
+  setLoadingVisible(false);
+  updateCulledObjects();
+  compileVisibleScene();
+  active = true;
+  previousTime = performance.now();
+  dispatchState();
+  animationFrame = requestAnimationFrame(frame);
+}
+
+function processLoadingWarmup() {
+  if (!loading) return;
+  if (!renderer) makeWorld();
+
+  if (!loadSampleIndices.length) prepareLoadingSamples();
+
+  if (!warmupComplete && loadSampleIndex < loadSampleIndices.length) {
+    loadSampleIndex = warmupIndexedCullables(loadSampleIndices, loadSampleIndex, LOAD_BATCH_SIZE);
+    const pct = Math.min(99, Math.floor((loadSampleIndex / Math.max(1, loadSampleIndices.length)) * 100));
+    updateLoadingProgress('WARMING RUINS', pct);
+    window.setTimeout(processLoadingWarmup, 0);
+    return;
+  }
+
+  warmupComplete = true;
+  updateLoadingProgress('ENTERING');
+  window.setTimeout(startWorldAfterLoading, 80);
+}
+
 function frame(time) {
   if (!active) return;
   animationFrame = requestAnimationFrame(frame);
@@ -862,7 +1053,7 @@ function frame(time) {
 }
 
 function dispatchState() {
-  window.dispatchEvent(new CustomEvent('aetherworldchange', { detail: { active } }));
+  window.dispatchEvent(new CustomEvent('aetherworldchange', { detail: { active: active || loading } }));
 }
 
 function resetPlayer() {
@@ -875,30 +1066,40 @@ function resetPlayer() {
 }
 
 function open() {
-  if (active) return;
+  if (active || loading) return;
   if (!overlay) makeOverlay();
   if (!renderer) makeWorld();
 
   resetPlayer();
   updateCulledObjects();
-  compileVisibleScene();
-  active = true;
   overlay.classList.remove('hidden');
   document.body.classList.add('aether-world-active');
   resize();
-  previousTime = performance.now();
-  dispatchState();
-  animationFrame = requestAnimationFrame(frame);
+
+  if (!warmupComplete) {
+    loading = true;
+    warmupStarted = true;
+    setLoadingVisible(true);
+    updateLoadingProgress('WARMING RUINS');
+    dispatchState();
+    window.setTimeout(processLoadingWarmup, 0);
+    return;
+  }
+
+  loading = true;
+  startWorldAfterLoading();
 }
 
 function close() {
-  if (!active) return;
+  if (!active && !loading) return;
   active = false;
+  loading = false;
   cancelAnimationFrame(animationFrame);
   animationFrame = 0;
   keys.clear();
   velocity.set(0, 0, 0);
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+  setLoadingVisible(false);
   overlay.classList.add('hidden');
   document.body.classList.remove('aether-world-active');
   dispatchState();
@@ -914,7 +1115,7 @@ window.addEventListener('blur', () => keys.clear());
 window.AetherWorld3D = Object.freeze({
   open,
   close,
-  isOpen: () => active
+  isOpen: () => active || loading
 });
 
 preloadWorld();

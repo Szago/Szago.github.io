@@ -97,9 +97,57 @@ body.aether-world-active #perf-overlay {
   color: #82d7ff;
 }
 
+.aether-world-loading {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 18px;
+  padding: 28px;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px),
+    rgba(2, 1, 1, 0.94);
+  pointer-events: auto;
+  text-align: center;
+}
+
+.aether-world-loading.hidden {
+  display: none;
+}
+
+.aether-world-loading-title {
+  color: #ffb85d;
+  font-size: clamp(11px, 1.4vw, 18px);
+  line-height: 1.7;
+  text-shadow: 3px 3px 0 #000;
+}
+
+.aether-world-loading-track {
+  width: min(520px, calc(100vw - 56px));
+  height: 18px;
+  border: 3px solid #654837;
+  background: #100706;
+  box-shadow: 0 0 18px rgba(255, 65, 18, 0.24);
+}
+
+#aether-world-loading-bar {
+  width: 0%;
+  height: 100%;
+  background:
+    repeating-linear-gradient(90deg, #ff3512 0 12px, #ff9f32 12px 18px, #ffd15a 18px 22px);
+  transition: width 120ms linear;
+}
+
+.aether-world-loading-text {
+  color: #9ee8ff;
+  font-size: clamp(7px, 0.8vw, 10px);
+  line-height: 1.8;
+}
+
 #aether-world-close {
   position: absolute;
-  z-index: 3;
+  z-index: 5;
   top: 18px;
   right: 20px;
   pointer-events: auto;
