@@ -15,7 +15,6 @@ const NEAR_RENDER_HYSTERESIS = 3;
 const CULL_CELL_SIZE = 18;
 const CULL_UPDATE_INTERVAL = 120;
 const CULL_MOVE_THRESHOLD = 1.2;
-const WARMUP_BATCH_SIZE = 34;
 const LOAD_BATCH_SIZE = 96;
 const LOAD_SAMPLE_COUNT = 320;
 const PLAYER_MAX_HP = 5;
@@ -38,7 +37,6 @@ let animationFrame = 0;
 let previousTime = 0;
 let active = false;
 let loading = false;
-let preloadStarted = false;
 let warmupStarted = false;
 let warmupComplete = false;
 let warmupIndex = 0;
@@ -292,7 +290,15 @@ function initMaterials() {
     windowFire: new THREE.MeshBasicMaterial({ color: 0xff8b23, transparent: true, opacity: 0.88, side: THREE.DoubleSide }),
     blood: new THREE.MeshBasicMaterial({ map: makeBloodTexture(0xB100D), transparent: true, depthWrite: false, side: THREE.DoubleSide }),
     oldBlood: new THREE.MeshBasicMaterial({ map: makeBloodTexture(0xD15EA5E), color: 0x7d120d, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }),
-    smoke: new THREE.SpriteMaterial({ map: makeSmokeTexture(0x5A10AE), color: 0x2a2421, transparent: true, opacity: 0.48, depthWrite: false })
+    smoke: new THREE.SpriteMaterial({ map: makeSmokeTexture(0x5A10AE), color: 0x2a2421, transparent: true, opacity: 0.48, depthWrite: false }),
+    // Shared flame materials — flames are static-coloured, so every flame of a
+    // given type reuses one material instead of allocating thousands.
+    flameWallOuter: new THREE.MeshBasicMaterial({ color: 0xd7350b, transparent: true, opacity: 0.66, side: THREE.DoubleSide }),
+    flameWallInner: new THREE.MeshBasicMaterial({ color: 0xffba42, transparent: true, opacity: 0.82, side: THREE.DoubleSide }),
+    flameTreeOuter: new THREE.MeshBasicMaterial({ color: 0xd9360c, transparent: true, opacity: 0.66, side: THREE.DoubleSide }),
+    flameTreeInner: new THREE.MeshBasicMaterial({ color: 0xffc24b, transparent: true, opacity: 0.84, side: THREE.DoubleSide }),
+    fireOuter: new THREE.MeshBasicMaterial({ color: 0xe73b0c, transparent: true, opacity: 0.72 }),
+    fireInner: new THREE.MeshBasicMaterial({ color: 0xffc43d, transparent: true, opacity: 0.9 })
   };
 }
 
@@ -314,6 +320,9 @@ function makeWorld() {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  // The world geometry is static and the only shadow-caster is the fixed moon
+  // light, so the shadow map never needs to re-render after the first bake.
+  renderer.shadowMap.autoUpdate = false;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = DEBUG_INFINITE_VISION ? 1.38 : 1.0;
   viewport.appendChild(renderer.domElement);
@@ -683,11 +692,11 @@ function addTreeFlames(group, height, random) {
     const size = 0.45 + random() * 0.55;
     const outer = new THREE.Mesh(
       new THREE.PlaneGeometry(size, size * 1.7),
-      new THREE.MeshBasicMaterial({ color: 0xd9360c, transparent: true, opacity: 0.66, side: THREE.DoubleSide })
+      ruinMaterials.flameTreeOuter
     );
     const inner = new THREE.Mesh(
       new THREE.PlaneGeometry(size * 0.42, size * 0.9),
-      new THREE.MeshBasicMaterial({ color: 0xffc24b, transparent: true, opacity: 0.84, side: THREE.DoubleSide })
+      ruinMaterials.flameTreeInner
     );
     inner.position.z = 0.012;
     flame.add(outer, inner);
@@ -834,11 +843,11 @@ function addWallFlames(group, spec, random) {
 
     const outer = new THREE.Mesh(
       new THREE.PlaneGeometry(w, h),
-      new THREE.MeshBasicMaterial({ color: 0xd7350b, transparent: true, opacity: 0.66, side: THREE.DoubleSide })
+      ruinMaterials.flameWallOuter
     );
     const inner = new THREE.Mesh(
       new THREE.PlaneGeometry(w * 0.48, h * 0.58),
-      new THREE.MeshBasicMaterial({ color: 0xffba42, transparent: true, opacity: 0.82, side: THREE.DoubleSide })
+      ruinMaterials.flameWallInner
     );
     inner.position.z = 0.012;
     flame.add(outer, inner);
@@ -862,14 +871,14 @@ function addFire(x, z, scale, random) {
 
   const outer = new THREE.Mesh(
     new THREE.ConeGeometry(0.42 * scale, 1.3 * scale, 7),
-    new THREE.MeshBasicMaterial({ color: 0xe73b0c, transparent: true, opacity: 0.72 })
+    ruinMaterials.fireOuter
   );
   outer.position.y = 0.65 * scale;
   group.add(outer);
 
   const inner = new THREE.Mesh(
     new THREE.ConeGeometry(0.24 * scale, 0.85 * scale, 7),
-    new THREE.MeshBasicMaterial({ color: 0xffc43d, transparent: true, opacity: 0.9 })
+    ruinMaterials.fireInner
   );
   inner.position.y = 0.46 * scale;
   group.add(inner);
@@ -887,16 +896,12 @@ function addFire(x, z, scale, random) {
     smokeSprites.push(smoke);
   }
 
-  const light = new THREE.PointLight(0xff4d16, 4.8 * scale, 3.2 + scale * 1.6, 2);
-  light.position.y = 1.05 * scale;
-  group.add(light);
   addCullable(group, x, z, 4 + scale * 1.8);
 
   fires.push({
     group,
     outer,
     inner,
-    light,
     smokeSprites,
     baseScale: scale,
     phase: random() * Math.PI * 2
@@ -954,15 +959,18 @@ function onContextMenu(event) {
   event.preventDefault();
 }
 
+let lastStatusText = '';
 function updatePointerStatus() {
   if (!status) return;
-  if (isParrying()) {
-    status.textContent = 'PARRY WINDOW OPEN';
-    return;
-  }
-  status.textContent = document.pointerLockElement === renderer.domElement
-    ? 'THE DARKNESS IS LISTENING // ESC RELEASES CURSOR'
-    : 'CLICK THE DARKNESS TO CAPTURE THE MOUSE';
+  const text = isParrying()
+    ? 'PARRY WINDOW OPEN'
+    : document.pointerLockElement === renderer.domElement
+      ? 'THE DARKNESS IS LISTENING // ESC RELEASES CURSOR'
+      : 'CLICK THE DARKNESS TO CAPTURE THE MOUSE';
+  // Avoid touching the DOM every frame — only write when the text changes.
+  if (text === lastStatusText) return;
+  lastStatusText = text;
+  status.textContent = text;
 }
 
 function onMouseMove(event) {
@@ -1054,7 +1062,6 @@ function updateAtmosphere(time) {
       Math.sin(time * 0.021 + fire.phase * 2.3) * 0.06;
     fire.outer.scale.set(1 + Math.sin(time * 0.014 + fire.phase) * 0.11, flicker, 1);
     fire.inner.scale.set(0.9 + Math.sin(time * 0.018 + fire.phase) * 0.08, 1.04 / flicker, 0.9);
-    fire.light.intensity = (2.25 + flicker * 0.8) * fire.baseScale;
     for (let i = 0; i < fire.smokeSprites.length; i++) {
       const smoke = fire.smokeSprites[i];
       const drift = time * 0.00045 + fire.phase + i;
@@ -1162,35 +1169,6 @@ function compileVisibleScene() {
   renderer.render(scene, camera);
 }
 
-function warmupCullables() {
-  if (!renderer || warmupComplete || active || loading) return;
-  warmupStarted = true;
-  warmupBatch(WARMUP_BATCH_SIZE);
-  if (warmupComplete) return;
-
-  runWhenIdle(warmupCullables, 250);
-}
-
-function warmupBatch(size) {
-  const end = Math.min(cullables.length, warmupIndex + size);
-  const touched = [];
-  for (let i = warmupIndex; i < end; i++) {
-    const object = cullables[i].object;
-    touched.push({ object, visible: object.visible });
-    object.visible = true;
-  }
-
-  compileVisibleScene();
-
-  for (const entry of touched) entry.object.visible = entry.visible;
-  warmupIndex = end;
-
-  if (warmupIndex >= cullables.length) {
-    warmupComplete = true;
-    updateCulledObjects(true);
-  }
-}
-
 function warmupIndexedCullables(indices, start, count) {
   const end = Math.min(indices.length, start + count);
   const touched = [];
@@ -1226,29 +1204,14 @@ function prepareLoadingSamples() {
   loadSampleIndex = 0;
 }
 
-function beginWarmup() {
-  if (!renderer || warmupStarted || warmupComplete) return;
-  compileVisibleScene();
-  runWhenIdle(warmupCullables, 250);
-}
-
-function preloadWorld() {
-  if (preloadStarted || renderer) return;
-  preloadStarted = true;
-  runWhenIdle(() => {
-    if (!overlay) makeOverlay();
-    if (!renderer) makeWorld();
-    resetPlayer();
-    updateAllCullablesForWarmup();
-    beginWarmup();
-  }, 1200);
-}
-
 function startWorldAfterLoading() {
   if (!loading) return;
   loading = false;
   setLoadingVisible(false);
   updateCulledObjects(true);
+  // Bake the shadow map once now that the spawn area is populated; with
+  // autoUpdate off it then stays free for the rest of the session.
+  if (renderer) renderer.shadowMap.needsUpdate = true;
   compileVisibleScene();
   active = true;
   previousTime = performance.now();
@@ -1258,7 +1221,11 @@ function startWorldAfterLoading() {
 
 function processLoadingWarmup() {
   if (!loading) return;
-  if (!renderer) makeWorld();
+  if (!renderer) {
+    makeWorld();
+    resetPlayer();
+    resize();
+  }
 
   if (!loadSampleIndices.length) prepareLoadingSamples();
 
@@ -1309,24 +1276,29 @@ function resetPlayer() {
 function open() {
   if (active || loading) return;
   if (!overlay) makeOverlay();
-  if (!renderer) makeWorld();
 
-  resetPlayer();
-  updateCulledObjects(true);
   overlay.classList.remove('hidden');
   document.body.classList.add('aether-world-active');
-  resize();
 
   if (!warmupComplete) {
+    // First entry: paint the loading screen FIRST, then build + warm the
+    // scene on the next tick so the heavy makeWorld() never freezes the page.
     loading = true;
     warmupStarted = true;
     setLoadingVisible(true);
-    updateLoadingProgress('WARMING RUINS');
+    updateLoadingProgress('WARMING RUINS', 0);
     dispatchState();
-    window.setTimeout(processLoadingWarmup, 0);
+    // Wait for the loading screen to actually paint (two frames) before the
+    // heavy synchronous makeWorld() runs, so the bar is visible up front.
+    requestAnimationFrame(() => requestAnimationFrame(processLoadingWarmup));
     return;
   }
 
+  // Already built and warmed (re-opening after a previous visit).
+  if (!renderer) makeWorld();
+  resetPlayer();
+  updateCulledObjects(true);
+  resize();
   loading = true;
   startWorldAfterLoading();
 }
@@ -1370,5 +1342,3 @@ window.AetherWorld3D = Object.freeze({
   isAttacking,
   setPlayerHp
 });
-
-preloadWorld();
