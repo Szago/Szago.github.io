@@ -152,20 +152,36 @@ function makeNoiseTexture(base, flecks, seed) {
 
 function makeBloodTexture(seed) {
   const random = mulberry32(seed);
-  return makeCanvasTexture(32, 32, (ctx, width, height) => {
+  return makeCanvasTexture(48, 48, (ctx, width, height) => {
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = 'rgba(73, 0, 0, 0.92)';
-    for (let i = 0; i < 9; i++) {
+    // congealed pool
+    ctx.fillStyle = 'rgba(54, 1, 3, 0.95)';
+    for (let i = 0; i < 11; i++) {
       const x = width * (0.3 + random() * 0.4);
       const y = height * (0.3 + random() * 0.4);
-      const rx = 3 + random() * 9;
-      const ry = 2 + random() * 7;
+      const rx = 4 + random() * 13;
+      const ry = 3 + random() * 10;
       ctx.beginPath();
-      ctx.ellipse(x + (random() - 0.5) * 10, y + (random() - 0.5) * 10, rx, ry, random() * Math.PI, 0, Math.PI * 2);
+      ctx.ellipse(x + (random() - 0.5) * 16, y + (random() - 0.5) * 16, rx, ry, random() * Math.PI, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.fillStyle = 'rgba(120, 5, 0, 0.72)';
-    for (let i = 0; i < 24; i++) ctx.fillRect((random() * width) | 0, (random() * height) | 0, 1 + (random() * 3 | 0), 1 + (random() * 2 | 0));
+    // dark dried centre
+    ctx.fillStyle = 'rgba(26, 2, 5, 0.7)';
+    ctx.beginPath();
+    ctx.ellipse(width * 0.5, height * 0.5, 8, 6, random() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+    // bright fresh spatter
+    ctx.fillStyle = 'rgba(104, 6, 2, 0.82)';
+    for (let i = 0; i < 42; i++) ctx.fillRect((random() * width) | 0, (random() * height) | 0, 1 + (random() * 3 | 0), 1 + (random() * 2 | 0));
+    // flung droplet trails
+    ctx.fillStyle = 'rgba(70, 1, 1, 0.88)';
+    for (let i = 0; i < 9; i++) {
+      const x = (random() * width) | 0;
+      const y = (random() * height) | 0;
+      const len = 3 + (random() * 11 | 0);
+      ctx.fillRect(x, y, 1, len);
+      ctx.fillRect(x, y + len, 2, 2);
+    }
   });
 }
 
@@ -179,6 +195,174 @@ function makeSmokeTexture(seed) {
       ctx.beginPath();
       ctx.ellipse(10 + random() * 12, 10 + random() * 14, 5 + random() * 9, 4 + random() * 8, random() * Math.PI, 0, Math.PI * 2);
       ctx.fill();
+    }
+  });
+}
+
+function strokeCrack(ctx, random, width, height, color, segments, step) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  let x = (random() * width) | 0;
+  let y = (random() * height) | 0;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  for (let s = 0; s < segments; s++) {
+    x += (random() - 0.5) * step;
+    y += (random() - 0.5) * step;
+    ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+// Scorched earth: soot blotches, grey ash dust, charcoal grit, cracks, embers.
+function makeAshTexture(seed) {
+  const random = mulberry32(seed);
+  return makeCanvasTexture(64, 64, (ctx, w, h) => {
+    colorFill(ctx, w, h, '#16120f');
+    for (let i = 0; i < 30; i++) {
+      ctx.fillStyle = random() < 0.5 ? '#0a0807' : '#241d17';
+      const s = 4 + (random() * 12 | 0);
+      ctx.fillRect((random() * w) | 0, (random() * h) | 0, s, s);
+    }
+    ctx.fillStyle = '#39312a';
+    for (let i = 0; i < 150; i++) ctx.fillRect((random() * w) | 0, (random() * h) | 0, 1, 1);
+    for (let i = 0; i < 70; i++) {
+      ctx.fillStyle = '#050403';
+      ctx.fillRect((random() * w) | 0, (random() * h) | 0, 1 + (random() * 2 | 0), 1 + (random() * 2 | 0));
+    }
+    for (let i = 0; i < 7; i++) strokeCrack(ctx, random, w, h, '#040302', 5, 16);
+    for (let i = 0; i < 16; i++) {
+      const ex = (random() * w) | 0;
+      const ey = (random() * h) | 0;
+      ctx.fillStyle = '#5a1606';
+      ctx.fillRect(ex - 1, ey - 1, 3, 3);
+      ctx.fillStyle = '#ff6a1e';
+      ctx.fillRect(ex, ey, 1, 1);
+    }
+  });
+}
+
+// Ruined masonry: offset brick courses, soot-streaked, cracked, chipped.
+function makeBrickTexture(seed, palette) {
+  const random = mulberry32(seed);
+  return makeCanvasTexture(64, 64, (ctx, w, h) => {
+    colorFill(ctx, w, h, palette.mortar);
+    const rows = 7;
+    const bh = h / rows;
+    const bw = 17;
+    for (let r = 0; r < rows; r++) {
+      const offset = (r % 2) ? bw / 2 : 0;
+      for (let x = -bw; x < w + bw; x += bw) {
+        const bx = x + offset + 1;
+        const by = r * bh + 1;
+        const bwid = bw - 2;
+        const bhei = bh - 2;
+        const t = random();
+        ctx.fillStyle = t < 0.22 ? palette.dark : (t < 0.5 ? palette.light : palette.mid);
+        ctx.fillRect(bx, by, bwid, bhei);
+        ctx.fillStyle = palette.soot;
+        const grit = 2 + (random() * 4 | 0);
+        for (let g = 0; g < grit; g++) ctx.fillRect(bx + (random() * bwid | 0), by + (random() * bhei | 0), 1, 1);
+        if (random() < 0.12) {
+          ctx.fillStyle = palette.mortar;
+          ctx.fillRect(bx + (random() * bwid * 0.6 | 0), by, 2 + (random() * 3 | 0), bhei);
+        }
+      }
+    }
+    for (let i = 0; i < 5; i++) {
+      ctx.fillStyle = 'rgba(6,5,4,0.5)';
+      ctx.fillRect((random() * w) | 0, 0, 2 + (random() * 3 | 0), h);
+    }
+    for (let i = 0; i < 3; i++) strokeCrack(ctx, random, w, h, '#0a0808', 8, 12);
+  });
+}
+
+// Charcoal with smouldering ember cracks.
+function makeCharTexture(seed) {
+  const random = mulberry32(seed);
+  return makeCanvasTexture(32, 32, (ctx, w, h) => {
+    colorFill(ctx, w, h, '#0a0807');
+    for (let i = 0; i < 80; i++) {
+      ctx.fillStyle = random() < 0.5 ? '#161210' : '#030202';
+      ctx.fillRect((random() * w) | 0, (random() * h) | 0, 1 + (random() * 2 | 0), 1 + (random() * 2 | 0));
+    }
+    for (let i = 0; i < 9; i++) {
+      const ex = (random() * w) | 0;
+      const ey = (random() * h) | 0;
+      const len = 1 + (random() * 3 | 0);
+      ctx.fillStyle = '#4a1204';
+      ctx.fillRect(ex, ey, 1, len);
+      if (random() < 0.6) {
+        ctx.fillStyle = '#d8430d';
+        ctx.fillRect(ex, ey + (random() * len | 0), 1, 1);
+      }
+    }
+  });
+}
+
+// Cobblestone street, grimed and bloodstained.
+function makeRoadTexture(seed) {
+  const random = mulberry32(seed);
+  return makeCanvasTexture(64, 64, (ctx, w, h) => {
+    colorFill(ctx, w, h, '#22201d');
+    const cs = 9;
+    for (let y = 0; y < h; y += cs) {
+      const off = ((y / cs) % 2) ? cs / 2 : 0;
+      for (let x = -cs; x < w; x += cs) {
+        const shade = 0.6 + random() * 0.6;
+        const base = Math.min(70, 46 * shade) | 0;
+        ctx.fillStyle = `rgb(${base},${Math.max(0, base - 6)},${Math.max(0, base - 11)})`;
+        ctx.fillRect(x + off + 1, y + 1, cs - 2, cs - 2);
+      }
+    }
+    for (let i = 0; i < 60; i++) {
+      ctx.fillStyle = '#0f0c0a';
+      ctx.fillRect((random() * w) | 0, (random() * h) | 0, 1 + (random() * 2 | 0), 1 + (random() * 2 | 0));
+    }
+    for (let i = 0; i < 8; i++) {
+      ctx.fillStyle = 'rgba(58,7,4,0.5)';
+      ctx.fillRect((random() * w) | 0, (random() * h) | 0, 2 + (random() * 4 | 0), 2 + (random() * 3 | 0));
+    }
+  });
+}
+
+// Fire glowing through a window: dark frame, hot light rising from below.
+function makeWindowFireTexture(seed) {
+  const random = mulberry32(seed);
+  return makeCanvasTexture(32, 48, (ctx, w, h) => {
+    colorFill(ctx, w, h, '#160500');
+    for (let y = 0; y < h; y++) {
+      const t = y / h;
+      const heat = Math.pow(t, 1.4);
+      const r = Math.min(255, 40 + heat * 215 | 0);
+      const g = Math.min(255, 8 + heat * 150 | 0);
+      const b = (heat * 45) | 0;
+      const inset = ((1 - heat) * w * 0.5) | 0;
+      const wob = (Math.sin(y * 0.7) * 2 + (random() - 0.5) * 3) | 0;
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(inset + wob, h - 1 - y, Math.max(1, w - inset * 2), 1);
+    }
+    for (let i = 0; i < 30; i++) {
+      ctx.fillStyle = '#ffd66a';
+      ctx.fillRect((random() * w) | 0, (h * 0.4 + random() * h * 0.6) | 0, 1, 1);
+    }
+  });
+}
+
+// Soft flame silhouette (white alpha mask, tinted by the material colour).
+function makeFlameTexture(seed) {
+  const random = mulberry32(seed);
+  return makeCanvasTexture(32, 48, (ctx, w, h) => {
+    ctx.clearRect(0, 0, w, h);
+    for (let y = 0; y < h; y++) {
+      const t = y / h;
+      const prof = Math.sin(Math.min(1, t * 1.15) * Math.PI * 0.5);
+      let half = prof * (w * 0.5) * (0.45 + t * 0.6);
+      half *= 0.78 + random() * 0.3;
+      const alpha = Math.min(1, (1 - Math.pow(1 - t, 1.6)) * 1.25);
+      const cx = w / 2 + Math.sin(y * 0.5) * 1.4;
+      ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
+      ctx.fillRect((cx - half) | 0, h - 1 - y, Math.max(1, (half * 2) | 0), 1);
     }
   });
 }
@@ -259,44 +443,46 @@ function runWhenIdle(callback, timeout = 400) {
 }
 
 function initMaterials() {
-  const roadMap = makeNoiseTexture('#423a34', [
-    { color: '#211d1a', count: 180, size: random => 1 + (random() * 2 | 0) },
-    { color: '#655e55', count: 120, size: random => 1 + (random() * 2 | 0) },
-    { color: '#711912', count: 20, size: random => 1 + (random() * 3 | 0) }
-  ], 0xA370AD);
-  roadMap.repeat.set(4, 34);
+  const ashMap = makeAshTexture(0xC0FFEE);
+  ashMap.repeat.set(7, 7);
 
-  const stoneMap = makeNoiseTexture('#56525a', [
-    { color: '#747078', count: 120, size: random => 1 + (random() * 2 | 0) },
-    { color: '#252228', count: 150, size: random => 1 + (random() * 3 | 0) }
-  ], 0x5700AE);
-  stoneMap.repeat.set(2.5, 2.5);
+  const roadMap = makeRoadTexture(0xA370AD);
+  roadMap.repeat.set(3, 20);
 
-  const ashMap = makeNoiseTexture('#211d19', [
-    { color: '#332b25', count: 140, size: random => 1 + (random() * 2 | 0) },
-    { color: '#0d0b09', count: 210, size: random => 1 + (random() * 3 | 0) },
-    { color: '#6f1d10', count: 26, size: random => 1 + (random() * 2 | 0) }
-  ], 0xC0FFEE);
-  ashMap.repeat.set(2, 2);
+  const stoneMap = makeBrickTexture(0x5700AE, {
+    mortar: '#322d31', light: '#706b71', mid: '#565158', dark: '#3b373e', soot: '#1a1718'
+  });
+  stoneMap.repeat.set(2, 2.4);
+
+  const darkStoneMap = makeNoiseTexture('#2b2930', [
+    { color: '#3a3842', count: 90, size: random => 1 + (random() * 2 | 0) },
+    { color: '#141318', count: 140, size: random => 1 + (random() * 3 | 0) }
+  ], 0x0DDBA11);
+  darkStoneMap.repeat.set(2, 2);
+
+  const charMap = makeCharTexture(0xC4A1);
+  charMap.repeat.set(2, 2);
+
+  const flameMap = makeFlameTexture(0xF1A3E);
 
   ruinMaterials = {
     ground: new THREE.MeshStandardMaterial({ color: 0xffffff, map: ashMap, roughness: 1 }),
     road: new THREE.MeshStandardMaterial({ color: 0xffffff, map: roadMap, roughness: 1 }),
-    roadEdge: new THREE.MeshStandardMaterial({ color: 0x151311, roughness: 1 }),
-    stone: new THREE.MeshStandardMaterial({ color: 0xffffff, map: stoneMap, roughness: 0.94 }),
-    darkStone: new THREE.MeshStandardMaterial({ color: 0x3b3840, roughness: 0.98 }),
-    char: new THREE.MeshStandardMaterial({ color: 0x090706, roughness: 1 }),
+    roadEdge: new THREE.MeshStandardMaterial({ color: 0x120f0d, roughness: 1 }),
+    stone: new THREE.MeshStandardMaterial({ color: 0xffffff, map: stoneMap, roughness: 0.95 }),
+    darkStone: new THREE.MeshStandardMaterial({ color: 0xffffff, map: darkStoneMap, roughness: 0.98 }),
+    char: new THREE.MeshStandardMaterial({ color: 0xffffff, map: charMap, roughness: 1 }),
     ember: new THREE.MeshBasicMaterial({ color: 0xff5a18, transparent: true, opacity: 0.82 }),
-    windowFire: new THREE.MeshBasicMaterial({ color: 0xff8b23, transparent: true, opacity: 0.88, side: THREE.DoubleSide }),
+    windowFire: new THREE.MeshBasicMaterial({ map: makeWindowFireTexture(0x717D0), color: 0xffffff, transparent: true, opacity: 0.95, side: THREE.DoubleSide }),
     blood: new THREE.MeshBasicMaterial({ map: makeBloodTexture(0xB100D), transparent: true, depthWrite: false, side: THREE.DoubleSide }),
     oldBlood: new THREE.MeshBasicMaterial({ map: makeBloodTexture(0xD15EA5E), color: 0x7d120d, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }),
     smoke: new THREE.SpriteMaterial({ map: makeSmokeTexture(0x5A10AE), color: 0x2a2421, transparent: true, opacity: 0.48, depthWrite: false }),
-    // Shared flame materials — flames are static-coloured, so every flame of a
-    // given type reuses one material instead of allocating thousands.
-    flameWallOuter: new THREE.MeshBasicMaterial({ color: 0xd7350b, transparent: true, opacity: 0.66, side: THREE.DoubleSide }),
-    flameWallInner: new THREE.MeshBasicMaterial({ color: 0xffba42, transparent: true, opacity: 0.82, side: THREE.DoubleSide }),
-    flameTreeOuter: new THREE.MeshBasicMaterial({ color: 0xd9360c, transparent: true, opacity: 0.66, side: THREE.DoubleSide }),
-    flameTreeInner: new THREE.MeshBasicMaterial({ color: 0xffc24b, transparent: true, opacity: 0.84, side: THREE.DoubleSide }),
+    // Shared flame materials — a tinted flame silhouette reused by every flame
+    // of a given type instead of allocating thousands of materials.
+    flameWallOuter: new THREE.MeshBasicMaterial({ map: flameMap, color: 0xe5430d, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }),
+    flameWallInner: new THREE.MeshBasicMaterial({ map: flameMap, color: 0xffc24b, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide }),
+    flameTreeOuter: new THREE.MeshBasicMaterial({ map: flameMap, color: 0xe5430d, transparent: true, opacity: 0.82, depthWrite: false, side: THREE.DoubleSide }),
+    flameTreeInner: new THREE.MeshBasicMaterial({ map: flameMap, color: 0xffcb55, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide }),
     fireOuter: new THREE.MeshBasicMaterial({ color: 0xe73b0c, transparent: true, opacity: 0.72 }),
     fireInner: new THREE.MeshBasicMaterial({ color: 0xffc43d, transparent: true, opacity: 0.9 })
   };
@@ -377,38 +563,53 @@ function addPlayerSword() {
   sword.rotation.set(-0.28, -0.48, -0.42);
   sword.renderOrder = 50;
 
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.88, 0.035), makeWeaponMaterial(0xd7d7d2));
-  blade.position.y = 0.42;
-  blade.rotation.z = -0.08;
-  blade.renderOrder = 51;
-  sword.add(blade);
+  // The weapon is drawn with depthTest off (always on top), so visible layering
+  // is controlled purely by renderOrder: low = behind, high = in front.
+  const add = (geometry, material, order, place) => {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = order;
+    place(mesh);
+    sword.add(mesh);
+    return mesh;
+  };
 
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.18, 4), makeWeaponMaterial(0xf3f1dc));
-  tip.position.y = 0.96;
-  tip.rotation.set(0, Math.PI / 4, 0);
-  tip.renderOrder = 51;
-  sword.add(tip);
+  const steel = makeWeaponMaterial(0xaab0b8);
+  const steelDark = makeWeaponMaterial(0x5f656d);
+  const edge = makeWeaponMaterial(0xe8edf2);
+  const bloodMat = makeWeaponMaterial(0x5c0c0c);
+  const iron = makeWeaponMaterial(0x33333a);
+  const brass = makeWeaponMaterial(0x8a6a32);
+  const leather = makeWeaponMaterial(0x261711);
 
-  const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.62, 0.038), makeWeaponMaterial(0x868483, 0.72));
-  fuller.position.set(0, 0.4, 0.006);
-  fuller.renderOrder = 52;
-  sword.add(fuller);
+  // Blade — flat tapered steel with a dark central spine and bright bevels.
+  add(new THREE.BoxGeometry(0.115, 0.94, 0.026), steel, 51, m => m.position.y = 0.53);
+  add(new THREE.BoxGeometry(0.034, 0.92, 0.04), steelDark, 52, m => m.position.y = 0.53);
+  for (const side of [-1, 1]) {
+    add(new THREE.BoxGeometry(0.016, 0.92, 0.03), edge, 52, m => m.position.set(side * 0.05, 0.53, 0));
+  }
 
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.065, 0.07), makeWeaponMaterial(0x7b5031));
-  guard.position.y = -0.03;
-  guard.rotation.z = -0.18;
-  guard.renderOrder = 52;
-  sword.add(guard);
+  // Point — a slim pyramid with a bright leading edge.
+  add(new THREE.ConeGeometry(0.082, 0.2, 4), steel, 51, m => { m.position.y = 1.08; m.rotation.y = Math.PI / 4; });
+  add(new THREE.ConeGeometry(0.046, 0.2, 4), edge, 52, m => { m.position.y = 1.085; m.rotation.y = Math.PI / 4; });
 
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.36, 0.085), makeWeaponMaterial(0x211410));
-  grip.position.y = -0.25;
-  grip.renderOrder = 52;
-  sword.add(grip);
+  // Dried blood smeared down the blade.
+  add(new THREE.BoxGeometry(0.12, 0.28, 0.03), bloodMat, 53, m => m.position.set(0.012, 0.86, 0.003));
+  add(new THREE.BoxGeometry(0.105, 0.15, 0.032), bloodMat, 53, m => m.position.set(-0.02, 0.5, -0.003));
 
-  const pommel = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.12, 0.09), makeWeaponMaterial(0x9b693c));
-  pommel.position.y = -0.49;
-  pommel.renderOrder = 52;
-  sword.add(pommel);
+  // Crossguard — drooping iron bar with brass end caps.
+  add(new THREE.BoxGeometry(0.46, 0.07, 0.09), iron, 52, m => { m.position.y = 0.05; m.rotation.z = -0.05; });
+  for (const side of [-1, 1]) {
+    add(new THREE.BoxGeometry(0.06, 0.085, 0.1), brass, 52, m => m.position.set(side * 0.24, 0.04, 0));
+  }
+
+  // Grip — wrapped leather with iron binding rings.
+  add(new THREE.CylinderGeometry(0.05, 0.045, 0.34, 6), leather, 51, m => m.position.y = -0.16);
+  for (let i = 0; i < 4; i++) {
+    add(new THREE.BoxGeometry(0.105, 0.018, 0.105), iron, 52, m => m.position.y = -0.05 - i * 0.075);
+  }
+
+  // Pommel — faceted iron knob.
+  add(new THREE.IcosahedronGeometry(0.072, 0), iron, 52, m => m.position.y = -0.35);
 
   camera.add(sword);
 }

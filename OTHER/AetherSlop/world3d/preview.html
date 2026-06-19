@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aetherholm Ruins — 3D Preview</title>
+  <link rel="stylesheet" href="world3d.css">
+  <style>
+    html, body { margin: 0; height: 100%; background: #050403; overflow: hidden; }
+    #preview-enter {
+      position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      z-index: 9999; padding: 18px 26px; cursor: pointer;
+      font-family: 'Press Start 2P', monospace; font-size: 13px; letter-spacing: 1px;
+      color: #ffd2a0; background: #1a0d08; border: 2px solid #b35a28;
+      text-shadow: 0 0 8px #ff6a1e;
+    }
+    #preview-enter:hover { background: #2a140c; }
+  </style>
+</head>
+<body>
+  <!-- Standalone harness to review the 3D world without the endgame calamity flow. -->
+  <button id="preview-enter" type="button">ENTER THE RUINS</button>
+
+  <script type="module" src="world3d.js"></script>
+  <script>
+    document.getElementById('preview-enter').addEventListener('click', () => {
+      if (window.AetherWorld3D) {
+        document.getElementById('preview-enter').style.display = 'none';
+        window.AetherWorld3D.open();
+      } else {
+        alert('AetherWorld3D not ready yet — give the module a moment and try again.');
+      }
+    });
+    // Re-show the launch button whenever the player leaves the ruins.
+    window.addEventListener('aetherworldchange', (e) => {
+      if (!e.detail.active) document.getElementById('preview-enter').style.display = '';
+    });
+  </script>
+</body>
+</html>
