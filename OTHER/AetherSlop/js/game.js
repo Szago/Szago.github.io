@@ -4664,9 +4664,9 @@ function debugRender() {
   const worldSec = document.createElement('div');
   worldSec.className = 'menu-section';
   worldSec.innerHTML =
-    '<div class="menu-section-title">3D WORLD PROTOTYPE</div>' +
-    '<div class="menu-note">Launches the first-person Three.js sandbox over the game. The idle simulation is paused until the world is closed.</div>' +
-    '<div class="menu-btns"><button id="dbg-world3d" class="menu-btn">ENTER 3D WORLD</button></div>';
+    '<div class="menu-section-title">CALAMITY WORLD PROTOTYPE</div>' +
+    '<div class="menu-note">Explore the dark, burning ruins of Aetherholm in first person. The idle simulation is paused until the world is closed.</div>' +
+    '<div class="menu-btns"><button id="dbg-world3d" class="menu-btn">ENTER RUINED CITY</button></div>';
   body.appendChild(worldSec);
 
   const perfSec = document.createElement('div');
