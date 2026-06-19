@@ -81,6 +81,37 @@ body.aether-world-active #perf-overlay {
   letter-spacing: 2px;
 }
 
+.aether-world-hearts {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  display: flex;
+  gap: 10px;
+  transform: translateX(-50%);
+  filter: drop-shadow(2px 2px 0 #000);
+}
+
+.aether-world-heart {
+  --heart: #ff3355;
+  --heart-dark: #96182a;
+  width: 21px;
+  height: 18px;
+  background:
+    linear-gradient(var(--heart), var(--heart)) 3px 0 / 6px 3px no-repeat,
+    linear-gradient(var(--heart), var(--heart)) 12px 0 / 6px 3px no-repeat,
+    linear-gradient(var(--heart), var(--heart)) 0 3px / 21px 3px no-repeat,
+    linear-gradient(var(--heart), var(--heart)) 0 6px / 21px 3px no-repeat,
+    linear-gradient(var(--heart), var(--heart)) 3px 9px / 15px 3px no-repeat,
+    linear-gradient(var(--heart-dark), var(--heart-dark)) 6px 12px / 9px 3px no-repeat,
+    linear-gradient(var(--heart-dark), var(--heart-dark)) 9px 15px / 3px 3px no-repeat;
+}
+
+.aether-world-heart.empty {
+  --heart: #332c35;
+  --heart-dark: #17131b;
+  opacity: 0.72;
+}
+
 .aether-world-help {
   position: absolute;
   left: 22px;

@@ -12,9 +12,15 @@ const DEBUG_INFINITE_VISION = true;
 const PLAYER_LIGHT_RADIUS = 0;
 const NEAR_RENDER_RADIUS = 7;
 const NEAR_RENDER_HYSTERESIS = 3;
+const CULL_CELL_SIZE = 18;
+const CULL_UPDATE_INTERVAL = 120;
+const CULL_MOVE_THRESHOLD = 1.2;
 const WARMUP_BATCH_SIZE = 34;
 const LOAD_BATCH_SIZE = 96;
 const LOAD_SAMPLE_COUNT = 320;
+const PLAYER_MAX_HP = 5;
+const ATTACK_DURATION = 420;
+const ATTACK_COOLDOWN = 620;
 
 let overlay;
 let viewport;
@@ -26,6 +32,7 @@ let renderer;
 let scene;
 let camera;
 let playerLight;
+let sword;
 let ruinMaterials;
 let animationFrame = 0;
 let previousTime = 0;
@@ -37,6 +44,15 @@ let warmupComplete = false;
 let warmupIndex = 0;
 let loadSampleIndex = 0;
 let loadSampleIndices = [];
+let playerHp = PLAYER_MAX_HP;
+let parryHeld = false;
+let attackStartedAt = 0;
+let attackUntil = 0;
+let attackCooldownUntil = 0;
+let lastCullUpdate = 0;
+let lastCullX = Infinity;
+let lastCullZ = Infinity;
+let maxCullableRadius = 1;
 let yaw = 0;
 let pitch = 0;
 let grounded = true;
@@ -49,6 +65,8 @@ const keys = new Set();
 const colliders = [];
 const fires = [];
 const cullables = [];
+const cullGrid = new Map();
+const visibleCullables = new Set();
 
 function makeOverlay() {
   overlay = document.createElement('div');
@@ -61,9 +79,10 @@ function makeOverlay() {
     '<div id="aether-world-viewport"></div>' +
     '<div class="aether-world-hud">' +
       '<div class="aether-world-title">AETHERHOLM // AFTER THE CALAMITY</div>' +
+      '<div id="aether-world-hearts" class="aether-world-hearts" aria-label="Health"></div>' +
       '<div class="aether-world-crosshair"></div>' +
       '<div class="aether-world-help">' +
-        'WASD MOVE &nbsp; SHIFT SPRINT &nbsp; SPACE JUMP &nbsp; MOUSE LOOK' +
+        'WASD MOVE &nbsp; SHIFT SPRINT &nbsp; SPACE JUMP &nbsp; MOUSE LOOK &nbsp; LMB ATTACK &nbsp; HOLD RMB PARRY' +
         '<span id="aether-world-status" class="aether-world-status">CLICK THE DARKNESS TO CAPTURE THE MOUSE</span>' +
       '</div>' +
     '</div>' +
@@ -80,6 +99,7 @@ function makeOverlay() {
   loadingPanel = document.getElementById('aether-world-loading');
   loadingBar = document.getElementById('aether-world-loading-bar');
   loadingText = document.getElementById('aether-world-loading-text');
+  renderHearts();
   document.getElementById('aether-world-close').addEventListener('click', close);
   viewport.addEventListener('click', captureMouse);
 }
@@ -165,10 +185,33 @@ function makeSmokeTexture(seed) {
   });
 }
 
+function cullCellCoord(value) {
+  return Math.floor(value / CULL_CELL_SIZE);
+}
+
+function cullCellKey(cx, cz) {
+  return cx + ',' + cz;
+}
+
+function addCullableToGrid(entry) {
+  const cx = cullCellCoord(entry.x);
+  const cz = cullCellCoord(entry.z);
+  const key = cullCellKey(cx, cz);
+  let bucket = cullGrid.get(key);
+  if (!bucket) {
+    bucket = [];
+    cullGrid.set(key, bucket);
+  }
+  bucket.push(entry);
+  maxCullableRadius = Math.max(maxCullableRadius, entry.radius);
+}
+
 function addCullable(object, x, z, radius = 1) {
   object.visible = false;
   scene.add(object);
-  cullables.push({ object, x, z, radius });
+  const entry = { object, x, z, radius };
+  cullables.push(entry);
+  addCullableToGrid(entry);
   return object;
 }
 
@@ -180,6 +223,22 @@ function setObjectVisible(object, visible) {
 function setLoadingVisible(visible) {
   if (!loadingPanel) return;
   loadingPanel.classList.toggle('hidden', !visible);
+}
+
+function renderHearts() {
+  const hearts = document.getElementById('aether-world-hearts');
+  if (!hearts) return;
+
+  let html = '';
+  for (let i = 0; i < PLAYER_MAX_HP; i++) {
+    html += '<span class="aether-world-heart' + (i < playerHp ? '' : ' empty') + '"></span>';
+  }
+  hearts.innerHTML = html;
+}
+
+function setPlayerHp(value) {
+  playerHp = THREE.MathUtils.clamp(Math.floor(value), 0, PLAYER_MAX_HP);
+  renderHearts();
 }
 
 function updateLoadingProgress(label = 'WARMING RUINS', pctOverride = null) {
@@ -245,6 +304,7 @@ function makeWorld() {
   camera = new THREE.PerspectiveCamera(72, 1, 0.05, DEBUG_INFINITE_VISION ? 1200 : 42);
   camera.position.set(0, EYE_HEIGHT, 10.8);
   camera.rotation.order = 'YXZ';
+  scene.add(camera);
 
   initMaterials();
 
@@ -289,6 +349,59 @@ function makeWorld() {
   addFountain();
   addRuinedCity();
   addDeadForest();
+  addPlayerSword();
+}
+
+function makeWeaponMaterial(color, opacity = 1) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: opacity < 1,
+    opacity,
+    depthTest: false,
+    depthWrite: false
+  });
+}
+
+function addPlayerSword() {
+  sword = new THREE.Group();
+  sword.position.set(0.54, -0.48, -0.88);
+  sword.rotation.set(-0.28, -0.48, -0.42);
+  sword.renderOrder = 50;
+
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.88, 0.035), makeWeaponMaterial(0xd7d7d2));
+  blade.position.y = 0.42;
+  blade.rotation.z = -0.08;
+  blade.renderOrder = 51;
+  sword.add(blade);
+
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.18, 4), makeWeaponMaterial(0xf3f1dc));
+  tip.position.y = 0.96;
+  tip.rotation.set(0, Math.PI / 4, 0);
+  tip.renderOrder = 51;
+  sword.add(tip);
+
+  const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.62, 0.038), makeWeaponMaterial(0x868483, 0.72));
+  fuller.position.set(0, 0.4, 0.006);
+  fuller.renderOrder = 52;
+  sword.add(fuller);
+
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.065, 0.07), makeWeaponMaterial(0x7b5031));
+  guard.position.y = -0.03;
+  guard.rotation.z = -0.18;
+  guard.renderOrder = 52;
+  sword.add(guard);
+
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.095, 0.36, 0.085), makeWeaponMaterial(0x211410));
+  grip.position.y = -0.25;
+  grip.renderOrder = 52;
+  sword.add(grip);
+
+  const pommel = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.12, 0.09), makeWeaponMaterial(0x9b693c));
+  pommel.position.y = -0.49;
+  pommel.renderOrder = 52;
+  sword.add(pommel);
+
+  camera.add(sword);
 }
 
 function addRoads() {
@@ -803,8 +916,50 @@ function captureMouse() {
   renderer.domElement.requestPointerLock();
 }
 
+function isParrying(time = performance.now()) {
+  return active && parryHeld;
+}
+
+function isAttacking(time = performance.now()) {
+  return active && time < attackUntil;
+}
+
+function triggerAttack(time = performance.now()) {
+  if (!active || parryHeld || time < attackCooldownUntil) return false;
+  attackStartedAt = time;
+  attackUntil = time + ATTACK_DURATION;
+  attackCooldownUntil = time + ATTACK_COOLDOWN;
+  return true;
+}
+
+function onMouseDown(event) {
+  if (!active) return;
+  if (event.button === 0) {
+    triggerAttack();
+    return;
+  }
+  if (event.button === 2) {
+    event.preventDefault();
+    parryHeld = true;
+    attackUntil = 0;
+  }
+}
+
+function onMouseUp(event) {
+  if (event.button === 2) parryHeld = false;
+}
+
+function onContextMenu(event) {
+  if (!overlay || !overlay.contains(event.target)) return;
+  event.preventDefault();
+}
+
 function updatePointerStatus() {
   if (!status) return;
+  if (isParrying()) {
+    status.textContent = 'PARRY WINDOW OPEN';
+    return;
+  }
   status.textContent = document.pointerLockElement === renderer.domElement
     ? 'THE DARKNESS IS LISTENING // ESC RELEASES CURSOR'
     : 'CLICK THE DARKNESS TO CAPTURE THE MOUSE';
@@ -910,16 +1065,95 @@ function updateAtmosphere(time) {
   }
 }
 
-function updateCulledObjects() {
+function updateSword(time) {
+  if (!sword) return;
+
+  const idle = Math.sin(time * 0.0035) * 0.018;
+  const attackProgress = time < attackUntil
+    ? THREE.MathUtils.clamp((time - attackStartedAt) / ATTACK_DURATION, 0, 1)
+    : 0;
+  const attackSwing = attackProgress > 0 ? Math.sin(attackProgress * Math.PI) : 0;
+  const attackSnap = attackProgress > 0 ? Math.sin(Math.min(1, attackProgress * 1.35) * Math.PI) : 0;
+
+  if (parryHeld) {
+    sword.position.set(0.2, -0.28 + idle * 0.4, -0.82);
+    sword.rotation.set(-1.14, 0.18, 1.38);
+    return;
+  }
+
+  sword.position.set(
+    0.54 - attackSwing * 0.38,
+    -0.48 + idle + attackSwing * 0.12,
+    -0.88 - attackSwing * 0.12
+  );
+  sword.rotation.set(
+    -0.28 - attackSwing * 0.72,
+    -0.48 + attackSwing * 0.58,
+    -0.42 - attackSnap * 1.55
+  );
+}
+
+function updateCulledObjects(force = false, time = performance.now()) {
+  const x = camera.position.x;
+  const z = camera.position.z;
+  const movedSq = (x - lastCullX) * (x - lastCullX) + (z - lastCullZ) * (z - lastCullZ);
+  if (!force && time - lastCullUpdate < CULL_UPDATE_INTERVAL && movedSq < CULL_MOVE_THRESHOLD * CULL_MOVE_THRESHOLD) return;
+
+  lastCullUpdate = time;
+  lastCullX = x;
+  lastCullZ = z;
+
+  const nextVisible = new Set();
+  const range = Math.ceil((NEAR_RENDER_RADIUS + NEAR_RENDER_HYSTERESIS + maxCullableRadius) / CULL_CELL_SIZE);
+  const cx = cullCellCoord(x);
+  const cz = cullCellCoord(z);
+
+  for (let gz = cz - range; gz <= cz + range; gz++) {
+    for (let gx = cx - range; gx <= cx + range; gx++) {
+      const bucket = cullGrid.get(cullCellKey(gx, gz));
+      if (!bucket) continue;
+
+      for (const entry of bucket) {
+        const dx = entry.x - x;
+        const dz = entry.z - z;
+        const limit = NEAR_RENDER_RADIUS + entry.radius + (entry.object.visible ? NEAR_RENDER_HYSTERESIS : 0);
+        if (dx * dx + dz * dz <= limit * limit) nextVisible.add(entry);
+      }
+    }
+  }
+
+  for (const entry of visibleCullables) {
+    if (!nextVisible.has(entry)) {
+      setObjectVisible(entry.object, false);
+      visibleCullables.delete(entry);
+    }
+  }
+
+  for (const entry of nextVisible) {
+    if (!visibleCullables.has(entry)) {
+      setObjectVisible(entry.object, true);
+      visibleCullables.add(entry);
+    }
+  }
+}
+
+function updateAllCullablesForWarmup() {
   const x = camera.position.x;
   const z = camera.position.z;
 
+  visibleCullables.clear();
   for (const entry of cullables) {
     const dx = entry.x - x;
     const dz = entry.z - z;
     const limit = NEAR_RENDER_RADIUS + entry.radius + (entry.object.visible ? NEAR_RENDER_HYSTERESIS : 0);
-    setObjectVisible(entry.object, dx * dx + dz * dz <= limit * limit);
+    const visible = dx * dx + dz * dz <= limit * limit;
+    setObjectVisible(entry.object, visible);
+    if (visible) visibleCullables.add(entry);
   }
+
+  lastCullUpdate = performance.now();
+  lastCullX = x;
+  lastCullZ = z;
 }
 
 function compileVisibleScene() {
@@ -953,7 +1187,7 @@ function warmupBatch(size) {
 
   if (warmupIndex >= cullables.length) {
     warmupComplete = true;
-    updateCulledObjects();
+    updateCulledObjects(true);
   }
 }
 
@@ -976,7 +1210,7 @@ function warmupIndexedCullables(indices, start, count) {
 
 function prepareLoadingSamples() {
   const indices = new Set();
-  updateCulledObjects();
+  updateAllCullablesForWarmup();
 
   for (let i = 0; i < cullables.length; i++) {
     if (cullables[i].object.visible) indices.add(i);
@@ -1005,7 +1239,7 @@ function preloadWorld() {
     if (!overlay) makeOverlay();
     if (!renderer) makeWorld();
     resetPlayer();
-    updateCulledObjects();
+    updateAllCullablesForWarmup();
     beginWarmup();
   }, 1200);
 }
@@ -1014,7 +1248,7 @@ function startWorldAfterLoading() {
   if (!loading) return;
   loading = false;
   setLoadingVisible(false);
-  updateCulledObjects();
+  updateCulledObjects(true);
   compileVisibleScene();
   active = true;
   previousTime = performance.now();
@@ -1047,8 +1281,10 @@ function frame(time) {
   const dt = Math.min((time - previousTime) / 1000 || 0, 0.05);
   previousTime = time;
   updateMovement(dt);
-  updateCulledObjects();
+  updateCulledObjects(false, time);
   updateAtmosphere(time);
+  updateSword(time);
+  updatePointerStatus();
   renderer.render(scene, camera);
 }
 
@@ -1062,7 +1298,12 @@ function resetPlayer() {
   pitch = 0;
   camera.rotation.set(0, 0, 0);
   velocity.set(0, 0, 0);
+  parryHeld = false;
+  attackUntil = 0;
+  attackCooldownUntil = 0;
+  attackStartedAt = 0;
   grounded = true;
+  updateSword(performance.now());
 }
 
 function open() {
@@ -1071,7 +1312,7 @@ function open() {
   if (!renderer) makeWorld();
 
   resetPlayer();
-  updateCulledObjects();
+  updateCulledObjects(true);
   overlay.classList.remove('hidden');
   document.body.classList.add('aether-world-active');
   resize();
@@ -1098,6 +1339,9 @@ function close() {
   animationFrame = 0;
   keys.clear();
   velocity.set(0, 0, 0);
+  parryHeld = false;
+  attackUntil = 0;
+  attackCooldownUntil = 0;
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
   setLoadingVisible(false);
   overlay.classList.add('hidden');
@@ -1107,15 +1351,24 @@ function close() {
 
 window.addEventListener('resize', resize);
 document.addEventListener('mousemove', onMouseMove);
+document.addEventListener('mousedown', onMouseDown);
+document.addEventListener('mouseup', onMouseUp);
+document.addEventListener('contextmenu', onContextMenu);
 document.addEventListener('keydown', onKeyDown);
 document.addEventListener('keyup', onKeyUp);
 document.addEventListener('pointerlockchange', updatePointerStatus);
-window.addEventListener('blur', () => keys.clear());
+window.addEventListener('blur', () => {
+  keys.clear();
+  parryHeld = false;
+});
 
 window.AetherWorld3D = Object.freeze({
   open,
   close,
-  isOpen: () => active || loading
+  isOpen: () => active || loading,
+  isParrying,
+  isAttacking,
+  setPlayerHp
 });
 
 preloadWorld();
