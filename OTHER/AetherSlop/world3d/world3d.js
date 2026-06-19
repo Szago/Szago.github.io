@@ -1,7 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.min.js';
 
 const EYE_HEIGHT = 1.7;
-const WORLD_LIMIT = 74;
+const WORLD_LIMIT = 180;
 const WALK_SPEED = 6.5;
 const SPRINT_SPEED = 11;
 const JUMP_SPEED = 8;
@@ -9,6 +9,9 @@ const GRAVITY = 24;
 const PLAYER_RADIUS = 0.42;
 const ROAD_WIDTH = 8.5;
 const DEBUG_INFINITE_VISION = true;
+const PLAYER_LIGHT_RADIUS = 0;
+const NEAR_RENDER_RADIUS = 7;
+const NEAR_RENDER_HYSTERESIS = 3;
 
 let overlay;
 let viewport;
@@ -32,6 +35,7 @@ const right = new THREE.Vector3();
 const keys = new Set();
 const colliders = [];
 const fires = [];
+const cullables = [];
 
 function makeOverlay() {
   overlay = document.createElement('div');
@@ -140,6 +144,18 @@ function makeSmokeTexture(seed) {
   });
 }
 
+function addCullable(object, x, z, radius = 1) {
+  object.visible = false;
+  scene.add(object);
+  cullables.push({ object, x, z, radius });
+  return object;
+}
+
+function setObjectVisible(object, visible) {
+  if (object.visible === visible) return;
+  object.visible = visible;
+}
+
 function initMaterials() {
   const roadMap = makeNoiseTexture('#423a34', [
     { color: '#211d1a', count: 180, size: random => 1 + (random() * 2 | 0) },
@@ -178,10 +194,10 @@ function initMaterials() {
 
 function makeWorld() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x090705);
-  scene.fog = DEBUG_INFINITE_VISION ? null : new THREE.FogExp2(0x020101, 0.055);
+  scene.background = new THREE.Color(DEBUG_INFINITE_VISION ? 0x090705 : 0x020101);
+  scene.fog = DEBUG_INFINITE_VISION ? null : new THREE.FogExp2(0x020101, 0.24);
 
-  camera = new THREE.PerspectiveCamera(72, 1, 0.05, DEBUG_INFINITE_VISION ? 1200 : 180);
+  camera = new THREE.PerspectiveCamera(72, 1, 0.05, DEBUG_INFINITE_VISION ? 1200 : 42);
   camera.position.set(0, EYE_HEIGHT, 10.8);
   camera.rotation.order = 'YXZ';
 
@@ -194,18 +210,25 @@ function makeWorld() {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = DEBUG_INFINITE_VISION ? 1.38 : 1.05;
+  renderer.toneMappingExposure = DEBUG_INFINITE_VISION ? 1.38 : 1.0;
   viewport.appendChild(renderer.domElement);
 
-  scene.add(new THREE.HemisphereLight(0x8b8f90, 0x22100c, DEBUG_INFINITE_VISION ? 0.82 : 0.08));
+  scene.add(new THREE.HemisphereLight(
+    DEBUG_INFINITE_VISION ? 0x8b8f90 : 0x201817,
+    DEBUG_INFINITE_VISION ? 0x22100c : 0x050101,
+    DEBUG_INFINITE_VISION ? 0.82 : 0.055
+  ));
 
-  const ashenMoon = new THREE.DirectionalLight(0xd4cfc0, DEBUG_INFINITE_VISION ? 2.05 : 0.22);
+  const ashenMoon = new THREE.DirectionalLight(
+    DEBUG_INFINITE_VISION ? 0xd4cfc0 : 0x6e5d55,
+    DEBUG_INFINITE_VISION ? 2.05 : 0.12
+  );
   ashenMoon.position.set(-46, 74, 35);
   ashenMoon.castShadow = true;
   ashenMoon.shadow.mapSize.set(1024, 1024);
   scene.add(ashenMoon);
 
-  playerLight = new THREE.PointLight(0xffd6a0, DEBUG_INFINITE_VISION ? 32 : 27, DEBUG_INFINITE_VISION ? 90 : 13, 1.8);
+  playerLight = new THREE.PointLight(0xffb16a, DEBUG_INFINITE_VISION ? 32 : 42, DEBUG_INFINITE_VISION ? 0 : PLAYER_LIGHT_RADIUS, 2.2);
   playerLight.castShadow = true;
   playerLight.shadow.mapSize.set(512, 512);
   playerLight.shadow.bias = -0.002;
@@ -263,7 +286,7 @@ function addRoadDamage() {
     return { x: along, z: offset, axis: 'x' };
   };
 
-  for (let i = 0; i < 58; i++) {
+  for (let i = 0; i < 170; i++) {
     const p = roadPoint();
     if (Math.hypot(p.x, p.z) < 10) continue;
     const pothole = new THREE.Mesh(new THREE.CircleGeometry(0.55 + random() * 1.35, 9), ruinMaterials.char);
@@ -271,25 +294,25 @@ function addRoadDamage() {
     pothole.rotation.z = random() * Math.PI;
     pothole.scale.set(1 + random() * 1.5, 0.45 + random() * 0.8, 1);
     pothole.position.set(p.x, 0.038, p.z);
-    scene.add(pothole);
+    addCullable(pothole, p.x, p.z, 1.8);
   }
 
-  for (let i = 0; i < 92; i++) {
+  for (let i = 0; i < 260; i++) {
     const p = roadPoint(1);
     if (Math.hypot(p.x, p.z) < 9) continue;
     const crack = new THREE.Mesh(new THREE.BoxGeometry(0.055 + random() * 0.06, 0.026, 0.9 + random() * 4.3), ruinMaterials.char);
     crack.position.set(p.x, 0.054, p.z);
     crack.rotation.y = (p.axis === 'z' ? 0 : Math.PI / 2) + (random() - 0.5) * 1.1;
-    scene.add(crack);
+    addCullable(crack, p.x, p.z, 2.8);
   }
 
-  for (let i = 0; i < 74; i++) {
+  for (let i = 0; i < 220; i++) {
     const p = roadPoint();
     if (Math.hypot(p.x, p.z) < 8.5) continue;
     addBloodSplatter(p.x, p.z, 0.65 + random() * 2.5, random() * Math.PI, random() < 0.4);
   }
 
-  for (let i = 0; i < 140; i++) {
+  for (let i = 0; i < 380; i++) {
     const p = roadPoint(1);
     if (Math.hypot(p.x, p.z) < 7) continue;
     const rubble = new THREE.Mesh(
@@ -299,7 +322,7 @@ function addRoadDamage() {
     rubble.position.set(p.x, rubble.geometry.parameters.height / 2 + 0.055, p.z);
     rubble.rotation.set(random() * 0.6, random() * Math.PI, random() * 0.6);
     rubble.castShadow = true;
-    scene.add(rubble);
+    addCullable(rubble, p.x, p.z, 1.2);
   }
 }
 
@@ -309,7 +332,7 @@ function addBloodSplatter(x, z, scale, rotation, old = false) {
   splatter.rotation.set(-Math.PI / 2, 0, rotation);
   splatter.position.set(x, 0.066, z);
   splatter.renderOrder = 5;
-  scene.add(splatter);
+  addCullable(splatter, x, z, Math.max(1.2, scale * 0.7));
 }
 
 function addFountain() {
@@ -389,7 +412,8 @@ function addFountain() {
   addBloodSplatter(-4.8, 1.2, 1.8, -0.7, true);
   addFire(2.8, 1.7, 0.55, random);
 
-  colliders.push({ minX: -5.25, maxX: 5.25, minZ: -5.25, maxZ: 5.25 });
+  colliders.push({ type: 'circle', x: 0, z: 0, radius: 4.15 });
+  colliders.push({ minX: 1.8, maxX: 3.0, minZ: -1.8, maxZ: -0.3 });
 }
 
 function isNearRoad(x, z, padding) {
@@ -397,19 +421,25 @@ function isNearRoad(x, z, padding) {
 }
 
 function overlapsCollider(minX, maxX, minZ, maxZ, margin = 0) {
-  return colliders.some(box =>
-    minX < box.maxX + margin && maxX > box.minX - margin &&
-    minZ < box.maxZ + margin && maxZ > box.minZ - margin
-  );
+  return colliders.some(collider => {
+    if (collider.type === 'circle') {
+      const nearestX = THREE.MathUtils.clamp(collider.x, minX, maxX);
+      const nearestZ = THREE.MathUtils.clamp(collider.z, minZ, maxZ);
+      return Math.hypot(collider.x - nearestX, collider.z - nearestZ) < collider.radius + margin;
+    }
+
+    return minX < collider.maxX + margin && maxX > collider.minX - margin &&
+      minZ < collider.maxZ + margin && maxZ > collider.minZ - margin;
+  });
 }
 
 function addRuinedCity() {
   const random = mulberry32(0xAE7E40);
   let placed = 0;
 
-  for (let attempt = 0; attempt < 1600 && placed < 112; attempt++) {
-    const x = (random() * 2 - 1) * WORLD_LIMIT * 0.92;
-    const z = (random() * 2 - 1) * WORLD_LIMIT * 0.92;
+  for (let attempt = 0; attempt < 9000 && placed < 520; attempt++) {
+    const x = (random() * 2 - 1) * WORLD_LIMIT * 0.94;
+    const z = (random() * 2 - 1) * WORLD_LIMIT * 0.94;
     const width = 3.6 + random() * 8.5;
     const depth = 3.8 + random() * 8.2;
     const radius = Math.max(width, depth) * 0.58;
@@ -467,7 +497,8 @@ function addRuin(x, z, width, depth, random) {
       group.add(scorch);
     }
 
-    if (random() < 0.72) addBurningWindows(group, spec, random);
+    if (random() < 0.88) addBurningWindows(group, spec, random);
+    if (random() < 0.64) addWallFlames(group, spec, random);
   }
 
   if (random() < 0.72) {
@@ -509,12 +540,13 @@ function addRuin(x, z, width, depth, random) {
     group.add(tower);
   }
 
-  scene.add(group);
+  addCullable(group, x, z, Math.max(width, depth) * 0.85 + 3);
 
-  if (random() < 0.64) {
-    const fireX = x + (random() - 0.5) * width * 0.85;
-    const fireZ = z + (random() - 0.5) * depth * 0.85;
-    addFire(fireX, fireZ, 0.62 + random() * 1.05, random);
+  const fireCount = random() < 0.78 ? 1 + Math.floor(random() * 3) : 0;
+  for (let i = 0; i < fireCount; i++) {
+    const fireX = x + (random() - 0.5) * width * 1.05;
+    const fireZ = z + (random() - 0.5) * depth * 1.05;
+    addFire(fireX, fireZ, 0.52 + random() * 1.18, random);
   }
 
   if (random() < 0.18) {
@@ -530,7 +562,7 @@ function addBurningWindows(group, spec, random) {
 
   for (let floor = 0; floor < floors; floor++) {
     for (let i = 0; i < count; i++) {
-      if (random() < 0.58) continue;
+      if (random() < 0.28) continue;
       const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.46 + random() * 0.18, 0.64 + random() * 0.22), ruinMaterials.windowFire);
       const along = -span * 0.38 + (span * 0.76) * ((i + random() * 0.4) / Math.max(1, count - 0.65));
       const y = 1.05 + floor * 1.95 + random() * 0.35;
@@ -545,6 +577,40 @@ function addBurningWindows(group, spec, random) {
       glow.renderOrder = 3;
       group.add(glow);
     }
+  }
+}
+
+function addWallFlames(group, spec, random) {
+  const horizontalWall = spec.side === 'north' || spec.side === 'south';
+  const span = horizontalWall ? spec.w : spec.d;
+  const count = 1 + Math.floor(random() * 3);
+
+  for (let i = 0; i < count; i++) {
+    const flame = new THREE.Group();
+    const w = 0.55 + random() * 0.45;
+    const h = 1.05 + random() * 1.3;
+
+    const outer = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      new THREE.MeshBasicMaterial({ color: 0xd7350b, transparent: true, opacity: 0.66, side: THREE.DoubleSide })
+    );
+    const inner = new THREE.Mesh(
+      new THREE.PlaneGeometry(w * 0.48, h * 0.58),
+      new THREE.MeshBasicMaterial({ color: 0xffba42, transparent: true, opacity: 0.82, side: THREE.DoubleSide })
+    );
+    inner.position.z = 0.012;
+    flame.add(outer, inner);
+
+    const along = (random() - 0.5) * span * 0.76;
+    const y = 0.9 + random() * Math.max(0.8, spec.h * 0.55);
+    if (horizontalWall) {
+      flame.position.set(along, y, spec.z + (spec.side === 'south' ? -0.255 : 0.255));
+    } else {
+      flame.position.set(spec.x + (spec.side === 'east' ? -0.255 : 0.255), y, along);
+      flame.rotation.y = Math.PI / 2;
+    }
+    flame.rotation.z = (random() - 0.5) * 0.18;
+    group.add(flame);
   }
 }
 
@@ -579,10 +645,10 @@ function addFire(x, z, scale, random) {
     smokeSprites.push(smoke);
   }
 
-  const light = new THREE.PointLight(0xff4d16, 2.7 * scale, DEBUG_INFINITE_VISION ? 13 + scale * 5 : 5.5 + scale * 2.5, 2);
+  const light = new THREE.PointLight(0xff4d16, 4.8 * scale, 3.2 + scale * 1.6, 2);
   light.position.y = 1.05 * scale;
   group.add(light);
-  scene.add(group);
+  addCullable(group, x, z, 4 + scale * 1.8);
 
   fires.push({
     group,
@@ -644,10 +710,14 @@ function onKeyUp(event) {
 }
 
 function collidesAt(x, z) {
-  return colliders.some(box =>
-    x + PLAYER_RADIUS > box.minX && x - PLAYER_RADIUS < box.maxX &&
-    z + PLAYER_RADIUS > box.minZ && z - PLAYER_RADIUS < box.maxZ
-  );
+  return colliders.some(collider => {
+    if (collider.type === 'circle') {
+      return Math.hypot(x - collider.x, z - collider.z) < collider.radius + PLAYER_RADIUS;
+    }
+
+    return x + PLAYER_RADIUS > collider.minX && x - PLAYER_RADIUS < collider.maxX &&
+      z + PLAYER_RADIUS > collider.minZ && z - PLAYER_RADIUS < collider.maxZ;
+  });
 }
 
 function updateMovement(dt) {
@@ -687,10 +757,10 @@ function updateMovement(dt) {
 
 function updateAtmosphere(time) {
   playerLight.position.set(camera.position.x, camera.position.y + 0.12, camera.position.z);
-  const playerLightBase = DEBUG_INFINITE_VISION ? 32 : 26.5;
-  playerLight.intensity = playerLightBase + Math.sin(time * 0.0027) * 0.8 + Math.sin(time * 0.011) * 0.3;
+  playerLight.intensity = 42 + Math.sin(time * 0.0027) * 1.4 + Math.sin(time * 0.011) * 0.5;
 
   for (const fire of fires) {
+    if (!fire.group.visible) continue;
     const flicker = 0.84 + Math.sin(time * 0.009 + fire.phase) * 0.12 +
       Math.sin(time * 0.021 + fire.phase * 2.3) * 0.06;
     fire.outer.scale.set(1 + Math.sin(time * 0.014 + fire.phase) * 0.11, flicker, 1);
@@ -706,12 +776,25 @@ function updateAtmosphere(time) {
   }
 }
 
+function updateCulledObjects() {
+  const x = camera.position.x;
+  const z = camera.position.z;
+
+  for (const entry of cullables) {
+    const dx = entry.x - x;
+    const dz = entry.z - z;
+    const limit = NEAR_RENDER_RADIUS + entry.radius + (entry.object.visible ? NEAR_RENDER_HYSTERESIS : 0);
+    setObjectVisible(entry.object, dx * dx + dz * dz <= limit * limit);
+  }
+}
+
 function frame(time) {
   if (!active) return;
   animationFrame = requestAnimationFrame(frame);
   const dt = Math.min((time - previousTime) / 1000 || 0, 0.05);
   previousTime = time;
   updateMovement(dt);
+  updateCulledObjects();
   updateAtmosphere(time);
   renderer.render(scene, camera);
 }
@@ -735,6 +818,7 @@ function open() {
   if (!renderer) makeWorld();
 
   resetPlayer();
+  updateCulledObjects();
   active = true;
   overlay.classList.remove('hidden');
   document.body.classList.add('aether-world-active');
