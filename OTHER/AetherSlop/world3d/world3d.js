@@ -20,6 +20,18 @@ const LOAD_SAMPLE_COUNT = 320;
 const PLAYER_MAX_HP = 5;
 const ATTACK_DURATION = 420;
 const ATTACK_COOLDOWN = 620;
+const TENTACLE_MAX_HP = 3;
+const TENTACLE_FIRST_SPAWN_DELAY = 30000;
+const TENTACLE_SPAWN_MIN_DELAY = 10000;
+const TENTACLE_SPAWN_MAX_DELAY = 20000;
+const TENTACLE_SPAWN_DISTANCE = NEAR_RENDER_RADIUS + 1.5;
+const TENTACLE_ATTACK_RANGE = 13;
+const TENTACLE_ATTACK_WINDUP = 1150;
+const TENTACLE_ATTACK_RECOVERY = 650;
+const TENTACLE_SWORD_RANGE = 3.6;
+const PERFECT_PARRY_WINDOW = 520;
+const PARRY_COOLDOWN = 850;
+const COMBAT_EFFECT_DURATION = 360;
 
 let overlay;
 let viewport;
@@ -27,12 +39,16 @@ let status;
 let loadingPanel;
 let loadingBar;
 let loadingText;
+let deathPanel;
+let damageFlash;
+let parryFlash;
 let renderer;
 let scene;
 let camera;
 let playerLight;
 let sword;
 let ruinMaterials;
+let tentacleMaterials;
 let animationFrame = 0;
 let previousTime = 0;
 let active = false;
@@ -43,10 +59,19 @@ let warmupIndex = 0;
 let loadSampleIndex = 0;
 let loadSampleIndices = [];
 let playerHp = PLAYER_MAX_HP;
+let playerDead = false;
 let parryHeld = false;
+let parryStartedAt = 0;
+let parryActiveUntil = 0;
+let nextParryAt = 0;
 let attackStartedAt = 0;
 let attackUntil = 0;
 let attackCooldownUntil = 0;
+let worldEnteredAt = 0;
+let nextTentacleSpawnAt = Infinity;
+let combatStatusText = '';
+let combatStatusUntil = 0;
+let damageFlashUntil = 0;
 let lastCullUpdate = 0;
 let lastCullX = Infinity;
 let lastCullZ = Infinity;
@@ -62,6 +87,8 @@ const right = new THREE.Vector3();
 const keys = new Set();
 const colliders = [];
 const fires = [];
+const tentacles = [];
+const combatEffects = [];
 const cullables = [];
 const cullGrid = new Map();
 const visibleCullables = new Set();
@@ -79,10 +106,17 @@ function makeOverlay() {
       '<div class="aether-world-title">AETHERHOLM // AFTER THE CALAMITY</div>' +
       '<div id="aether-world-hearts" class="aether-world-hearts" aria-label="Health"></div>' +
       '<div class="aether-world-crosshair"></div>' +
+      '<div id="aether-world-damage-flash" class="aether-world-damage-flash"></div>' +
+      '<div id="aether-world-parry-flash" class="aether-world-parry-flash"><span>PARRIED</span></div>' +
       '<div class="aether-world-help">' +
-        'WASD MOVE &nbsp; SHIFT SPRINT &nbsp; SPACE JUMP &nbsp; MOUSE LOOK &nbsp; LMB ATTACK &nbsp; HOLD RMB PARRY' +
+        'WASD MOVE &nbsp; SHIFT SPRINT &nbsp; SPACE JUMP &nbsp; MOUSE LOOK &nbsp; LMB ATTACK &nbsp; TAP RMB PARRY' +
         '<span id="aether-world-status" class="aether-world-status">CLICK THE DARKNESS TO CAPTURE THE MOUSE</span>' +
       '</div>' +
+    '</div>' +
+    '<div id="aether-world-death" class="aether-world-death hidden">' +
+      '<div class="aether-world-death-title">THE CITY HAS TAKEN YOU</div>' +
+      '<div class="aether-world-death-copy">Your remains drift back toward the dead fountain.</div>' +
+      '<button id="aether-world-resummon" type="button">RESUMMON AT FOUNTAIN</button>' +
     '</div>' +
     '<div id="aether-world-loading" class="aether-world-loading hidden">' +
       '<div class="aether-world-loading-title">THE RUINS ARE WAKING</div>' +
@@ -97,8 +131,12 @@ function makeOverlay() {
   loadingPanel = document.getElementById('aether-world-loading');
   loadingBar = document.getElementById('aether-world-loading-bar');
   loadingText = document.getElementById('aether-world-loading-text');
+  deathPanel = document.getElementById('aether-world-death');
+  damageFlash = document.getElementById('aether-world-damage-flash');
+  parryFlash = document.getElementById('aether-world-parry-flash');
   renderHearts();
   document.getElementById('aether-world-close').addEventListener('click', close);
+  document.getElementById('aether-world-resummon').addEventListener('click', resummonAtFountain);
   viewport.addEventListener('click', captureMouse);
 }
 
@@ -413,14 +451,25 @@ function renderHearts() {
 
   let html = '';
   for (let i = 0; i < PLAYER_MAX_HP; i++) {
-    html += '<span class="aether-world-heart' + (i < playerHp ? '' : ' empty') + '"></span>';
+    const amount = THREE.MathUtils.clamp(playerHp - i, 0, 1);
+    const stateClass = amount >= 1 ? '' : amount >= 0.5 ? ' half' : ' empty';
+    html += '<span class="aether-world-heart' + stateClass + '"></span>';
   }
   hearts.innerHTML = html;
 }
 
 function setPlayerHp(value) {
-  playerHp = THREE.MathUtils.clamp(Math.floor(value), 0, PLAYER_MAX_HP);
+  playerHp = THREE.MathUtils.clamp(Math.round(value * 2) / 2, 0, PLAYER_MAX_HP);
   renderHearts();
+}
+
+function setCombatStatus(text, duration = 900, time = performance.now()) {
+  combatStatusText = text;
+  combatStatusUntil = time + duration;
+}
+
+function randomTentacleDelay() {
+  return THREE.MathUtils.lerp(TENTACLE_SPAWN_MIN_DELAY, TENTACLE_SPAWN_MAX_DELAY, Math.random());
 }
 
 function updateLoadingProgress(label = 'WARMING RUINS', pctOverride = null) {
@@ -485,6 +534,28 @@ function initMaterials() {
     flameTreeInner: new THREE.MeshBasicMaterial({ map: flameMap, color: 0xffcb55, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide }),
     fireOuter: new THREE.MeshBasicMaterial({ color: 0xe73b0c, transparent: true, opacity: 0.72 }),
     fireInner: new THREE.MeshBasicMaterial({ color: 0xffc43d, transparent: true, opacity: 0.9 })
+  };
+
+  tentacleMaterials = {
+    flesh: new THREE.MeshStandardMaterial({
+      color: 0x050308,
+      roughness: 0.42,
+      metalness: 0.18,
+      emissive: 0x110006,
+      emissiveIntensity: 0.75
+    }),
+    ridge: new THREE.MeshStandardMaterial({
+      color: 0x160714,
+      roughness: 0.62,
+      emissive: 0x220009,
+      emissiveIntensity: 0.65
+    }),
+    maw: new THREE.MeshBasicMaterial({
+      color: 0x240008,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false
+    })
   };
 }
 
@@ -1118,12 +1189,12 @@ function resize() {
 }
 
 function captureMouse() {
-  if (!active || document.pointerLockElement === renderer.domElement) return;
+  if (!active || playerDead || document.pointerLockElement === renderer.domElement) return;
   renderer.domElement.requestPointerLock();
 }
 
 function isParrying(time = performance.now()) {
-  return active && parryHeld;
+  return active && !playerDead && time <= parryActiveUntil;
 }
 
 function isAttacking(time = performance.now()) {
@@ -1131,10 +1202,11 @@ function isAttacking(time = performance.now()) {
 }
 
 function triggerAttack(time = performance.now()) {
-  if (!active || parryHeld || time < attackCooldownUntil) return false;
+  if (!active || playerDead || parryHeld || time < attackCooldownUntil) return false;
   attackStartedAt = time;
   attackUntil = time + ATTACK_DURATION;
   attackCooldownUntil = time + ATTACK_COOLDOWN;
+  hitTentacleWithSword(time);
   return true;
 }
 
@@ -1146,7 +1218,13 @@ function onMouseDown(event) {
   }
   if (event.button === 2) {
     event.preventDefault();
+    if (playerDead || parryHeld) return;
     parryHeld = true;
+    const now = performance.now();
+    if (now < nextParryAt) return;
+    parryStartedAt = now;
+    parryActiveUntil = parryStartedAt + PERFECT_PARRY_WINDOW;
+    nextParryAt = parryStartedAt + PARRY_COOLDOWN;
     attackUntil = 0;
   }
 }
@@ -1163,7 +1241,12 @@ function onContextMenu(event) {
 let lastStatusText = '';
 function updatePointerStatus() {
   if (!status) return;
-  const text = isParrying()
+  const now = performance.now();
+  const text = playerDead
+    ? 'YOU ARE DEAD // THE FOUNTAIN REMEMBERS'
+    : now < combatStatusUntil
+      ? combatStatusText
+      : isParrying()
     ? 'PARRY WINDOW OPEN'
     : document.pointerLockElement === renderer.domElement
       ? 'THE DARKNESS IS LISTENING // ESC RELEASES CURSOR'
@@ -1175,7 +1258,7 @@ function updatePointerStatus() {
 }
 
 function onMouseMove(event) {
-  if (!active || document.pointerLockElement !== renderer.domElement) return;
+  if (!active || playerDead || document.pointerLockElement !== renderer.domElement) return;
   yaw -= event.movementX * 0.0022;
   pitch -= event.movementY * 0.0022;
   pitch = THREE.MathUtils.clamp(pitch, -Math.PI / 2 + 0.02, Math.PI / 2 - 0.02);
@@ -1189,6 +1272,7 @@ function onKeyDown(event) {
     return;
   }
   if (!active) return;
+  if (playerDead) return;
   if (event.code === 'Escape' && document.pointerLockElement !== renderer.domElement) {
     close();
     return;
@@ -1216,6 +1300,332 @@ function collidesAt(x, z) {
     return x + PLAYER_RADIUS > collider.minX && x - PLAYER_RADIUS < collider.maxX &&
       z + PLAYER_RADIUS > collider.minZ && z - PLAYER_RADIUS < collider.maxZ;
   });
+}
+
+function makeTentacleStrand(height, radius, bend, segments = 8) {
+  const strand = new THREE.Group();
+  const segmentHeight = height / segments;
+
+  for (let i = 0; i < segments; i++) {
+    const t = (i + 0.5) / segments;
+    const taper = Math.max(0.18, 1 - t * 0.82);
+    const segment = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius * taper * 0.82, radius * taper, segmentHeight * 1.12, 7),
+      i % 2 ? tentacleMaterials.flesh : tentacleMaterials.ridge
+    );
+    segment.position.set(
+      Math.sin(t * Math.PI * 1.35) * bend * t,
+      segmentHeight * (i + 0.5),
+      Math.sin(t * Math.PI * 0.75) * bend * 0.34 * t
+    );
+    segment.rotation.z = -Math.sin(t * Math.PI) * bend * 0.24;
+    segment.rotation.x = Math.sin(t * Math.PI * 1.5) * bend * 0.08;
+    segment.castShadow = false;
+    strand.add(segment);
+  }
+
+  const tip = new THREE.Mesh(
+    new THREE.SphereGeometry(radius * 0.22, 7, 5),
+    tentacleMaterials.ridge
+  );
+  tip.scale.y = 1.8;
+  tip.position.set(Math.sin(Math.PI * 1.35) * bend, height + radius * 0.1, Math.sin(Math.PI * 0.75) * bend * 0.34);
+  strand.add(tip);
+  return strand;
+}
+
+function createTentacle(x, z, time) {
+  const group = new THREE.Group();
+  group.position.set(x, 0.03, z);
+
+  const wound = new THREE.Mesh(new THREE.RingGeometry(0.45, 1.25, 18), tentacleMaterials.maw);
+  wound.rotation.x = -Math.PI / 2;
+  wound.position.y = 0.025;
+  group.add(wound);
+
+  const attackRig = new THREE.Group();
+  attackRig.add(makeTentacleStrand(4.9, 0.52, 0.72, 10));
+  group.add(attackRig);
+
+  for (let i = 0; i < 4; i++) {
+    const angle = i * Math.PI * 0.5 + Math.random() * 0.5;
+    const side = makeTentacleStrand(1.35 + Math.random() * 1.15, 0.2 + Math.random() * 0.12, 0.35 + Math.random() * 0.35, 6);
+    side.position.set(Math.cos(angle) * 0.58, 0, Math.sin(angle) * 0.58);
+    side.rotation.y = angle;
+    side.rotation.z = (Math.random() - 0.5) * 0.35;
+    group.add(side);
+  }
+
+  group.scale.y = 0.01;
+  scene.add(group);
+  tentacles.push({
+    group,
+    attackRig,
+    hp: TENTACLE_MAX_HP,
+    spawnedAt: time,
+    nextAttackAt: time + 1900 + Math.random() * 1100,
+    attackStartedAt: 0,
+    attackResolved: false,
+    attackDirection: new THREE.Vector3(),
+    phase: Math.random() * Math.PI * 2,
+    hitFlashUntil: 0
+  });
+}
+
+function removeTentacle(tentacle) {
+  scene.remove(tentacle.group);
+  tentacle.group.traverse(object => {
+    if (object.geometry) object.geometry.dispose();
+  });
+  const index = tentacles.indexOf(tentacle);
+  if (index >= 0) tentacles.splice(index, 1);
+}
+
+function clearTentacles() {
+  while (tentacles.length) removeTentacle(tentacles[tentacles.length - 1]);
+}
+
+function findTentacleSpawnPosition() {
+  const lookAngle = yaw + Math.PI;
+  for (let attempt = 0; attempt < 14; attempt++) {
+    const angle = lookAngle + (Math.random() - 0.5) * 0.9;
+    const distance = TENTACLE_SPAWN_DISTANCE + Math.random() * 1.25;
+    const x = THREE.MathUtils.clamp(camera.position.x + Math.sin(angle) * distance, -WORLD_LIMIT + 2, WORLD_LIMIT - 2);
+    const z = THREE.MathUtils.clamp(camera.position.z + Math.cos(angle) * distance, -WORLD_LIMIT + 2, WORLD_LIMIT - 2);
+    const overlapsTentacle = tentacles.some(tentacle =>
+      Math.hypot(x - tentacle.group.position.x, z - tentacle.group.position.z) < 3
+    );
+    if (!collidesAt(x, z) && !overlapsTentacle && Math.hypot(x, z) > 5.5) return { x, z };
+  }
+  return null;
+}
+
+function trySpawnTentacle(time) {
+  if (playerDead || time < worldEnteredAt + TENTACLE_FIRST_SPAWN_DELAY || time < nextTentacleSpawnAt) return;
+  if (velocity.x * velocity.x + velocity.z * velocity.z < 0.5) return;
+
+  const position = findTentacleSpawnPosition();
+  if (!position) {
+    nextTentacleSpawnAt = time + 1000;
+    return;
+  }
+
+  createTentacle(position.x, position.z, time);
+  nextTentacleSpawnAt = time + randomTentacleDelay();
+  setCombatStatus('SOMETHING IS RISING AHEAD', 1300, time);
+}
+
+function createCombatBurst(position, color, time, scale = 1) {
+  const group = new THREE.Group();
+  group.position.copy(position);
+
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 1,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.28 * scale, 0.4 * scale, 12), material);
+  group.add(ring);
+
+  for (const rotation of [-0.72, 0.72]) {
+    const slash = new THREE.Mesh(new THREE.PlaneGeometry(0.12 * scale, 1.5 * scale), material.clone());
+    slash.rotation.z = rotation;
+    group.add(slash);
+  }
+
+  scene.add(group);
+  combatEffects.push({ group, startedAt: time, duration: COMBAT_EFFECT_DURATION });
+}
+
+function updateCombatEffects(time) {
+  for (let i = combatEffects.length - 1; i >= 0; i--) {
+    const effect = combatEffects[i];
+    const progress = (time - effect.startedAt) / effect.duration;
+    if (progress >= 1) {
+      scene.remove(effect.group);
+      effect.group.traverse(object => {
+        if (object.geometry) object.geometry.dispose();
+        if (object.material) object.material.dispose();
+      });
+      combatEffects.splice(i, 1);
+      continue;
+    }
+
+    effect.group.lookAt(camera.position);
+    const pulse = 0.75 + Math.sin(progress * Math.PI) * 1.15;
+    effect.group.scale.setScalar(pulse);
+    effect.group.rotation.z += 0.08;
+    effect.group.traverse(object => {
+      if (object.material) object.material.opacity = 1 - progress;
+    });
+  }
+}
+
+function clearCombatEffects() {
+  while (combatEffects.length) {
+    const effect = combatEffects.pop();
+    scene.remove(effect.group);
+    effect.group.traverse(object => {
+      if (object.geometry) object.geometry.dispose();
+      if (object.material) object.material.dispose();
+    });
+  }
+}
+
+function showParryFeedback(tentacle, time) {
+  const burstPosition = tentacle.group.position.clone();
+  burstPosition.y = 2.8;
+  createCombatBurst(burstPosition, 0x9eefff, time, 1.35);
+  tentacle.parryStaggerUntil = time + 520;
+  if (parryFlash) {
+    parryFlash.classList.remove('visible');
+    void parryFlash.offsetWidth;
+    parryFlash.classList.add('visible');
+    window.setTimeout(() => parryFlash && parryFlash.classList.remove('visible'), 430);
+  }
+}
+
+function hitTentacleWithSword(time) {
+  forward.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const tentacle of tentacles) {
+    if (time - tentacle.spawnedAt < 550) continue;
+    const dx = tentacle.group.position.x - camera.position.x;
+    const dz = tentacle.group.position.z - camera.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > TENTACLE_SWORD_RANGE || distance < 0.001) continue;
+    const facing = (dx * forward.x + dz * forward.z) / distance;
+    if (facing < 0.64) continue;
+    const score = facing * 3 - distance * 0.18;
+    if (score > bestScore) {
+      best = tentacle;
+      bestScore = score;
+    }
+  }
+
+  if (!best) return;
+  best.hp -= 1;
+  best.hitFlashUntil = time + 260;
+  const impactPosition = best.group.position.clone();
+  impactPosition.y = 2.2 + Math.random() * 1.2;
+  createCombatBurst(impactPosition, 0xff3150, time, 1);
+  if (best.hp > 0) {
+    setCombatStatus('TENTACLE WOUNDED // ' + best.hp + ' HITS REMAIN', 850, time);
+    return;
+  }
+
+  removeTentacle(best);
+  setPlayerHp(playerHp + 0.5);
+  setCombatStatus('TENTACLE SEVERED // +0.5 HEART', 1300, time);
+}
+
+function damagePlayer(amount, time) {
+  if (playerDead) return;
+  setPlayerHp(playerHp - amount);
+  damageFlashUntil = time + 240;
+  if (damageFlash) damageFlash.classList.add('visible');
+
+  if (playerHp <= 0) {
+    killPlayer(time);
+    return;
+  }
+  setCombatStatus('THE TENTACLE TORE INTO YOU // -1 HEART', 1200, time);
+}
+
+function killPlayer(time = performance.now()) {
+  playerDead = true;
+  keys.clear();
+  velocity.set(0, 0, 0);
+  parryHeld = false;
+  attackUntil = 0;
+  setCombatStatus('YOU ARE DEAD // THE FOUNTAIN REMEMBERS', 999999, time);
+  if (renderer && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+  if (deathPanel) deathPanel.classList.remove('hidden');
+}
+
+function resummonAtFountain() {
+  if (!active || !playerDead) return;
+  clearTentacles();
+  clearCombatEffects();
+  playerDead = false;
+  setPlayerHp(PLAYER_MAX_HP);
+  resetPlayer();
+  const time = performance.now();
+  nextTentacleSpawnAt = time + randomTentacleDelay();
+  combatStatusUntil = 0;
+  damageFlashUntil = 0;
+  if (damageFlash) damageFlash.classList.remove('visible');
+  if (parryFlash) parryFlash.classList.remove('visible');
+  if (deathPanel) deathPanel.classList.add('hidden');
+  updateCulledObjects(true, time);
+}
+
+function updateTentacles(time) {
+  trySpawnTentacle(time);
+
+  for (const tentacle of [...tentacles]) {
+    const age = time - tentacle.spawnedAt;
+    const emerge = THREE.MathUtils.smoothstep(age, 0, 850);
+    tentacle.group.scale.y = emerge * (time < tentacle.hitFlashUntil ? 0.88 : 1);
+    const dx = camera.position.x - tentacle.group.position.x;
+    const dz = camera.position.z - tentacle.group.position.z;
+    const distance = Math.hypot(dx, dz);
+    tentacle.group.visible = distance < 20;
+
+    let lunge = 0;
+    if (!playerDead && age > 1100 && !tentacle.attackStartedAt && distance <= TENTACLE_ATTACK_RANGE && time >= tentacle.nextAttackAt) {
+      tentacle.attackStartedAt = time;
+      tentacle.attackResolved = false;
+      tentacle.attackDirection.set(dx, 1.15, dz).normalize();
+      setCombatStatus('PARRY NOW OR FALL BACK', TENTACLE_ATTACK_WINDUP, time);
+    }
+
+    if (tentacle.attackStartedAt) {
+      const attackAge = time - tentacle.attackStartedAt;
+      if (attackAge < TENTACLE_ATTACK_WINDUP) {
+        lunge = THREE.MathUtils.smoothstep(attackAge, 0, TENTACLE_ATTACK_WINDUP);
+      } else {
+        const recovery = (attackAge - TENTACLE_ATTACK_WINDUP) / TENTACLE_ATTACK_RECOVERY;
+        lunge = 1 - THREE.MathUtils.smoothstep(recovery, 0, 1);
+        if (!tentacle.attackResolved) {
+          tentacle.attackResolved = true;
+          if (distance > TENTACLE_ATTACK_RANGE) {
+            setCombatStatus('THE STRIKE FELL SHORT', 700, time);
+          } else if (isParrying(time)) {
+            setCombatStatus('PARRIED', 900, time);
+            showParryFeedback(tentacle, time);
+          } else {
+            damagePlayer(1, time);
+          }
+        }
+      }
+
+      if (attackAge >= TENTACLE_ATTACK_WINDUP + TENTACLE_ATTACK_RECOVERY) {
+        tentacle.attackStartedAt = 0;
+        tentacle.nextAttackAt = time + 1800 + Math.random() * 1400;
+        lunge = 0;
+      }
+    }
+
+    const idleX = Math.sin(time * 0.0018 + tentacle.phase) * 0.075;
+    const idleZ = Math.cos(time * 0.0015 + tentacle.phase) * 0.065;
+    const stagger = time < tentacle.parryStaggerUntil
+      ? Math.sin((tentacle.parryStaggerUntil - time) * 0.08) * 0.22
+      : 0;
+    const target = tentacle.attackDirection;
+    tentacle.attackRig.rotation.x = idleX + target.z * lunge * 1.24 - Math.abs(stagger) * 1.8;
+    tentacle.attackRig.rotation.z = idleZ - target.x * lunge * 1.24 + stagger;
+    tentacle.attackRig.scale.y = 1 + lunge * 0.58;
+    tentacle.attackRig.scale.x = 1 - lunge * 0.16;
+    tentacle.attackRig.scale.z = 1 - lunge * 0.16;
+  }
+
+  if (damageFlash && time >= damageFlashUntil) damageFlash.classList.remove('visible');
+  updateCombatEffects(time);
 }
 
 function updateMovement(dt) {
@@ -1283,7 +1693,7 @@ function updateSword(time) {
   const attackSwing = attackProgress > 0 ? Math.sin(attackProgress * Math.PI) : 0;
   const attackSnap = attackProgress > 0 ? Math.sin(Math.min(1, attackProgress * 1.35) * Math.PI) : 0;
 
-  if (parryHeld) {
+  if (isParrying(time)) {
     sword.position.set(0.2, -0.28 + idle * 0.4, -0.82);
     sword.rotation.set(-1.14, 0.18, 1.38);
     return;
@@ -1416,6 +1826,7 @@ function startWorldAfterLoading() {
   compileVisibleScene();
   active = true;
   previousTime = performance.now();
+  beginWorldRun(previousTime);
   dispatchState();
   animationFrame = requestAnimationFrame(frame);
 }
@@ -1448,10 +1859,11 @@ function frame(time) {
   animationFrame = requestAnimationFrame(frame);
   const dt = Math.min((time - previousTime) / 1000 || 0, 0.05);
   previousTime = time;
-  updateMovement(dt);
+  if (!playerDead) updateMovement(dt);
   updateCulledObjects(false, time);
   updateAtmosphere(time);
   updateSword(time);
+  updateTentacles(time);
   updatePointerStatus();
   renderer.render(scene, camera);
 }
@@ -1467,11 +1879,29 @@ function resetPlayer() {
   camera.rotation.set(0, 0, 0);
   velocity.set(0, 0, 0);
   parryHeld = false;
+  parryStartedAt = 0;
+  parryActiveUntil = 0;
+  nextParryAt = 0;
   attackUntil = 0;
   attackCooldownUntil = 0;
   attackStartedAt = 0;
   grounded = true;
   updateSword(performance.now());
+}
+
+function beginWorldRun(time = performance.now()) {
+  clearTentacles();
+  playerDead = false;
+  setPlayerHp(PLAYER_MAX_HP);
+  worldEnteredAt = time;
+  nextTentacleSpawnAt = time + TENTACLE_FIRST_SPAWN_DELAY;
+  combatStatusText = '';
+  combatStatusUntil = 0;
+  damageFlashUntil = 0;
+  clearCombatEffects();
+  if (damageFlash) damageFlash.classList.remove('visible');
+  if (parryFlash) parryFlash.classList.remove('visible');
+  if (deathPanel) deathPanel.classList.add('hidden');
 }
 
 function open() {
@@ -1513,10 +1943,17 @@ function close() {
   keys.clear();
   velocity.set(0, 0, 0);
   parryHeld = false;
+  parryActiveUntil = 0;
+  nextParryAt = 0;
+  playerDead = false;
   attackUntil = 0;
   attackCooldownUntil = 0;
-  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+  if (renderer && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
   setLoadingVisible(false);
+  clearTentacles();
+  clearCombatEffects();
+  if (deathPanel) deathPanel.classList.add('hidden');
+  if (parryFlash) parryFlash.classList.remove('visible');
   overlay.classList.add('hidden');
   document.body.classList.remove('aether-world-active');
   dispatchState();
@@ -1533,6 +1970,7 @@ document.addEventListener('pointerlockchange', updatePointerStatus);
 window.addEventListener('blur', () => {
   keys.clear();
   parryHeld = false;
+  parryActiveUntil = 0;
 });
 
 window.AetherWorld3D = Object.freeze({

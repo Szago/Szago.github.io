@@ -96,6 +96,7 @@ body.aether-world-active #perf-overlay {
   --heart-dark: #96182a;
   width: 21px;
   height: 18px;
+  position: relative;
   background:
     linear-gradient(var(--heart), var(--heart)) 3px 0 / 6px 3px no-repeat,
     linear-gradient(var(--heart), var(--heart)) 12px 0 / 6px 3px no-repeat,
@@ -106,10 +107,114 @@ body.aether-world-active #perf-overlay {
     linear-gradient(var(--heart-dark), var(--heart-dark)) 9px 15px / 3px 3px no-repeat;
 }
 
+.aether-world-heart.half {
+  --heart: #332c35;
+  --heart-dark: #17131b;
+}
+
+.aether-world-heart.half::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 50%;
+  background:
+    linear-gradient(#ff3355, #ff3355) 3px 0 / 6px 3px no-repeat,
+    linear-gradient(#ff3355, #ff3355) 12px 0 / 6px 3px no-repeat,
+    linear-gradient(#ff3355, #ff3355) 0 3px / 21px 3px no-repeat,
+    linear-gradient(#ff3355, #ff3355) 0 6px / 21px 3px no-repeat,
+    linear-gradient(#ff3355, #ff3355) 3px 9px / 15px 3px no-repeat,
+    linear-gradient(#96182a, #96182a) 6px 12px / 9px 3px no-repeat,
+    linear-gradient(#96182a, #96182a) 9px 15px / 3px 3px no-repeat;
+}
+
 .aether-world-heart.empty {
   --heart: #332c35;
   --heart-dark: #17131b;
   opacity: 0.72;
+}
+
+.aether-world-damage-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(circle, transparent 20%, rgba(160, 0, 12, 0.78) 100%);
+  transition: opacity 180ms ease-out;
+}
+
+.aether-world-damage-flash.visible {
+  opacity: 1;
+}
+
+.aether-world-parry-flash {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  background:
+    radial-gradient(circle, rgba(220, 255, 255, 0.4), transparent 32%),
+    linear-gradient(115deg, transparent 43%, rgba(157, 239, 255, 0.55) 49%, transparent 55%);
+  color: #dfffff;
+  font-size: clamp(18px, 3vw, 42px);
+  text-shadow: 3px 3px 0 #06202a, 0 0 18px #7de8ff;
+  pointer-events: none;
+}
+
+.aether-world-parry-flash.visible {
+  animation: aether-parry-flash 430ms ease-out both;
+}
+
+@keyframes aether-parry-flash {
+  0% { opacity: 0; transform: scale(0.88); }
+  20% { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 0; transform: scale(1.14); }
+}
+
+.aether-world-death {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 20px;
+  padding: 28px;
+  background: rgba(3, 0, 2, 0.82);
+  text-align: center;
+}
+
+.aether-world-death.hidden {
+  display: none;
+}
+
+.aether-world-death-title {
+  color: #ff3150;
+  font-size: clamp(15px, 2.2vw, 28px);
+  line-height: 1.5;
+  text-shadow: 3px 3px 0 #000;
+}
+
+.aether-world-death-copy {
+  color: #c5aab4;
+  font-size: clamp(8px, 0.9vw, 11px);
+  line-height: 1.8;
+}
+
+#aether-world-resummon {
+  padding: 14px 18px;
+  border: 3px solid #8b2740;
+  background: #18070d;
+  color: #ffd5dc;
+  font: 10px "Press Start 2P", monospace;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(255, 24, 68, 0.22);
+}
+
+#aether-world-resummon:hover,
+#aether-world-resummon:focus-visible {
+  border-color: #ff4967;
+  color: #fff;
+  outline: none;
 }
 
 .aether-world-help {
