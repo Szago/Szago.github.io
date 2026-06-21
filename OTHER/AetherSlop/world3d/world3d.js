@@ -32,6 +32,17 @@ const TENTACLE_SWORD_RANGE = 3.6;
 const PERFECT_PARRY_WINDOW = 520;
 const PARRY_COOLDOWN = 850;
 const COMBAT_EFFECT_DURATION = 360;
+const CITY_CORE_HALF = 92;
+const CITY_ARM_HALF = 31;
+const CITY_ARM_END = 154;
+const CITY_GATE_HALF = 6.5;
+const EAST_RIVER_X = 128;
+const EAST_RIVER_WIDTH = 13;
+const EAST_BRIDGE_HALF_WIDTH = 7.2;
+const EAST_BRIDGE_HEIGHT = 1.35;
+const EAST_BRIDGE_RAMP_LENGTH = 9;
+const MAX_MOUSE_DELTA = 90;
+const POINTER_LOCK_SETTLE_MS = 80;
 
 let overlay;
 let viewport;
@@ -49,6 +60,7 @@ let playerLight;
 let sword;
 let ruinMaterials;
 let tentacleMaterials;
+let landmarkMaterials;
 let animationFrame = 0;
 let previousTime = 0;
 let active = false;
@@ -79,6 +91,7 @@ let maxCullableRadius = 1;
 let yaw = 0;
 let pitch = 0;
 let grounded = true;
+let pointerLockChangedAt = 0;
 
 const velocity = new THREE.Vector3();
 const desiredVelocity = new THREE.Vector3();
@@ -557,6 +570,19 @@ function initMaterials() {
       depthWrite: false
     })
   };
+
+  landmarkMaterials = {
+    portalStone: new THREE.MeshStandardMaterial({ color: 0x30263c, roughness: 0.86, metalness: 0.08 }),
+    portalGlow: new THREE.MeshBasicMaterial({ color: 0x9f49d7, transparent: true, opacity: 0.52, side: THREE.DoubleSide }),
+    silverStone: new THREE.MeshStandardMaterial({ color: 0xaeb5c4, roughness: 0.76, metalness: 0.18 }),
+    silverDark: new THREE.MeshStandardMaterial({ color: 0x555e70, roughness: 0.9 }),
+    doomStone: new THREE.MeshStandardMaterial({ color: 0x211923, roughness: 0.94 }),
+    doomEmber: new THREE.MeshBasicMaterial({ color: 0xb71818, transparent: true, opacity: 0.72 }),
+    river: new THREE.MeshStandardMaterial({ color: 0x100c11, roughness: 0.24, metalness: 0.15, transparent: true, opacity: 0.96 }),
+    riverSheen: new THREE.MeshBasicMaterial({ color: 0x8c3038, transparent: true, opacity: 0.46, depthWrite: false }),
+    bridgeWood: new THREE.MeshStandardMaterial({ color: 0x21130e, roughness: 1 }),
+    bridgeIron: new THREE.MeshStandardMaterial({ color: 0x29282d, roughness: 0.72, metalness: 0.48 })
+  };
 }
 
 function makeWorld() {
@@ -612,7 +638,10 @@ function makeWorld() {
   scene.add(ground);
 
   addRoads();
+  addEasternRiverAndBridge();
   addFountain();
+  addRuinedCityWalls();
+  addCardinalLandmarks();
   addRuinedCity();
   addDeadForest();
   addPlayerSword();
@@ -712,6 +741,356 @@ function addRoads() {
   }
 
   addRoadDamage();
+}
+
+function addEasternRiverAndBridge() {
+  const riverLength = WORLD_LIMIT * 2.16;
+  const river = new THREE.Mesh(
+    new THREE.PlaneGeometry(EAST_RIVER_WIDTH, riverLength),
+    landmarkMaterials.river
+  );
+  river.rotation.x = -Math.PI / 2;
+  river.position.set(EAST_RIVER_X, 0.047, 0);
+  scene.add(river);
+
+  for (const side of [-1, 1]) {
+    const bank = new THREE.Mesh(
+      new THREE.BoxGeometry(1.15, 0.3, riverLength),
+      ruinMaterials.char
+    );
+    bank.position.set(EAST_RIVER_X + side * (EAST_RIVER_WIDTH / 2 + 0.35), 0.04, 0);
+    scene.add(bank);
+  }
+
+  const random = mulberry32(0xE457B1D6);
+  for (let i = 0; i < 26; i++) {
+    const sheen = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.12 + random() * 0.28, 2.5 + random() * 8),
+      landmarkMaterials.riverSheen
+    );
+    sheen.rotation.x = -Math.PI / 2;
+    sheen.rotation.z = (random() - 0.5) * 0.18;
+    sheen.position.set(
+      EAST_RIVER_X + (random() - 0.5) * (EAST_RIVER_WIDTH - 1),
+      0.056,
+      (random() * 2 - 1) * WORLD_LIMIT
+    );
+    addCullable(sheen, sheen.position.x, sheen.position.z, 5);
+  }
+
+  const bridge = new THREE.Group();
+  bridge.position.set(EAST_RIVER_X, EAST_BRIDGE_HEIGHT - 0.13, 0);
+  const bridgeLength = EAST_RIVER_WIDTH + 5;
+  const plankCount = 12;
+  for (let i = 0; i < plankCount; i++) {
+    if (i === 3 || i === 9) continue;
+    const plank = new THREE.Mesh(
+      new THREE.BoxGeometry(bridgeLength / plankCount * 0.92, 0.22, ROAD_WIDTH * 0.88),
+      landmarkMaterials.bridgeWood
+    );
+    plank.position.set(-bridgeLength / 2 + (i + 0.5) * bridgeLength / plankCount, 0.13 + (i % 3) * 0.018, 0);
+    plank.rotation.y = (random() - 0.5) * 0.025;
+    plank.rotation.z = (random() - 0.5) * 0.035;
+    bridge.add(plank);
+  }
+
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(
+      new THREE.BoxGeometry(bridgeLength, 0.16, 0.18),
+      landmarkMaterials.bridgeIron
+    );
+    rail.position.set(0, 1.0, side * (ROAD_WIDTH * 0.46));
+    bridge.add(rail);
+
+    for (let i = 0; i < 7; i++) {
+      if ((side === -1 && i === 4) || (side === 1 && i === 2)) continue;
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.65, 0.16), landmarkMaterials.bridgeIron);
+      post.position.set(-bridgeLength / 2 + i * bridgeLength / 6, 0.52, side * (ROAD_WIDTH * 0.46));
+      post.rotation.z = (random() - 0.5) * 0.08;
+      bridge.add(post);
+    }
+  }
+
+  for (const side of [-1, 1]) {
+    const support = new THREE.Mesh(
+      new THREE.BoxGeometry(1.25, 1.2, ROAD_WIDTH + 1.3),
+      ruinMaterials.darkStone
+    );
+    support.position.set(side * (bridgeLength / 2 - 0.75), -EAST_BRIDGE_HEIGHT * 0.62, 0);
+    bridge.add(support);
+  }
+
+  addCullable(bridge, EAST_RIVER_X, 0, 30);
+
+  for (const side of [-1, 1]) {
+    const ramp = new THREE.Mesh(
+      new THREE.BoxGeometry(EAST_BRIDGE_RAMP_LENGTH, 0.3, ROAD_WIDTH * 0.9),
+      landmarkMaterials.bridgeWood
+    );
+    const angle = Math.atan2(EAST_BRIDGE_HEIGHT, EAST_BRIDGE_RAMP_LENGTH);
+    ramp.position.set(
+      EAST_RIVER_X + side * (bridgeLength / 2 + EAST_BRIDGE_RAMP_LENGTH / 2 - 0.4),
+      EAST_BRIDGE_HEIGHT / 2 - 0.15,
+      0
+    );
+    ramp.rotation.z = -side * angle;
+    scene.add(ramp);
+  }
+
+  const riverMinX = EAST_RIVER_X - EAST_RIVER_WIDTH / 2;
+  const riverMaxX = EAST_RIVER_X + EAST_RIVER_WIDTH / 2;
+  colliders.push({ minX: riverMinX, maxX: riverMaxX, minZ: -WORLD_LIMIT, maxZ: -EAST_BRIDGE_HALF_WIDTH });
+  colliders.push({ minX: riverMinX, maxX: riverMaxX, minZ: EAST_BRIDGE_HALF_WIDTH, maxZ: WORLD_LIMIT });
+}
+
+function addBrokenWallSegment(x1, z1, x2, z2, seed) {
+  const random = mulberry32(seed);
+  const horizontal = Math.abs(x2 - x1) >= Math.abs(z2 - z1);
+  const length = horizontal ? Math.abs(x2 - x1) : Math.abs(z2 - z1);
+  const direction = horizontal ? Math.sign(x2 - x1) : Math.sign(z2 - z1);
+  const chunkLength = 4.5;
+  const count = Math.max(1, Math.ceil(length / chunkLength));
+  const group = new THREE.Group();
+  const centerX = (x1 + x2) / 2;
+  const centerZ = (z1 + z2) / 2;
+  group.position.set(centerX, 0, centerZ);
+
+  for (let i = 0; i < count; i++) {
+    const start = i * length / count;
+    const end = (i + 1) * length / count;
+    const size = Math.max(0.4, end - start - 0.18);
+    const along = (start + end) / 2;
+    const worldX = horizontal ? x1 + direction * along : x1;
+    const worldZ = horizontal ? z1 : z1 + direction * along;
+
+    if (random() < 0.18 && i > 0 && i < count - 1) {
+      const rubble = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2 + random() * 1.6, 0.45 + random() * 0.55, 0.8 + random() * 1.3),
+        ruinMaterials.darkStone
+      );
+      rubble.position.set(worldX - centerX, rubble.geometry.parameters.height / 2, worldZ - centerZ);
+      rubble.rotation.set(random() * 0.7, random() * Math.PI, random() * 0.7);
+      group.add(rubble);
+      continue;
+    }
+
+    const height = 6.8 + random() * 5.2;
+    const thickness = 1.35 + random() * 0.55;
+    const wall = new THREE.Mesh(
+      new THREE.BoxGeometry(horizontal ? size : thickness, height, horizontal ? thickness : size),
+      random() < 0.28 ? ruinMaterials.darkStone : ruinMaterials.stone
+    );
+    wall.position.set(worldX - centerX, height / 2, worldZ - centerZ);
+    wall.rotation.set((random() - 0.5) * 0.025, 0, (random() - 0.5) * 0.055);
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    group.add(wall);
+
+    if (random() < 0.32) {
+      const battlement = new THREE.Mesh(
+        new THREE.BoxGeometry(horizontal ? Math.min(1.25, size) : thickness * 1.1, 1.05, horizontal ? thickness * 1.12 : Math.min(1.25, size)),
+        ruinMaterials.darkStone
+      );
+      battlement.position.set(worldX - centerX, height + 0.48, worldZ - centerZ);
+      group.add(battlement);
+    }
+
+    const halfX = horizontal ? size / 2 : thickness / 2;
+    const halfZ = horizontal ? thickness / 2 : size / 2;
+    colliders.push({
+      minX: worldX - halfX,
+      maxX: worldX + halfX,
+      minZ: worldZ - halfZ,
+      maxZ: worldZ + halfZ
+    });
+  }
+
+  addCullable(group, centerX, centerZ, length / 2 + 4);
+}
+
+function addRuinedCityWalls() {
+  const C = CITY_CORE_HALF;
+  const A = CITY_ARM_HALF;
+  const E = CITY_ARM_END;
+  const G = CITY_GATE_HALF;
+  const segments = [
+    [-C, -C, -A, -C], [A, -C, C, -C],
+    [-C, C, -A, C], [A, C, C, C],
+    [-C, -C, -C, -A], [-C, A, -C, C],
+    [C, -C, C, -A], [C, A, C, C],
+    [-A, -C, -A, -E], [A, -C, A, -E],
+    [-A, C, -A, E], [A, C, A, E],
+    [-C, -A, -E, -A], [-C, A, -E, A],
+    [C, -A, E, -A], [C, A, E, A],
+    [-A, -E, -G, -E], [G, -E, A, -E],
+    [-A, E, -G, E], [G, E, A, E],
+    [-E, -A, -E, -G], [-E, G, -E, A],
+    [E, -A, E, -G], [E, G, E, A]
+  ];
+
+  segments.forEach((segment, index) => {
+    addBrokenWallSegment(segment[0], segment[1], segment[2], segment[3], 0xA11CE + index * 977);
+  });
+
+  const corners = [
+    [-C, -C], [C, -C], [-C, C], [C, C],
+    [-A, -E], [A, -E], [-A, E], [A, E],
+    [-E, -A], [-E, A], [E, -A], [E, A]
+  ];
+  const random = mulberry32(0xCA571E);
+  for (const [x, z] of corners) {
+    if (random() < 0.2) continue;
+    const height = 10 + random() * 6.5;
+    const tower = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.2, 3.9, height, 7),
+      random() < 0.35 ? ruinMaterials.darkStone : ruinMaterials.stone
+    );
+    tower.position.set(x, height / 2, z);
+    tower.rotation.z = (random() - 0.5) * 0.08;
+    tower.castShadow = true;
+    addCullable(tower, x, z, 7);
+    colliders.push({ type: 'circle', x, z, radius: 3.6 });
+  }
+}
+
+function addRuinedPortal() {
+  const random = mulberry32(0xB07A1);
+  const group = new THREE.Group();
+  group.position.set(0, 0, -168);
+
+  for (const side of [-1, 1]) {
+    const column = new THREE.Mesh(
+      new THREE.BoxGeometry(3.4, side === -1 ? 11.5 : 8.7, 3.1),
+      landmarkMaterials.portalStone
+    );
+    column.position.set(side * 6.1, column.geometry.parameters.height / 2, 0);
+    column.rotation.z = side * (side === -1 ? 0.035 : 0.11);
+    column.castShadow = true;
+    group.add(column);
+
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(5.1, 1.2, 4.8), ruinMaterials.darkStone);
+    foot.position.set(side * 6.1, 0.6, 0);
+    foot.rotation.y = side * 0.08;
+    group.add(foot);
+  }
+
+  const arch = new THREE.Mesh(
+    new THREE.TorusGeometry(6.1, 1.55, 6, 18, Math.PI * 0.82),
+    landmarkMaterials.portalStone
+  );
+  arch.position.set(-0.55, 10.7, 0);
+  arch.rotation.z = 0.13;
+  group.add(arch);
+
+  for (let i = 0; i < 9; i++) {
+    const shard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7 + random() * 1.4, 0.45 + random() * 0.7, 0.65 + random()),
+      i % 3 ? landmarkMaterials.portalStone : ruinMaterials.char
+    );
+    shard.position.set((random() - 0.5) * 15, shard.geometry.parameters.height / 2, 2 + random() * 5);
+    shard.rotation.set(random(), random() * Math.PI, random());
+    group.add(shard);
+  }
+
+  addCullable(group, 0, -168, 64);
+  colliders.push({ minX: -8.5, maxX: 8.5, minZ: -171, maxZ: -165 });
+  addFire(-6.2, -164.8, 0.9, mulberry32(0xF071A1));
+}
+
+function addRuinedSpire() {
+  const random = mulberry32(0x5A1AE);
+  const group = new THREE.Group();
+  group.position.set(-168, 0, 0);
+
+  const addSpire = (z, height, lean, broken) => {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(7.2, 9.5, 8.2, 7), landmarkMaterials.silverDark);
+    base.position.set(0, 4.1, z);
+    base.rotation.z = lean * 0.35;
+    group.add(base);
+
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 6.4, height, 7), landmarkMaterials.silverStone);
+    shaft.position.set(lean * height * 0.18, 8 + height / 2, z);
+    shaft.rotation.z = lean;
+    shaft.castShadow = true;
+    group.add(shaft);
+
+    if (!broken) {
+      const crown = new THREE.Mesh(new THREE.ConeGeometry(4.4, 13, 6), landmarkMaterials.silverStone);
+      crown.position.set(lean * height * 0.32, 8 + height + 5.8, z);
+      crown.rotation.z = lean;
+      group.add(crown);
+    }
+  };
+
+  addSpire(-10, 52, -0.055, false);
+  addSpire(10, 36, 0.12, true);
+
+  const fallenCrown = new THREE.Mesh(new THREE.ConeGeometry(4.5, 14, 6), landmarkMaterials.silverStone);
+  fallenCrown.position.set(13, 3.4, 13);
+  fallenCrown.rotation.z = Math.PI / 2 - 0.2;
+  group.add(fallenCrown);
+
+  for (let i = 0; i < 11; i++) {
+    const marble = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8 + random() * 1.8, 0.5 + random(), 0.8 + random() * 1.6),
+      i % 4 ? landmarkMaterials.silverStone : landmarkMaterials.silverDark
+    );
+    marble.position.set((random() - 0.5) * 15, marble.geometry.parameters.height / 2, (random() - 0.5) * 17);
+    marble.rotation.set(random(), random() * Math.PI, random());
+    group.add(marble);
+  }
+
+  addCullable(group, -168, 0, 88);
+  colliders.push({ minX: -178, maxX: -158, minZ: -20, maxZ: 20 });
+}
+
+function addCrumpledTower() {
+  const random = mulberry32(0xD00A);
+  const group = new THREE.Group();
+  group.position.set(0, 0, 168);
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(13.5, 16.5, 9.5, 8), landmarkMaterials.doomStone);
+  base.position.y = 4.75;
+  base.castShadow = true;
+  group.add(base);
+
+  const shell = new THREE.Mesh(new THREE.CylinderGeometry(8.5, 13.2, 38, 8, 1, true, 0.25, Math.PI * 1.5), landmarkMaterials.doomStone);
+  shell.position.set(-1.1, 27, 0);
+  shell.rotation.z = -0.06;
+  shell.castShadow = true;
+  group.add(shell);
+
+  const emberCore = new THREE.Mesh(new THREE.PlaneGeometry(9, 22), landmarkMaterials.doomEmber);
+  emberCore.position.set(0.8, 25, -1.5);
+  emberCore.rotation.y = Math.PI;
+  group.add(emberCore);
+
+  const fallenTop = new THREE.Mesh(new THREE.CylinderGeometry(7, 9.2, 18, 8), landmarkMaterials.doomStone);
+  fallenTop.position.set(18, 6, 7);
+  fallenTop.rotation.z = Math.PI / 2 - 0.12;
+  fallenTop.rotation.y = 0.35;
+  group.add(fallenTop);
+
+  for (let i = 0; i < 14; i++) {
+    const rubble = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8 + random() * 2.2, 0.45 + random() * 1.3, 0.8 + random() * 2),
+      i % 3 ? landmarkMaterials.doomStone : ruinMaterials.char
+    );
+    rubble.position.set((random() - 0.5) * 21, rubble.geometry.parameters.height / 2, (random() - 0.5) * 17);
+    rubble.rotation.set(random(), random() * Math.PI, random());
+    group.add(rubble);
+  }
+
+  addCullable(group, 0, 168, 92);
+  colliders.push({ type: 'circle', x: 0, z: 168, radius: 15.5 });
+  colliders.push({ type: 'circle', x: 18, z: 175, radius: 8.5 });
+  addFire(-5.8, 162.7, 1.05, mulberry32(0xD00F1E));
+}
+
+function addCardinalLandmarks() {
+  addRuinedPortal();
+  addRuinedSpire();
+  addCrumpledTower();
 }
 
 function addRoadDamage() {
@@ -871,6 +1250,15 @@ function overlapsCollider(minX, maxX, minZ, maxZ, margin = 0) {
   });
 }
 
+function isInsideCityShape(x, z, padding = 0) {
+  const core = CITY_CORE_HALF - padding;
+  const arm = CITY_ARM_HALF - padding;
+  const end = CITY_ARM_END - padding;
+  return (Math.abs(x) < core && Math.abs(z) < core) ||
+    (Math.abs(x) < arm && Math.abs(z) < end) ||
+    (Math.abs(z) < arm && Math.abs(x) < end);
+}
+
 function addRuinedCity() {
   const random = mulberry32(0xAE7E40);
   let placed = 0;
@@ -882,6 +1270,7 @@ function addRuinedCity() {
     const depth = 3.8 + random() * 8.2;
     const radius = Math.max(width, depth) * 0.58;
 
+    if (!isInsideCityShape(x, z, radius + 2.5)) continue;
     if (Math.hypot(x, z) < 13 || isNearRoad(x, z, radius + 0.9)) continue;
     const minX = x - width / 2;
     const maxX = x + width / 2;
@@ -1259,10 +1648,21 @@ function updatePointerStatus() {
 
 function onMouseMove(event) {
   if (!active || playerDead || document.pointerLockElement !== renderer.domElement) return;
-  yaw -= event.movementX * 0.0022;
-  pitch -= event.movementY * 0.0022;
+  if (performance.now() - pointerLockChangedAt < POINTER_LOCK_SETTLE_MS) return;
+  if (!Number.isFinite(event.movementX) || !Number.isFinite(event.movementY)) return;
+
+  const movementX = THREE.MathUtils.clamp(event.movementX, -MAX_MOUSE_DELTA, MAX_MOUSE_DELTA);
+  const movementY = THREE.MathUtils.clamp(event.movementY, -MAX_MOUSE_DELTA, MAX_MOUSE_DELTA);
+  yaw -= movementX * 0.0022;
+  pitch -= movementY * 0.0022;
+  yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
   pitch = THREE.MathUtils.clamp(pitch, -Math.PI / 2 + 0.02, Math.PI / 2 - 0.02);
   camera.rotation.set(pitch, yaw, 0);
+}
+
+function onPointerLockChange() {
+  pointerLockChangedAt = performance.now();
+  updatePointerStatus();
 }
 
 function onKeyDown(event) {
@@ -1300,6 +1700,16 @@ function collidesAt(x, z) {
     return x + PLAYER_RADIUS > collider.minX && x - PLAYER_RADIUS < collider.maxX &&
       z + PLAYER_RADIUS > collider.minZ && z - PLAYER_RADIUS < collider.maxZ;
   });
+}
+
+function groundHeightAt(x, z) {
+  if (Math.abs(z) > EAST_BRIDGE_HALF_WIDTH) return 0;
+  const bridgeHalfLength = (EAST_RIVER_WIDTH + 5) / 2;
+  const distanceFromCenter = Math.abs(x - EAST_RIVER_X);
+  if (distanceFromCenter <= bridgeHalfLength) return EAST_BRIDGE_HEIGHT;
+  if (distanceFromCenter >= bridgeHalfLength + EAST_BRIDGE_RAMP_LENGTH) return 0;
+  const rampProgress = (distanceFromCenter - bridgeHalfLength) / EAST_BRIDGE_RAMP_LENGTH;
+  return EAST_BRIDGE_HEIGHT * (1 - rampProgress);
 }
 
 function makeTentacleStrand(height, radius, bend, segments = 8) {
@@ -1656,8 +2066,9 @@ function updateMovement(dt) {
   else velocity.z = 0;
 
   camera.position.y += velocity.y * dt;
-  if (camera.position.y <= EYE_HEIGHT) {
-    camera.position.y = EYE_HEIGHT;
+  const standingHeight = EYE_HEIGHT + groundHeightAt(camera.position.x, camera.position.z);
+  if (camera.position.y <= standingHeight) {
+    camera.position.y = standingHeight;
     velocity.y = 0;
     grounded = true;
   }
@@ -1966,7 +2377,7 @@ document.addEventListener('mouseup', onMouseUp);
 document.addEventListener('contextmenu', onContextMenu);
 document.addEventListener('keydown', onKeyDown);
 document.addEventListener('keyup', onKeyUp);
-document.addEventListener('pointerlockchange', updatePointerStatus);
+document.addEventListener('pointerlockchange', onPointerLockChange);
 window.addEventListener('blur', () => {
   keys.clear();
   parryHeld = false;
