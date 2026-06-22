@@ -73,6 +73,7 @@
   const PENT_ARM = 620;           // ms to burn each of the 5 arms
   const PENT_PAUSE = 130;         // ms beat between arms
   const CIRCLE_BURN = 900;        // ms to burn the enclosing circle
+  const PENT_FADE = 1400;         // completed seal cools into a faint floor scar
   const OUTER_GROW = 1600;        // ms for the background tentacles to emerge
   const BG_SCALE = 0.25;          // quarter-res layer, enlarged as visible 4x pixels
   const BG_FRAME_MS = 1000 / 30;  // slow writhing does not need a 60 Hz redraw
@@ -101,6 +102,123 @@
 
   const easeInQuad = (t) => t * t;
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+  // ---- Scriptable arena geometry ----------------------------------------
+  // The canvas remains a stable 500x500 world. The arena can move, resize and
+  // rotate inside it, while shape-aware rendering and collision stay behind a
+  // single controller. Boss attacks can call setArena() without touching the
+  // hero or rendering loops.
+  const ARENA_DEFAULT = Object.freeze({
+    x: BOARD / 2, y: BOARD / 2, width: BOARD, height: BOARD,
+    rotation: 0, shape: 'rect',
+  });
+  const arena = {
+    ...ARENA_DEFAULT,
+    from: null,
+    target: null,
+    transitionTime: 0,
+    transitionDuration: 0,
+  };
+
+  function arenaSnapshot() {
+    return {
+      x: arena.x, y: arena.y, width: arena.width, height: arena.height,
+      rotation: arena.rotation, shape: arena.shape,
+    };
+  }
+
+  function resetArenaState() {
+    Object.assign(arena, ARENA_DEFAULT, {
+      from: null, target: null, transitionTime: 0, transitionDuration: 0,
+    });
+  }
+
+  function setArena(options, duration) {
+    const next = options || {};
+    const target = arenaSnapshot();
+    if (Number.isFinite(next.x)) target.x = next.x;
+    if (Number.isFinite(next.y)) target.y = next.y;
+    if (Number.isFinite(next.width)) target.width = Math.max(80, next.width);
+    if (Number.isFinite(next.height)) target.height = Math.max(80, next.height);
+    if (Number.isFinite(next.rotation)) target.rotation = next.rotation;
+    if (Number.isFinite(next.rotationDeg)) target.rotation = next.rotationDeg * Math.PI / 180;
+    if (['rect', 'ellipse', 'diamond'].includes(next.shape)) target.shape = next.shape;
+    arena.shape = target.shape; // shape switches now; transform properties can tween
+    arena.from = arenaSnapshot();
+    arena.target = target;
+    arena.transitionTime = 0;
+    arena.transitionDuration = Math.max(0, Number(duration) || 0);
+    if (!arena.transitionDuration) {
+      Object.assign(arena, target);
+      arena.from = null;
+      arena.target = null;
+    }
+    return arenaSnapshot();
+  }
+
+  function resetArena(duration) {
+    return setArena(ARENA_DEFAULT, duration);
+  }
+
+  function updateArena(dt) {
+    if (!arena.target) return;
+    arena.transitionTime += dt;
+    const raw = Math.min(1, arena.transitionTime / arena.transitionDuration);
+    const p = easeOutCubic(raw);
+    for (const key of ['x', 'y', 'width', 'height', 'rotation'])
+      arena[key] = arena.from[key] + (arena.target[key] - arena.from[key]) * p;
+    if (raw >= 1) {
+      Object.assign(arena, arena.target);
+      arena.from = null;
+      arena.target = null;
+    }
+  }
+
+  function arenaPath(g, inset) {
+    const amount = Math.max(0, inset || 0);
+    const w = Math.max(1, arena.width - amount * 2);
+    const h = Math.max(1, arena.height - amount * 2);
+    g.beginPath();
+    g.save();
+    g.translate(arena.x, arena.y);
+    g.rotate(arena.rotation);
+    if (arena.shape === 'ellipse') {
+      g.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+    } else if (arena.shape === 'diamond') {
+      g.moveTo(0, -h / 2);
+      g.lineTo(w / 2, 0);
+      g.lineTo(0, h / 2);
+      g.lineTo(-w / 2, 0);
+      g.closePath();
+    } else {
+      g.rect(-w / 2, -h / 2, w, h);
+    }
+    g.restore();
+  }
+
+  function worldToArena(x, y) {
+    const dx = x - arena.x;
+    const dy = y - arena.y;
+    const c = Math.cos(arena.rotation);
+    const s = Math.sin(arena.rotation);
+    return { x: dx * c + dy * s, y: -dx * s + dy * c };
+  }
+
+  function arenaToWorld(x, y) {
+    const c = Math.cos(arena.rotation);
+    const s = Math.sin(arena.rotation);
+    return { x: arena.x + x * c - y * s, y: arena.y + x * s + y * c };
+  }
+
+  function arenaContains(x, y, padding) {
+    const local = worldToArena(x, y);
+    const inset = Math.max(0, Number(padding) || 0);
+    const rx = Math.max(1, arena.width / 2 - inset);
+    const ry = Math.max(1, arena.height / 2 - inset);
+    if (arena.shape === 'ellipse') return (local.x / rx) ** 2 + (local.y / ry) ** 2 <= 1;
+    if (arena.shape === 'diamond') return Math.abs(local.x) / rx + Math.abs(local.y) / ry <= 1;
+    return Math.abs(local.x) <= rx && Math.abs(local.y) <= ry;
+  }
 
   // ---- Deterministic noise so the blood looks the same every run ---------
   function mulberry32(seed) {
@@ -551,9 +669,14 @@
     const armsDone = pentagram.arm;
     const armT = pentagram.paused ? 0 : Math.min(1, pentagram.armTime / PENT_ARM);
     const done = phase === PHASE.ACTIVE;
-    const pulse = done ? 1 + Math.sin(clock * 0.005) * 0.3 : 1;
+    const fade = done ? easeOutCubic(Math.min(1, phaseTime / PENT_FADE)) : 0;
+    const pulse = done ? 1 + Math.sin(clock * 0.005) * 0.3 * (1 - fade) : 1;
+    const burnRed = Math.round(150 - fade * 100);
+    const burnGreen = Math.round(16 - fade * 11);
+    const burnBlue = Math.round(10 - fade * 4);
 
     ctx.save();
+    ctx.globalAlpha = 1 - fade * 0.72;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -567,9 +690,9 @@
       ctx.lineWidth = 7;
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(ex, ey); ctx.stroke();
       // Glowing red burn line on top.
-      ctx.shadowColor = 'rgba(255, 50, 20, 0.85)';
-      ctx.shadowBlur = 14 * pulse;
-      ctx.strokeStyle = 'rgba(150, 16, 10, 0.92)';
+      ctx.shadowColor = 'rgba(255, 50, 20, ' + (0.85 * (1 - fade)).toFixed(3) + ')';
+      ctx.shadowBlur = 14 * pulse * (1 - fade);
+      ctx.strokeStyle = 'rgba(' + burnRed + ', ' + burnGreen + ', ' + burnBlue + ', 0.92)';
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(ex, ey); ctx.stroke();
       // Bright ember at the burning tip.
@@ -598,9 +721,9 @@
       ctx.strokeStyle = 'rgba(26, 2, 4, 0.95)';
       ctx.lineWidth = 7;
       ctx.beginPath(); ctx.arc(ARENA_CX, ARENA_CY, PENT_RADIUS, start, end); ctx.stroke();
-      ctx.shadowColor = 'rgba(255, 50, 20, 0.85)';
-      ctx.shadowBlur = 14 * pulse;
-      ctx.strokeStyle = 'rgba(150, 16, 10, 0.92)';
+      ctx.shadowColor = 'rgba(255, 50, 20, ' + (0.85 * (1 - fade)).toFixed(3) + ')';
+      ctx.shadowBlur = 14 * pulse * (1 - fade);
+      ctx.strokeStyle = 'rgba(' + burnRed + ', ' + burnGreen + ', ' + burnBlue + ', 0.92)';
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(ARENA_CX, ARENA_CY, PENT_RADIUS, start, end); ctx.stroke();
       if (circleProg < 1) {
@@ -615,10 +738,48 @@
   }
 
   // ---- Scene composition -------------------------------------------------
+  function applyArenaContentTransform(g) {
+    g.translate(arena.x, arena.y);
+    g.rotate(arena.rotation);
+    g.scale(arena.width / BOARD, arena.height / BOARD);
+    g.translate(-BOARD / 2, -BOARD / 2);
+  }
+
+  function renderArenaBorder() {
+    const isDefaultFrame = arena.shape === 'rect' && arena.x === ARENA_DEFAULT.x &&
+      arena.y === ARENA_DEFAULT.y && arena.width === ARENA_DEFAULT.width &&
+      arena.height === ARENA_DEFAULT.height && arena.rotation === 0;
+    if (isDefaultFrame) {
+      ctx.drawImage(borderCanvas, 0, 0);
+      return;
+    }
+    // Moving/resized/non-rectangular shapes use a constant-thickness procedural
+    // frame so the visible wall continues to match collision geometry.
+    ctx.save();
+    arenaPath(ctx, BORDER / 2);
+    ctx.strokeStyle = '#260304';
+    ctx.lineWidth = BORDER;
+    ctx.stroke();
+    arenaPath(ctx, BORDER - 1);
+    ctx.strokeStyle = 'rgba(150, 18, 14, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function renderScene() {
-    // The black empty plane inside the window.
+    ctx.clearRect(0, 0, BOARD, BOARD);
+    ctx.save();
+    arenaPath(ctx, 0);
+    ctx.clip();
+
+    // The black empty plane inside the current arena geometry.
     ctx.fillStyle = '#040406';
     ctx.fillRect(0, 0, BOARD, BOARD);
+
+    // Floor effects and edge creatures are attached to the arena transform.
+    ctx.save();
+    applyArenaContentTransform(ctx);
 
     // Pentagram burns into the floor, beneath everything else.
     if (phase === PHASE.PENTAGRAM || phase === PHASE.ACTIVE) renderPentagram();
@@ -636,21 +797,44 @@
       renderFallShadow(Math.min(1, phaseTime / FALL_DURATION));
     }
     renderShockwave();
+    ctx.restore();
 
     drawHero();
+    ctx.restore();
 
-    // Bloody window frame sits on top of the whole scene.
-    ctx.drawImage(borderCanvas, 0, 0);
+    // Bloody frame follows the arena transform and sits above its contents.
+    renderArenaBorder();
   }
 
   // ---- Movement ----------------------------------------------------------
   function clampHero() {
-    const minX = INNER_MIN + HERO_W / 2;
-    const maxX = INNER_MAX - HERO_W / 2;
-    const minY = INNER_MIN + HERO_H / 2;
-    const maxY = INNER_MAX - HERO_H / 2;
-    hero.x = Math.max(minX, Math.min(maxX, hero.x));
-    hero.y = Math.max(minY, Math.min(maxY, hero.y));
+    const local = worldToArena(hero.x, hero.y);
+    const c = Math.abs(Math.cos(arena.rotation));
+    const s = Math.abs(Math.sin(arena.rotation));
+    const heroHalfX = c * HERO_W / 2 + s * HERO_H / 2;
+    const heroHalfY = s * HERO_W / 2 + c * HERO_H / 2;
+    const rx = Math.max(1, arena.width / 2 - BORDER - PAD - heroHalfX);
+    const ry = Math.max(1, arena.height / 2 - BORDER - PAD - heroHalfY);
+
+    if (arena.shape === 'ellipse') {
+      const distance = Math.hypot(local.x / rx, local.y / ry);
+      if (distance > 1) {
+        local.x /= distance;
+        local.y /= distance;
+      }
+    } else if (arena.shape === 'diamond') {
+      const distance = Math.abs(local.x) / rx + Math.abs(local.y) / ry;
+      if (distance > 1) {
+        local.x /= distance;
+        local.y /= distance;
+      }
+    } else {
+      local.x = Math.max(-rx, Math.min(rx, local.x));
+      local.y = Math.max(-ry, Math.min(ry, local.y));
+    }
+    const world = arenaToWorld(local.x, local.y);
+    hero.x = world.x;
+    hero.y = world.y;
   }
 
   function updateMovement(dt) {
@@ -759,7 +943,9 @@
     previousTime = time;
     clock += dt;
     phaseTime += dt;
+    updateArena(dt);
     updatePhase(dt);
+    if (phase === PHASE.ACTIVE) clampHero();
     renderBackground(time, false);
     renderScene();
     animationFrame = requestAnimationFrame(frame);
@@ -808,6 +994,7 @@
     pentagram.paused = false;
     pentagram.pauseTime = 0;
     pentagram.circleTime = 0;
+    resetArenaState();
     hero.x = ARENA_CX;
     hero.y = FALL_START_Y;
     keys.clear();
@@ -853,5 +1040,11 @@
     open,
     close,
     isOpen: () => active,
+    setArena,
+    resetArena,
+    getArena: arenaSnapshot,
+    arenaContains,
+    worldToArena,
+    arenaToWorld,
   });
 })();
