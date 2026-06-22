@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rift Boss — 2D Preview</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="boss2d.css">
+  <style>
+    html, body { margin: 0; height: 100%; background: #050001; overflow: hidden; }
+    #preview-enter {
+      position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      z-index: 9999; padding: 18px 26px; cursor: pointer;
+      font-family: 'Press Start 2P', monospace; font-size: 13px; letter-spacing: 1px;
+      color: #ffd2cc; background: #1a0405; border: 2px solid #b3201c;
+      text-shadow: 0 0 8px #ff3a2a;
+    }
+    #preview-enter:hover { background: #2a0708; }
+  </style>
+</head>
+<body>
+  <!-- Standalone harness to review the rift boss without the full game flow. -->
+  <button id="preview-enter" type="button">STEP THROUGH THE RIFT</button>
+
+  <script src="boss2d.js"></script>
+  <script>
+    document.getElementById('preview-enter').addEventListener('click', () => {
+      document.getElementById('preview-enter').style.display = 'none';
+      window.AetherBoss2D.open();
+    });
+    // Re-show the launch button whenever the player leaves the rift.
+    window.addEventListener('aetherboss2dchange', (e) => {
+      if (!e.detail.active) document.getElementById('preview-enter').style.display = '';
+    });
+  </script>
+</body>
+</html>

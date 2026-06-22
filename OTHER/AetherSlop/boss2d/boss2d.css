@@ -1,0 +1,101 @@
+/* AetherBoss2D — the rift boss minigame overlay. */
+
+#aether-boss2d-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  /* The black empty plane the fight floats in. */
+  background:
+    radial-gradient(circle at 50% 45%, #120203 0%, #060001 55%, #000000 100%);
+  font-family: 'Press Start 2P', monospace;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#aether-boss2d-overlay.hidden {
+  display: none;
+}
+
+/* Full-viewport layer for the long tentacles writhing beyond the box. */
+.aether-boss2d-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Keep the actual fight UI above the background tentacles. */
+.aether-boss2d-title,
+.aether-boss2d-stage,
+.aether-boss2d-help,
+#aether-boss2d-close {
+  position: relative;
+  z-index: 1;
+}
+
+.aether-boss2d-title {
+  color: #ff5a4a;
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px #8a0a06, 0 0 22px #3a0302;
+}
+
+.aether-boss2d-stage {
+  /* Keep the combat window a static 500x500 square. */
+  width: 500px;
+  height: 500px;
+  box-shadow:
+    0 0 0 2px #000,
+    0 0 28px 6px rgba(120, 6, 4, 0.45),
+    0 14px 40px rgba(0, 0, 0, 0.7);
+}
+
+#aether-boss2d-canvas {
+  display: block;
+  width: 500px;
+  height: 500px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.aether-boss2d-help {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #c98b86;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.aether-boss2d-status {
+  color: #7a4a47;
+  font-size: 8px;
+}
+
+#aether-boss2d-close {
+  cursor: pointer;
+  padding: 10px 18px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #ffd2cc;
+  background: #1a0405;
+  border: 2px solid #7a1210;
+  text-shadow: 0 0 8px #ff3a2a;
+}
+
+#aether-boss2d-close:hover {
+  background: #2a0708;
+  border-color: #b3201c;
+}
+
+/* While the rift boss is open, hide the rest of the page behind it. */
+body.aether-boss2d-active {
+  overflow: hidden;
+}
