@@ -74,6 +74,9 @@
   const PENT_PAUSE = 130;         // ms beat between arms
   const CIRCLE_BURN = 900;        // ms to burn the enclosing circle
   const OUTER_GROW = 1600;        // ms for the background tentacles to emerge
+  const BG_SCALE = 0.5;           // atmospheric outer layer renders at half resolution
+  const BG_FRAME_MS = 1000 / 30;  // slow writhing does not need a 60 Hz redraw
+  const OUTER_WIDTH_MULT = 2;     // global art-direction scale for every depth plane
 
   const ARENA_CX = BOARD / 2;
   const ARENA_CY = BOARD / 2;
@@ -87,6 +90,13 @@
   let tentacles = [];           // short tentacles inside the arena edges
   let outerTentacles = [];      // long tentacles beyond the box, in the dark
   let outerGrowStart = 0;       // clock time the outer tentacles spawned
+  let bgLastFrame = -Infinity;  // independent 30 fps background cadence
+  let bgWidth = 0;              // logical dimensions; backing canvas is scaled down
+  let bgHeight = 0;
+  let outerTexturePattern = null;
+  let fpsElement = null;
+  let fpsSampleStart = 0;
+  let fpsFrames = 0;
   let boxRect = null;           // viewport rect of the combat window
   const pentagram = { arm: 0, armTime: 0, paused: false, pauseTime: 0, circleTime: 0 };
 
@@ -183,6 +193,7 @@
     overlay.setAttribute('aria-label', 'The rift boss');
     overlay.innerHTML =
       '<canvas id="aether-boss2d-bg" class="aether-boss2d-bg"></canvas>' +
+      '<div id="aether-boss2d-fps" class="aether-boss2d-fps">FPS --</div>' +
       '<div class="aether-boss2d-title">THROUGH THE RIFT</div>' +
       '<div class="aether-boss2d-stage">' +
         '<canvas id="aether-boss2d-canvas" width="' + BOARD + '" height="' + BOARD + '"></canvas>' +
@@ -198,6 +209,7 @@
     ctx.imageSmoothingEnabled = false;
     bgCanvas = document.getElementById('aether-boss2d-bg');
     bgCtx = bgCanvas.getContext('2d');
+    fpsElement = document.getElementById('aether-boss2d-fps');
     document.getElementById('aether-boss2d-close').addEventListener('click', close);
   }
 
@@ -324,69 +336,87 @@
   }
 
   // One long outer tentacle: a tapering filled ribbon (no shadow — that was
-  // the frame-rate killer) with a dark rim to separate overlapping limbs and
-  // clipped speckle mottling for a gritty, fleshy texture.
-  const OUTER_SEGS = 20;
+  // the frame-rate killer) with a dark rim and a shared repeating texture.
+  // Typed scratch buffers keep this hot path allocation-free.
+  const OUTER_MAX_SEGS = 20;
+  const outerPX = new Float32Array(OUTER_MAX_SEGS + 1);
+  const outerPY = new Float32Array(OUTER_MAX_SEGS + 1);
+  const outerNX = new Float32Array(OUTER_MAX_SEGS + 1);
+  const outerNY = new Float32Array(OUTER_MAX_SEGS + 1);
+  const outerHW = new Float32Array(OUTER_MAX_SEGS + 1);
+
+  function buildOuterTexturePattern() {
+    const tile = document.createElement('canvas');
+    tile.width = 64;
+    tile.height = 64;
+    const g = tile.getContext('2d');
+    const random = mulberry32(0x51ec7);
+    for (let i = 0; i < 55; i++) {
+      const light = random() < 0.28;
+      g.fillStyle = light ? 'rgba(86, 20, 32, 0.24)' : 'rgba(3, 0, 2, 0.48)';
+      g.beginPath();
+      g.arc(random() * tile.width, random() * tile.height, 1 + random() * 3.8, 0, Math.PI * 2);
+      g.fill();
+    }
+    outerTexturePattern = bgCtx.createPattern(tile, 'repeat');
+  }
+
   function drawOuterTentacle(t, growth) {
     if (growth <= 0) return;
-    const segs = OUTER_SEGS;
-    const perp0 = { x: -t.dir.y, y: t.dir.x };
+    const segs = t.segs;
+    const perpX = -t.dir.y;
+    const perpY = t.dir.x;
     const reach = t.length * growth;
     const baseHW = t.width * 0.5 * growth;
-    const pts = new Array(segs + 1);
-    const nrm = new Array(segs + 1);
-    const hws = new Array(segs + 1);
     for (let s = 0; s <= segs; s++) {
       const u = s / segs;
       const along = reach * u;
       const wobble = Math.sin(u * t.waves * Math.PI + clock * t.speed + t.phase) * t.amp * u
         + t.sway * along;
-      pts[s] = {
-        x: t.base.x + t.dir.x * along + perp0.x * wobble,
-        y: t.base.y + t.dir.y * along + perp0.y * wobble,
-      };
-      hws[s] = Math.max(0.5, baseHW * Math.pow(1 - u, 0.55));
+      outerPX[s] = t.base.x + t.dir.x * along + perpX * wobble;
+      outerPY[s] = t.base.y + t.dir.y * along + perpY * wobble;
+      outerHW[s] = Math.max(0.5, baseHW * Math.pow(1 - u, 0.55));
     }
     for (let i = 0; i <= segs; i++) {
-      const a = pts[Math.max(0, i - 1)];
-      const b = pts[Math.min(segs, i + 1)];
-      const tl = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-      nrm[i] = { x: -(b.y - a.y) / tl, y: (b.x - a.x) / tl };
+      const a = Math.max(0, i - 1);
+      const b = Math.min(segs, i + 1);
+      const dx = outerPX[b] - outerPX[a];
+      const dy = outerPY[b] - outerPY[a];
+      const tl = Math.hypot(dx, dy) || 1;
+      outerNX[i] = -dy / tl;
+      outerNY[i] = dx / tl;
     }
     // Body ribbon.
     bgCtx.beginPath();
-    bgCtx.moveTo(pts[0].x + nrm[0].x * hws[0], pts[0].y + nrm[0].y * hws[0]);
-    for (let i = 1; i <= segs; i++) bgCtx.lineTo(pts[i].x + nrm[i].x * hws[i], pts[i].y + nrm[i].y * hws[i]);
-    for (let i = segs; i >= 0; i--) bgCtx.lineTo(pts[i].x - nrm[i].x * hws[i], pts[i].y - nrm[i].y * hws[i]);
+    bgCtx.moveTo(outerPX[0] + outerNX[0] * outerHW[0], outerPY[0] + outerNY[0] * outerHW[0]);
+    for (let i = 1; i <= segs; i++) bgCtx.lineTo(outerPX[i] + outerNX[i] * outerHW[i], outerPY[i] + outerNY[i] * outerHW[i]);
+    for (let i = segs; i >= 0; i--) bgCtx.lineTo(outerPX[i] - outerNX[i] * outerHW[i], outerPY[i] - outerNY[i] * outerHW[i]);
     bgCtx.closePath();
     bgCtx.fillStyle = t.bodyColor;
     bgCtx.fill();
+    if (outerTexturePattern) {
+      bgCtx.fillStyle = outerTexturePattern;
+      bgCtx.fill();
+    }
     // Dark rim so overlapping limbs stay legible.
     bgCtx.lineWidth = 1.5;
     bgCtx.lineJoin = 'round';
     bgCtx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
     bgCtx.stroke();
-    // Gritty mottle, clipped inside the body.
-    bgCtx.save();
-    bgCtx.clip();
-    for (const sp of t.specks) {
-      const idx = Math.min(segs, Math.max(0, Math.round(sp.a * segs)));
-      const hw = hws[idx];
-      const px = pts[idx].x + nrm[idx].x * sp.s * hw;
-      const py = pts[idx].y + nrm[idx].y * sp.s * hw;
-      bgCtx.fillStyle = sp.light ? 'rgba(86, 20, 32, 0.20)' : 'rgba(3, 0, 2, 0.5)';
-      bgCtx.beginPath();
-      bgCtx.arc(px, py, sp.r * Math.max(1, hw * 0.2), 0, Math.PI * 2);
-      bgCtx.fill();
-    }
-    bgCtx.restore();
   }
 
   // ---- Long tentacles writhing in the dark beyond the box ----------------
   function sizeBackground() {
     if (!bgCanvas) return;
-    bgCanvas.width = window.innerWidth;
-    bgCanvas.height = window.innerHeight;
+    bgWidth = window.innerWidth;
+    bgHeight = window.innerHeight;
+    bgCanvas.width = Math.ceil(bgWidth * BG_SCALE);
+    bgCanvas.height = Math.ceil(bgHeight * BG_SCALE);
+    bgCanvas.style.width = bgWidth + 'px';
+    bgCanvas.style.height = bgHeight + 'px';
+    bgCtx.setTransform(BG_SCALE, 0, 0, BG_SCALE, 0, 0);
+    buildOuterTexturePattern();
+    bgLastFrame = -Infinity;
   }
 
   function spawnOuterTentacles(instant) {
@@ -396,8 +426,8 @@
     boxRect = { left: r.left, top: r.top, w: r.width, h: r.height };
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
-    const W = bgCanvas.width;
-    const H = bgCanvas.height;
+    const W = bgWidth;
+    const H = bgHeight;
     const random = mulberry32(0x0c7e9a);
     outerTentacles = [];
     // Roots cling to the SCREEN edges — bottom, left and right, never the top —
@@ -405,57 +435,93 @@
     // (the opaque combat window hides the convergence). Left/right roots start
     // no higher than the box top so nothing intrudes on the open north.
     const top = r.top;
-    // Dense and overlapping; dark, near-black blood-reds so the mass stays
-    // subtle against the background.
-    const bodies = ['#160710', '#1b0913', '#12060d', '#210b16', '#180812'];
-    const sides = [
-      { side: 'bottom', count: 22 },
-      { side: 'left', count: 15 },
-      { side: 'right', count: 15 },
+    // Build back-to-front depth layers. A few huge, very dark limbs form the
+    // lowest plane; progressively smaller limbs sit above them, with the front
+    // layer retaining the original size. This keeps the silhouette dense with
+    // substantially fewer independently animated ribbons (24 instead of 52).
+    const layers = [
+      {
+        widthScale: 3, bottomCount: 2, sideCount: 1, fullScreen: true,
+        bodies: ['#0d0309', '#10040b', '#13050d'],
+      },
+      {
+        widthScale: 2.6, bottomCount: 2, sideCount: 1,
+        bodies: ['#10040b', '#13050d', '#15060f'],
+      },
+      {
+        widthScale: 2.2, bottomCount: 2, sideCount: 1,
+        bodies: ['#12060d', '#160710', '#180812'],
+      },
+      {
+        widthScale: 1.8, bottomCount: 2, sideCount: 1,
+        bodies: ['#12060d', '#160710', '#180812'],
+      },
+      {
+        widthScale: 1.4, bottomCount: 2, sideCount: 1,
+        bodies: ['#160710', '#1b0913', '#180812'],
+      },
+      {
+        widthScale: 1, bottomCount: 2, sideCount: 1,
+        bodies: ['#160710', '#1b0913', '#12060d', '#210b16', '#180812'],
+      },
     ];
-    for (const s of sides) {
-      for (let i = 0; i < s.count; i++) {
-        const f = (i + 0.5) / s.count + (random() - 0.5) * 0.06;
-        const u = Math.max(0, Math.min(1, f));
-        let base;
-        if (s.side === 'bottom') base = { x: u * W, y: H };
-        else if (s.side === 'left') base = { x: 0, y: top + u * (H - top) };
-        else base = { x: W, y: top + u * (H - top) };
-        // Aim toward the box centre with a little spread.
-        const ang = Math.atan2(cy - base.y, cx - base.x) + (random() - 0.5) * 0.55;
-        const dist = Math.hypot(cx - base.x, cy - base.y);
-        // Precompute speckles that ride along the limb for gritty texture.
-        const specks = [];
-        const speckN = 12;
-        for (let k = 0; k < speckN; k++) {
-          specks.push({
-            a: 0.04 + random() * 0.9,
-            s: (random() * 2 - 1) * 0.8,
-            r: 0.6 + random() * 1.7,
-            light: random() < 0.28,
+    const sides = [
+      { side: 'bottom', countKey: 'bottomCount' },
+      { side: 'left', countKey: 'sideCount' },
+      { side: 'right', countKey: 'sideCount' },
+    ];
+    for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
+      const layer = layers[layerIndex];
+      for (const s of sides) {
+        const count = layer[s.countKey];
+        const totalCount = count * layers.length;
+        for (let i = 0; i < count; i++) {
+          // Interleave depth layers into shared slots instead of letting every
+          // layer reuse the same positions and form visible root clumps.
+          const slot = i * layers.length + layerIndex;
+          const f = (slot + 0.5 + (random() - 0.5) * 0.45) / totalCount;
+          const u = Math.max(0, Math.min(1, f));
+          const width = (46 + random() * 56) * layer.widthScale * OUTER_WIDTH_MULT;
+          // Push the flat root cap beyond the viewport by more than its radius.
+          const rootOffset = width * 0.62 + 8;
+          let base;
+          if (s.side === 'bottom') base = { x: u * W, y: H + rootOffset };
+          else if (s.side === 'left') base = { x: -rootOffset, y: top + u * (H - top) };
+          else base = { x: W + rootOffset, y: top + u * (H - top) };
+          // Aim toward the box centre with a little spread.
+          const ang = Math.atan2(cy - base.y, cx - base.x) + (random() - 0.5) * 0.55;
+          const dist = Math.hypot(cx - base.x, cy - base.y);
+          const length = layer.fullScreen
+            ? Math.hypot(W, H) * (1.05 + random() * 0.2)
+            : dist * (0.85 + random() * 0.45);
+          outerTentacles.push({
+            base,
+            dir: { x: Math.cos(ang), y: Math.sin(ang) },
+            length,                              // reach the box / slip under it
+            width,
+            // Match curve detail to the limb's size in the half-res backing store.
+            segs: Math.max(10, Math.min(OUTER_MAX_SEGS, Math.ceil(length * BG_SCALE / 32))),
+            waves: 0.7 + random() * 1.1,
+            amp: (24 + random() * 54) * Math.sqrt(layer.widthScale),
+            speed: 0.0005 + random() * 0.0010,
+            phase: random() * Math.PI * 2,
+            sway: (random() - 0.5) * 0.16,
+            bodyColor: layer.bodies[(random() * layer.bodies.length) | 0],
           });
         }
-        outerTentacles.push({
-          base,
-          dir: { x: Math.cos(ang), y: Math.sin(ang) },
-          length: dist * (0.8 + random() * 0.5), // reach the box / slip under it
-          width: 46 + random() * 56,             // thick, fleshy limbs
-          waves: 0.7 + random() * 1.1,
-          amp: 24 + random() * 54,
-          speed: 0.0005 + random() * 0.0010,
-          phase: random() * Math.PI * 2,
-          sway: (random() - 0.5) * 0.16,
-          bodyColor: bodies[(random() * bodies.length) | 0],
-          specks,
-        });
       }
     }
     outerGrowStart = instant ? clock - OUTER_GROW : clock;
   }
 
-  function renderBackground() {
+  function renderBackground(time, force) {
     if (!bgCtx) return;
+    if (!force && time - bgLastFrame < BG_FRAME_MS) return;
+    bgLastFrame = time;
+    bgCtx.save();
+    bgCtx.setTransform(1, 0, 0, 1, 0, 0);
     bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+    bgCtx.restore();
     if (!outerTentacles.length) return;
     const growth = easeOutCubic(Math.min(1, (clock - outerGrowStart) / OUTER_GROW));
     for (const t of outerTentacles) drawOuterTentacle(t, growth);
@@ -663,14 +729,25 @@
     }
   }
 
+  function updateFpsCounter(time) {
+    if (!fpsSampleStart) fpsSampleStart = time;
+    fpsFrames++;
+    const elapsed = time - fpsSampleStart;
+    if (elapsed < 1000) return;
+    if (fpsElement) fpsElement.textContent = 'FPS ' + (fpsFrames * 1000 / elapsed).toFixed(1);
+    fpsFrames = 0;
+    fpsSampleStart = time;
+  }
+
   function frame(time) {
     if (!active) return;
+    updateFpsCounter(time);
     const dt = Math.min(48, time - previousTime || 16);
     previousTime = time;
     clock += dt;
     phaseTime += dt;
     updatePhase(dt);
-    renderBackground();
+    renderBackground(time, false);
     renderScene();
     animationFrame = requestAnimationFrame(frame);
   }
@@ -721,13 +798,16 @@
     hero.x = ARENA_CX;
     hero.y = FALL_START_Y;
     keys.clear();
+    fpsSampleStart = 0;
+    fpsFrames = 0;
+    if (fpsElement) fpsElement.textContent = 'FPS --';
 
     overlay.classList.remove('hidden');
     document.body.classList.add('aether-boss2d-active');
     active = true;
     sizeBackground();
     previousTime = performance.now();
-    renderBackground();
+    renderBackground(previousTime, true);
     renderScene();
     animationFrame = requestAnimationFrame(frame);
     dispatchState();

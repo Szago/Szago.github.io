@@ -29,6 +29,21 @@
   pointer-events: none;
 }
 
+/* Temporary standalone performance readout for the boss scene. */
+.aether-boss2d-fps {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  padding: 7px 9px;
+  color: #ffb0a6;
+  background: rgba(10, 0, 2, 0.82);
+  border: 1px solid #64100e;
+  font-size: 9px;
+  line-height: 1;
+  pointer-events: none;
+}
+
 /* Keep the actual fight UI above the background tentacles. */
 .aether-boss2d-title,
 .aether-boss2d-stage,
