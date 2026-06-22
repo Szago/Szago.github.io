@@ -74,7 +74,7 @@
   const PENT_PAUSE = 130;         // ms beat between arms
   const CIRCLE_BURN = 900;        // ms to burn the enclosing circle
   const OUTER_GROW = 1600;        // ms for the background tentacles to emerge
-  const BG_SCALE = 0.5;           // atmospheric outer layer renders at half resolution
+  const BG_SCALE = 0.25;          // quarter-res layer, enlarged as visible 4x pixels
   const BG_FRAME_MS = 1000 / 30;  // slow writhing does not need a 60 Hz redraw
   const OUTER_WIDTH_MULT = 2;     // global art-direction scale for every depth plane
 
@@ -93,7 +93,6 @@
   let bgLastFrame = -Infinity;  // independent 30 fps background cadence
   let bgWidth = 0;              // logical dimensions; backing canvas is scaled down
   let bgHeight = 0;
-  let outerTexturePattern = null;
   let fpsElement = null;
   let fpsSampleStart = 0;
   let fpsFrames = 0;
@@ -336,7 +335,7 @@
   }
 
   // One long outer tentacle: a tapering filled ribbon (no shadow — that was
-  // the frame-rate killer) with a dark rim and a shared repeating texture.
+  // the frame-rate killer) with a dark rim and limb-local stains/scars.
   // Typed scratch buffers keep this hot path allocation-free.
   const OUTER_MAX_SEGS = 20;
   const outerPX = new Float32Array(OUTER_MAX_SEGS + 1);
@@ -344,22 +343,6 @@
   const outerNX = new Float32Array(OUTER_MAX_SEGS + 1);
   const outerNY = new Float32Array(OUTER_MAX_SEGS + 1);
   const outerHW = new Float32Array(OUTER_MAX_SEGS + 1);
-
-  function buildOuterTexturePattern() {
-    const tile = document.createElement('canvas');
-    tile.width = 64;
-    tile.height = 64;
-    const g = tile.getContext('2d');
-    const random = mulberry32(0x51ec7);
-    for (let i = 0; i < 55; i++) {
-      const light = random() < 0.28;
-      g.fillStyle = light ? 'rgba(86, 20, 32, 0.24)' : 'rgba(3, 0, 2, 0.48)';
-      g.beginPath();
-      g.arc(random() * tile.width, random() * tile.height, 1 + random() * 3.8, 0, Math.PI * 2);
-      g.fill();
-    }
-    outerTexturePattern = bgCtx.createPattern(tile, 'repeat');
-  }
 
   function drawOuterTentacle(t, growth) {
     if (growth <= 0) return;
@@ -393,16 +376,32 @@
     for (let i = segs; i >= 0; i--) bgCtx.lineTo(outerPX[i] - outerNX[i] * outerHW[i], outerPY[i] - outerNY[i] * outerHW[i]);
     bgCtx.closePath();
     bgCtx.fillStyle = t.bodyColor;
+    bgCtx.globalAlpha = t.opacity;
     bgCtx.fill();
-    if (outerTexturePattern) {
-      bgCtx.fillStyle = outerTexturePattern;
+
+    // Sparse stains and scars are anchored to the limb's centreline, so they
+    // travel and bend with it instead of behaving like a screen-space overlay.
+    bgCtx.globalAlpha = t.opacity * 0.72;
+    for (const mark of t.marks) {
+      const idx = Math.max(1, Math.min(segs - 1, Math.round(mark.u * segs)));
+      const px = outerPX[idx] + outerNX[idx] * outerHW[idx] * mark.side;
+      const py = outerPY[idx] + outerNY[idx] * outerHW[idx] * mark.side;
+      const angle = Math.atan2(outerPY[idx + 1] - outerPY[idx - 1], outerPX[idx + 1] - outerPX[idx - 1]);
+      const rx = Math.max(2, outerHW[idx] * mark.length);
+      const ry = Math.max(0.7, outerHW[idx] * mark.thickness);
+      bgCtx.fillStyle = mark.rust ? '#2d0506' : '#020001';
+      bgCtx.beginPath();
+      bgCtx.ellipse(px, py, rx, ry, angle, 0, Math.PI * 2);
       bgCtx.fill();
     }
     // Dark rim so overlapping limbs stay legible.
-    bgCtx.lineWidth = 1.5;
+    // Four logical pixels become one solid backing pixel at quarter resolution.
+    bgCtx.lineWidth = 4;
     bgCtx.lineJoin = 'round';
-    bgCtx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+    bgCtx.globalAlpha = t.outlineOpacity;
+    bgCtx.strokeStyle = t.outlineColor;
     bgCtx.stroke();
+    bgCtx.globalAlpha = 1;
   }
 
   // ---- Long tentacles writhing in the dark beyond the box ----------------
@@ -415,7 +414,7 @@
     bgCanvas.style.width = bgWidth + 'px';
     bgCanvas.style.height = bgHeight + 'px';
     bgCtx.setTransform(BG_SCALE, 0, 0, BG_SCALE, 0, 0);
-    buildOuterTexturePattern();
+    bgCtx.imageSmoothingEnabled = false;
     bgLastFrame = -Infinity;
   }
 
@@ -441,28 +440,28 @@
     // substantially fewer independently animated ribbons (24 instead of 52).
     const layers = [
       {
-        widthScale: 3, bottomCount: 2, sideCount: 1, fullScreen: true,
-        bodies: ['#0d0309', '#10040b', '#13050d'],
+        widthScale: 3, bottomCount: 2, sideCount: 1, fullScreen: true, opacity: 0.78,
+        bodies: ['#030001', '#050001', '#070102'], outline: '#3b0608', outlineOpacity: 0.48,
       },
       {
-        widthScale: 2.6, bottomCount: 2, sideCount: 1,
-        bodies: ['#10040b', '#13050d', '#15060f'],
+        widthScale: 2.6, bottomCount: 2, sideCount: 1, opacity: 0.82,
+        bodies: ['#040001', '#060102', '#080102'], outline: '#46070a', outlineOpacity: 0.54,
       },
       {
-        widthScale: 2.2, bottomCount: 2, sideCount: 1,
-        bodies: ['#12060d', '#160710', '#180812'],
+        widthScale: 2.2, bottomCount: 2, sideCount: 1, opacity: 0.85,
+        bodies: ['#050001', '#070102', '#090102'], outline: '#52080b', outlineOpacity: 0.60,
       },
       {
-        widthScale: 1.8, bottomCount: 2, sideCount: 1,
-        bodies: ['#12060d', '#160710', '#180812'],
+        widthScale: 1.8, bottomCount: 2, sideCount: 1, opacity: 0.88,
+        bodies: ['#050001', '#080102', '#0a0102'], outline: '#5f0a0c', outlineOpacity: 0.66,
       },
       {
-        widthScale: 1.4, bottomCount: 2, sideCount: 1,
-        bodies: ['#160710', '#1b0913', '#180812'],
+        widthScale: 1.4, bottomCount: 2, sideCount: 1, opacity: 0.91,
+        bodies: ['#060001', '#090102', '#0c0103'], outline: '#6b0c0e', outlineOpacity: 0.72,
       },
       {
-        widthScale: 1, bottomCount: 2, sideCount: 1,
-        bodies: ['#160710', '#1b0913', '#12060d', '#210b16', '#180812'],
+        widthScale: 1, bottomCount: 2, sideCount: 1, opacity: 0.94,
+        bodies: ['#070001', '#0a0102', '#0d0103', '#040001'], outline: '#781013', outlineOpacity: 0.78,
       },
     ];
     const sides = [
@@ -494,6 +493,16 @@
           const length = layer.fullScreen
             ? Math.hypot(W, H) * (1.05 + random() * 0.2)
             : dist * (0.85 + random() * 0.45);
+          const marks = [];
+          for (let k = 0; k < 5; k++) {
+            marks.push({
+              u: 0.12 + random() * 0.66,
+              side: (random() * 2 - 1) * 0.48,
+              length: 0.28 + random() * 0.58,
+              thickness: 0.035 + random() * 0.07,
+              rust: random() < 0.34,
+            });
+          }
           outerTentacles.push({
             base,
             dir: { x: Math.cos(ang), y: Math.sin(ang) },
@@ -507,6 +516,10 @@
             phase: random() * Math.PI * 2,
             sway: (random() - 0.5) * 0.16,
             bodyColor: layer.bodies[(random() * layer.bodies.length) | 0],
+            opacity: layer.opacity,
+            outlineColor: layer.outline,
+            outlineOpacity: layer.outlineOpacity,
+            marks,
           });
         }
       }

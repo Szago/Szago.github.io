@@ -27,6 +27,7 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
+  image-rendering: pixelated;
 }
 
 /* Temporary standalone performance readout for the boss scene. */
