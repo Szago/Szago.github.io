@@ -91,6 +91,24 @@ body.aether-world-active #perf-overlay {
   filter: drop-shadow(2px 2px 0 #000);
 }
 
+.aether-world-warden-status {
+  position: absolute;
+  top: 49px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #c80c24;
+  font-size: clamp(8px, 0.9vw, 12px);
+  letter-spacing: 1px;
+  white-space: nowrap;
+  text-shadow:
+    2px 2px 0 #160005,
+    0 0 8px rgba(255, 0, 42, 0.72);
+}
+
+.aether-world-warden-status.hidden {
+  display: none;
+}
+
 .aether-world-heart {
   --heart: #ff3355;
   --heart-dark: #96182a;
