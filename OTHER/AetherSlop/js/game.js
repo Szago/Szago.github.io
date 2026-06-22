@@ -4754,8 +4754,11 @@ function debugRender() {
   worldSec.className = 'menu-section';
   worldSec.innerHTML =
     '<div class="menu-section-title">CALAMITY WORLD PROTOTYPE</div>' +
-    '<div class="menu-note">Explore the dark, burning ruins of Aetherholm in first person. The idle simulation is paused until the world is closed.</div>' +
-    '<div class="menu-btns"><button id="dbg-world3d" class="menu-btn">ENTER RUINED CITY</button></div>';
+    '<div class="menu-note">Explore the dark, burning ruins of Aetherholm in first person. The idle simulation is paused until the world is closed. The rift boss is the Undertale-style fight reached by stepping through a guardian rift — launch it directly here.</div>' +
+    '<div class="menu-btns">' +
+      '<button id="dbg-world3d" class="menu-btn">ENTER RUINED CITY</button>' +
+      '<button id="dbg-boss2d" class="menu-btn">ENTER RIFT BOSS</button>' +
+    '</div>';
   body.appendChild(worldSec);
 
   const perfSec = document.createElement('div');
@@ -4827,6 +4830,14 @@ function debugRender() {
     }
     closeMenu();
     window.AetherWorld3D.open();
+  };
+  $('dbg-boss2d').onclick = () => {
+    if (!window.AetherBoss2D) {
+      toast('The rift boss could not be loaded. Check the network connection and try again.');
+      return;
+    }
+    closeMenu();
+    window.AetherBoss2D.open();
   };
 
   $('dbg-res').onclick = () => {
