@@ -25,12 +25,13 @@ const TENTACLE_FIRST_SPAWN_DELAY = 30000;
 const TENTACLE_SPAWN_MIN_DELAY = 10000;
 const TENTACLE_SPAWN_MAX_DELAY = 20000;
 const TENTACLE_SPAWN_DISTANCE = NEAR_RENDER_RADIUS + 1.5;
-const TENTACLE_ATTACK_RANGE = 13;
+const TENTACLE_ATTACK_RANGE = 11;
+const TENTACLE_ATTACK_HALF_WIDTH = 1.45;
 const TENTACLE_ATTACK_WINDUP = 1150;
 const TENTACLE_ATTACK_RECOVERY = 650;
 const TENTACLE_SWORD_RANGE = 3.6;
-const PERFECT_PARRY_WINDOW = 520;
-const PARRY_COOLDOWN = 850;
+const PERFECT_PARRY_WINDOW = 260;
+const PARRY_COOLDOWN = 425;
 const COMBAT_EFFECT_DURATION = 360;
 const CITY_CORE_HALF = 92;
 const CITY_ARM_HALF = 31;
@@ -46,8 +47,8 @@ const POINTER_LOCK_SETTLE_MS = 80;
 const EYE_GUARDIAN_MAX_HP = 5;
 const EYE_GUARDIAN_WAKE_RANGE = 58;
 const EYE_GUARDIAN_ATTACK_RANGE = 52;
-const EYE_GUARDIAN_WINDUP = 1450;
-const EYE_GUARDIAN_RECOVERY = 850;
+const EYE_GUARDIAN_WINDUP = 900;
+const EYE_GUARDIAN_RECOVERY = 350;
 const EYE_BOLT_SPEED = 15;
 const EYE_REFLECT_SPEED = 25;
 const EYE_PARRY_FACING_DOT = Math.cos(THREE.MathUtils.degToRad(20));
@@ -1192,35 +1193,75 @@ function addCardinalLandmarks() {
   addCrumpledTower();
 }
 
-function makeEyeWingTentacle(length, radius, seed) {
+function setCylinderBetween(mesh, start, end, thicknessScale = 1) {
+  const direction = end.clone().sub(start);
+  const distance = direction.length();
+  mesh.position.copy(start).add(end).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  mesh.scale.set(thicknessScale, distance * 1.08, thicknessScale);
+}
+
+function eyeWingCurvePoint(wing, t, charge) {
+  const bendEnd = 0.68;
+  const curveT = Math.min(1, t / bendEnd);
+  const theta = curveT * Math.PI / 2;
+  const bendRadius = wing.length * 0.48;
+  const verticalTail = wing.length * 0.5 * Math.max(0, (t - bendEnd) / (1 - bendEnd));
+  const idle = new THREE.Vector3(
+    wing.side * bendRadius * Math.sin(theta),
+    bendRadius * (1 - Math.cos(theta)) + verticalTail,
+    Math.sin(t * Math.PI * 1.8 + wing.phase) * 0.16 * (1 - t * 0.45)
+  );
+  const outward = new THREE.Vector3(
+    wing.side * wing.length * t,
+    0.18 + t * 0.34,
+    Math.sin(t * Math.PI * 1.6 + wing.phase) * 0.05
+  );
+  return idle.lerp(outward, charge);
+}
+
+function updateEyeWingPose(wing, charge) {
+  for (let i = 0; i < wing.segments.length; i++) {
+    const start = eyeWingCurvePoint(wing, i / wing.segments.length, charge);
+    const end = eyeWingCurvePoint(wing, (i + 1) / wing.segments.length, charge);
+    setCylinderBetween(wing.segments[i], start, end);
+  }
+
+  const barbStart = eyeWingCurvePoint(wing, 0.94, charge);
+  const barbEnd = eyeWingCurvePoint(wing, 1, charge);
+  setCylinderBetween(wing.barb, barbStart, barbEnd, 1);
+}
+
+function makeEyeWingTentacle(length, radius, seed, side) {
   const random = mulberry32(seed);
   const group = new THREE.Group();
   const segments = 9;
-  const segmentLength = length / segments;
+  const segmentMeshes = [];
 
   for (let i = 0; i < segments; i++) {
     const t = (i + 0.5) / segments;
     const taper = Math.max(0.16, 1 - t * 0.84);
     const segment = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius * taper * 0.76, radius * taper, segmentLength * 1.12, 7),
+      new THREE.CylinderGeometry(radius * taper * 0.76, radius * taper, 1, 7),
       i % 3 === 1 ? eyeMaterials.blood : eyeMaterials.flesh
     );
-    segment.position.set(
-      Math.sin(t * Math.PI * 1.2 + random() * 0.18) * length * 0.045 * (1 - t * 0.55),
-      segmentLength * (i + 0.5),
-      Math.sin(t * Math.PI * 2 + random()) * 0.12
-    );
-    segment.userData.baseCurve = -Math.sin(t * Math.PI) * 0.15 * (1 - t);
-    segment.userData.tipStraighten = THREE.MathUtils.smoothstep(t, 0.48, 0.92);
-    segment.rotation.z = segment.userData.baseCurve;
     segment.castShadow = false;
     group.add(segment);
+    segmentMeshes.push(segment);
   }
 
-  const barb = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.48, radius * 2.6, 5), eyeMaterials.blood);
-  barb.position.y = length + radius * 0.65;
+  const barb = new THREE.Mesh(new THREE.ConeGeometry(radius * 0.48, 1, 5), eyeMaterials.blood);
   group.add(barb);
-  return group;
+  const wing = {
+    group,
+    segments: segmentMeshes,
+    barb,
+    length,
+    side,
+    phase: random() * Math.PI * 2
+  };
+  updateEyeWingPose(wing, 0);
+  return wing;
 }
 
 function createEyeGuardian(id, x, z, hoverHeight, seed) {
@@ -1267,16 +1308,18 @@ function createEyeGuardian(id, x, z, hoverHeight, seed) {
   for (const side of [-1, 1]) {
     for (let i = 0; i < 5; i++) {
       const pivot = new THREE.Group();
-      const idleAngle = THREE.MathUtils.degToRad(48 + i * 7 + random() * 4);
-      pivot.position.set(side * (2.5 + i * 0.22), -0.25 + i * 0.28, -0.18 - i * 0.06);
-      pivot.rotation.z = -side * idleAngle;
-      const tentacle = makeEyeWingTentacle(5.25 + i * 0.62, 0.44 - i * 0.028, seed + side * 100 + i * 17);
-      pivot.add(tentacle);
+      pivot.position.set(side * 2.3, -0.65 + i * 0.34, -0.2 - i * 0.08);
+      const tentacle = makeEyeWingTentacle(
+        5.25 + i * 0.62,
+        0.44 - i * 0.028,
+        seed + side * 100 + i * 17,
+        side
+      );
+      pivot.add(tentacle.group);
       visual.add(pivot);
       wings.push({
         pivot,
-        side,
-        idleAngle,
+        ...tentacle,
         phase: random() * Math.PI * 2
       });
     }
@@ -2331,7 +2374,7 @@ function removeEyeBolt(bolt, time = performance.now()) {
   if (index >= 0) eyeBolts.splice(index, 1);
   if (bolt.guardian.activeBolt === bolt) {
     bolt.guardian.activeBolt = null;
-    if (bolt.guardian.alive) bolt.guardian.nextAttackAt = time + EYE_GUARDIAN_RECOVERY + Math.random() * 1000;
+    if (bolt.guardian.alive) bolt.guardian.nextAttackAt = time + EYE_GUARDIAN_RECOVERY + Math.random() * 350;
   }
 }
 
@@ -2343,7 +2386,7 @@ function resetEyeGuardianAttacks(time = performance.now()) {
   for (const guardian of eyeGuardians) {
     guardian.attackStartedAt = 0;
     guardian.activeBolt = null;
-    guardian.nextAttackAt = time + 1300 + Math.random() * 1400;
+    guardian.nextAttackAt = time + 450 + Math.random() * 450;
   }
 }
 
@@ -2356,7 +2399,7 @@ function resetEyeGuardians(time = performance.now()) {
     guardian.root.scale.setScalar(1);
     guardian.attackStartedAt = 0;
     guardian.activeBolt = null;
-    guardian.nextAttackAt = time + 1300 + Math.random() * 1400;
+    guardian.nextAttackAt = time + 450 + Math.random() * 450;
     guardian.hitFlashUntil = 0;
   }
 }
@@ -2497,23 +2540,29 @@ function updateEyeGuardians(time, dt) {
       }
     } else if (distance > EYE_GUARDIAN_ATTACK_RANGE) {
       guardian.attackStartedAt = 0;
-      guardian.nextAttackAt = Math.min(guardian.nextAttackAt, time + 850);
+      guardian.nextAttackAt = Math.min(guardian.nextAttackAt, time + 350);
     }
 
     for (const wing of guardian.wings) {
-      const flutter = Math.sin(time * 0.0032 + wing.phase) * 0.055;
-      const angle = THREE.MathUtils.lerp(wing.idleAngle, Math.PI / 2, charge);
-      wing.pivot.rotation.z = -wing.side * (angle + flutter * (1 - charge));
-      wing.pivot.scale.y = 1 + charge * 0.22;
-      wing.pivot.traverse(object => {
-        if (!object.isMesh || object.userData.tipStraighten === undefined) return;
-        object.rotation.z = object.userData.baseCurve -
-          wing.pivot.rotation.z * object.userData.tipStraighten;
-      });
+      const flutter = Math.sin(time * 0.0032 + wing.phase) * 0.035 * (1 - charge);
+      wing.pivot.rotation.x = flutter;
+      updateEyeWingPose(wing, charge);
     }
   }
 
   updateEyeBolts(time, dt);
+}
+
+function tentacleStrikeHitsPlayer(tentacle) {
+  const directionX = tentacle.attackDirection.x;
+  const directionZ = tentacle.attackDirection.z;
+  const relativeX = camera.position.x - tentacle.group.position.x;
+  const relativeZ = camera.position.z - tentacle.group.position.z;
+  const forwardDistance = relativeX * directionX + relativeZ * directionZ;
+  const sidewaysDistance = Math.abs(relativeX * directionZ - relativeZ * directionX);
+  return forwardDistance >= 0.7 &&
+    forwardDistance <= TENTACLE_ATTACK_RANGE &&
+    sidewaysDistance <= TENTACLE_ATTACK_HALF_WIDTH;
 }
 
 function updateTentacles(time) {
@@ -2532,8 +2581,8 @@ function updateTentacles(time) {
     if (!playerDead && age > 1100 && !tentacle.attackStartedAt && distance <= TENTACLE_ATTACK_RANGE && time >= tentacle.nextAttackAt) {
       tentacle.attackStartedAt = time;
       tentacle.attackResolved = false;
-      tentacle.attackDirection.set(dx, 1.15, dz).normalize();
-      setCombatStatus('PARRY NOW OR FALL BACK', TENTACLE_ATTACK_WINDUP, time);
+      tentacle.attackDirection.set(dx, 0, dz).normalize();
+      setCombatStatus('PARRY OR DODGE THE LUNGE', TENTACLE_ATTACK_WINDUP, time);
     }
 
     if (tentacle.attackStartedAt) {
@@ -2545,8 +2594,8 @@ function updateTentacles(time) {
         lunge = 1 - THREE.MathUtils.smoothstep(recovery, 0, 1);
         if (!tentacle.attackResolved) {
           tentacle.attackResolved = true;
-          if (distance > TENTACLE_ATTACK_RANGE) {
-            setCombatStatus('THE STRIKE FELL SHORT', 700, time);
+          if (!tentacleStrikeHitsPlayer(tentacle)) {
+            setCombatStatus('DODGED', 700, time);
           } else if (isParrying(time)) {
             setCombatStatus('PARRIED', 900, time);
             showParryFeedback(tentacle, time);
