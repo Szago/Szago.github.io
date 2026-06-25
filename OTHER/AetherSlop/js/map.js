@@ -43,6 +43,14 @@ const MapPal = {
 let WATER_TILES = [];
 let LAMP_POINTS = [];   // street lamp heads (night glow)
 const DISTRICT_TREE_CACHE = new Map();
+const MAP_FOUNTAIN_IMG = typeof Image !== 'undefined' ? new Image() : null;
+
+if (MAP_FOUNTAIN_IMG) {
+  MAP_FOUNTAIN_IMG.onload = () => {
+    if (typeof renderCity === 'function') renderCity(true);
+  };
+  MAP_FOUNTAIN_IMG.src = 'assets/map/fountain-sideview-map.png';
+}
 
 function inField(x, y) {
   return FIELDS.some(f => x >= f.x1 && x <= f.x2 && y >= f.y1 && y <= f.y2);
@@ -54,6 +62,14 @@ function inHills(x, y) {
 
 function wallTier(wallLevel) {
   return wallLevel >= 50 ? 4 : wallLevel >= 25 ? 3 : wallLevel >= 10 ? 2 : wallLevel >= 1 ? 1 : 0;
+}
+
+function drawGeneratedFountain(ctx, cx, cy, era) {
+  if (!MAP_FOUNTAIN_IMG || !MAP_FOUNTAIN_IMG.complete || !MAP_FOUNTAIN_IMG.naturalWidth) return false;
+  const w = era >= 2 ? 96 : 78;
+  const h = Math.round(w * 66 / 96);
+  ctx.drawImage(MAP_FOUNTAIN_IMG, Math.round(cx - w / 2), Math.round(cy + 17 - h), w, h);
+  return true;
 }
 
 /* ---- density satellites: extra structures beside a busy building ---- */
@@ -522,7 +538,9 @@ function renderTerrain(canvas, tier, houseCount, ownedKeys, builtIds, era, satTi
   /* plaza fountain — grows grander with the eras */
   {
     const cx = ((PLAZA.x1 + PLAZA.x2 + 1) / 2) * TILE, cy = ((PLAZA.y1 + PLAZA.y2 + 1) / 2) * TILE;
-    if (era >= 2) {
+    if (drawGeneratedFountain(ctx, cx, cy, era)) {
+      /* image sprite loaded */
+    } else if (era >= 2) {
       rect(cx - 20, cy + 2, 40, 7, MapPal.rockDark);
       rect(cx - 17, cy - 2, 34, 9, MapPal.rock);
       rect(cx - 14, cy - 5, 28, 7, era >= 3 ? '#5fd9ff' : MapPal.water);

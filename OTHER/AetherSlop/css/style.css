@@ -577,18 +577,12 @@ body.endgame-calamity #night-tint {
   position: absolute;
   left: 50.3125%;
   top: 50.4167%;
-  width: 108px;
-  height: 92px;
-  transform: translate(-50%, -58%);
-  background:
-    linear-gradient(#ff4960 0 0) 52px 8px / 5px 46px no-repeat,
-    linear-gradient(#7e0010 0 0) 49px 53px / 12px 12px no-repeat,
-    linear-gradient(90deg, transparent 0 10px, #8d939c 10px 98px, transparent 98px) 0 54px / 108px 13px no-repeat,
-    linear-gradient(90deg, transparent 0 16px, #5d626b 16px 92px, transparent 92px) 0 65px / 108px 11px no-repeat,
-    linear-gradient(90deg, transparent 0 23px, #3c0010 23px 85px, transparent 85px) 0 76px / 108px 8px no-repeat,
-    radial-gradient(ellipse at 50% 58%, #ff304a 0 24px, #8a0014 25px 38px, transparent 39px);
-  border-radius: 14px 14px 30px 30px;
-  box-shadow: 0 0 24px rgba(255, 0, 70, 0.95), inset 0 -8px 0 rgba(30, 0, 9, 0.42);
+  width: 124px;
+  height: 84px;
+  transform: translate(-50%, -64%);
+  background: url("../assets/map/fountain-sideview-bloody-map.png") center / contain no-repeat;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 18px rgba(255, 0, 70, 0.95)) drop-shadow(2px 5px 0 rgba(24, 0, 8, 0.58));
 }
 .endgame-chibi-cultist {
   position: absolute;
