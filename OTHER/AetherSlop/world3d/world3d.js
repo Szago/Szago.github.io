@@ -8,9 +8,10 @@ const JUMP_SPEED = 8;
 const GRAVITY = 24;
 const PLAYER_RADIUS = 0.42;
 const ROAD_WIDTH = 8.5;
-const DEBUG_INFINITE_VISION = true;
-const PLAYER_LIGHT_RADIUS = 0;
-const NEAR_RENDER_RADIUS = 7;
+const BASE_RENDER_RADIUS = 7;
+const DEBUG_INFINITE_VISION = false;
+const PLAYER_LIGHT_RADIUS = BASE_RENDER_RADIUS * 1.5;
+const NEAR_RENDER_RADIUS = BASE_RENDER_RADIUS * 2;
 const NEAR_RENDER_HYSTERESIS = 3;
 const CULL_CELL_SIZE = 18;
 const CULL_UPDATE_INTERVAL = 120;
@@ -24,7 +25,7 @@ const TENTACLE_MAX_HP = 3;
 const TENTACLE_FIRST_SPAWN_DELAY = 30000;
 const TENTACLE_SPAWN_MIN_DELAY = 10000;
 const TENTACLE_SPAWN_MAX_DELAY = 20000;
-const TENTACLE_SPAWN_DISTANCE = NEAR_RENDER_RADIUS + 1.5;
+const TENTACLE_SPAWN_DISTANCE = PLAYER_LIGHT_RADIUS - 1.4;
 const TENTACLE_ATTACK_RANGE = 11;
 const TENTACLE_ATTACK_HALF_WIDTH = 1.45;
 const TENTACLE_ATTACK_WINDUP = 1150;
@@ -52,6 +53,9 @@ const EYE_GUARDIAN_RECOVERY = 350;
 const EYE_BOLT_SPEED = 15;
 const EYE_REFLECT_SPEED = 25;
 const EYE_PARRY_FACING_DOT = Math.cos(THREE.MathUtils.degToRad(20));
+const OPEN_GATE_RADIUS = 3.25;
+const OPEN_GATE_DEPTH = 5.2;
+const DEBUG_GUARDIAN_PASSCODE = '2137';
 
 let overlay;
 let viewport;
@@ -109,6 +113,7 @@ let yaw = 0;
 let pitch = 0;
 let grounded = true;
 let pointerLockChangedAt = 0;
+let debugPasscodeBuffer = '';
 
 const velocity = new THREE.Vector3();
 const desiredVelocity = new THREE.Vector3();
@@ -142,7 +147,7 @@ function makeOverlay() {
       '<div id="aether-world-damage-flash" class="aether-world-damage-flash"></div>' +
       '<div id="aether-world-parry-flash" class="aether-world-parry-flash"><span>PARRIED</span></div>' +
       '<div class="aether-world-help">' +
-        'WASD MOVE &nbsp; SHIFT SPRINT &nbsp; SPACE JUMP &nbsp; MOUSE LOOK &nbsp; LMB ATTACK &nbsp; TAP RMB PARRY' +
+        'ESC TO UNFOCUS &nbsp; RIGHT CLICK TO PARRY' +
         '<span id="aether-world-status" class="aether-world-status">CLICK THE DARKNESS TO CAPTURE THE MOUSE</span>' +
       '</div>' +
     '</div>' +
@@ -536,6 +541,12 @@ function setCombatStatus(text, duration = 900, time = performance.now()) {
   combatStatusUntil = time + duration;
 }
 
+function disableFogOnMaterials(materials) {
+  for (const material of Object.values(materials)) {
+    if (material) material.fog = false;
+  }
+}
+
 function randomTentacleDelay() {
   return THREE.MathUtils.lerp(TENTACLE_SPAWN_MIN_DELAY, TENTACLE_SPAWN_MAX_DELAY, Math.random());
 }
@@ -682,6 +693,7 @@ function initMaterials() {
       blending: THREE.AdditiveBlending
     })
   };
+  disableFogOnMaterials(eyeMaterials);
 }
 
 function makeWorld() {
@@ -689,7 +701,7 @@ function makeWorld() {
   scene.background = new THREE.Color(DEBUG_INFINITE_VISION ? 0x090705 : 0x020101);
   scene.fog = DEBUG_INFINITE_VISION ? null : new THREE.FogExp2(0x020101, 0.24);
 
-  camera = new THREE.PerspectiveCamera(72, 1, 0.05, DEBUG_INFINITE_VISION ? 1200 : 42);
+  camera = new THREE.PerspectiveCamera(72, 1, 0.05, DEBUG_INFINITE_VISION ? 1200 : EYE_GUARDIAN_WAKE_RANGE + 32);
   camera.position.set(0, EYE_HEIGHT, 10.8);
   camera.rotation.order = 'YXZ';
   scene.add(camera);
@@ -1497,9 +1509,9 @@ function addFountain() {
   addOpenedGateCrater();
 }
 
-function makeGateRune(angle, radius, width = 0.12, length = 1.15) {
+function makeGateRune(angle, radius, width = 0.12, length = 1.15, y = 0.11) {
   const rune = new THREE.Mesh(new THREE.BoxGeometry(width, 0.035, length), landmarkMaterials.gateRune);
-  rune.position.set(Math.cos(angle) * radius, 0.11, Math.sin(angle) * radius);
+  rune.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
   rune.rotation.y = -angle + (angle % 0.7) * 0.35;
   return rune;
 }
@@ -1514,34 +1526,47 @@ function addOpenedGateCrater() {
   outerScorch.position.y = 0.072;
   openedGateGroup.add(outerScorch);
 
-  const pit = new THREE.Mesh(new THREE.CylinderGeometry(6.4, 4.25, 1.15, 20, 1, true), ruinMaterials.darkStone);
-  pit.position.y = 0.54;
+  const rim = new THREE.Mesh(new THREE.RingGeometry(OPEN_GATE_RADIUS, 6.45, 28), ruinMaterials.darkStone);
+  rim.rotation.x = -Math.PI / 2;
+  rim.position.y = 0.092;
+  openedGateGroup.add(rim);
+
+  const mouth = new THREE.Mesh(new THREE.CircleGeometry(OPEN_GATE_RADIUS * 0.98, 28), landmarkMaterials.gateVoid);
+  mouth.rotation.x = -Math.PI / 2;
+  mouth.position.y = 0.101;
+  openedGateGroup.add(mouth);
+
+  const pitMaterial = ruinMaterials.darkStone.clone();
+  pitMaterial.side = THREE.DoubleSide;
+  const pit = new THREE.Mesh(new THREE.CylinderGeometry(OPEN_GATE_RADIUS, 4.35, OPEN_GATE_DEPTH, 28, 1, true), pitMaterial);
+  pit.position.y = -OPEN_GATE_DEPTH / 2;
   openedGateGroup.add(pit);
 
-  const abyss = new THREE.Mesh(new THREE.CircleGeometry(4.4, 24), landmarkMaterials.gateVoid);
+  const bottomY = -OPEN_GATE_DEPTH + 0.06;
+  const abyss = new THREE.Mesh(new THREE.CircleGeometry(4.35, 28), landmarkMaterials.gateVoid);
   abyss.rotation.x = -Math.PI / 2;
-  abyss.position.y = 0.085;
+  abyss.position.y = bottomY;
   openedGateGroup.add(abyss);
 
-  const portalDisc = new THREE.Mesh(new THREE.CircleGeometry(4.15, 30), landmarkMaterials.gateRune);
+  const portalDisc = new THREE.Mesh(new THREE.CircleGeometry(4.05, 30), landmarkMaterials.gateRune);
   portalDisc.rotation.x = -Math.PI / 2;
-  portalDisc.position.y = 0.095;
+  portalDisc.position.y = bottomY + 0.012;
   openedGateGroup.add(portalDisc);
 
-  const blackCore = new THREE.Mesh(new THREE.CircleGeometry(3.42, 24), landmarkMaterials.gateVoid);
+  const blackCore = new THREE.Mesh(new THREE.CircleGeometry(3.28, 24), landmarkMaterials.gateVoid);
   blackCore.rotation.x = -Math.PI / 2;
-  blackCore.position.y = 0.105;
+  blackCore.position.y = bottomY + 0.024;
   openedGateGroup.add(blackCore);
 
-  const bloodRing = new THREE.Mesh(new THREE.RingGeometry(3.6, 4.12, 24), landmarkMaterials.gateBlood);
+  const bloodRing = new THREE.Mesh(new THREE.RingGeometry(3.45, 4.02, 24), landmarkMaterials.gateBlood);
   bloodRing.rotation.x = -Math.PI / 2;
-  bloodRing.position.y = 0.116;
+  bloodRing.position.y = bottomY + 0.036;
   openedGateGroup.add(bloodRing);
 
   const starPoints = [];
   for (let i = 0; i < 5; i++) {
     const angle = -Math.PI / 2 + i * Math.PI * 4 / 5;
-    starPoints.push(new THREE.Vector3(Math.cos(angle) * 3.0, 0.13, Math.sin(angle) * 3.0));
+    starPoints.push(new THREE.Vector3(Math.cos(angle) * 3.0, bottomY + 0.08, Math.sin(angle) * 3.0));
   }
   const starGeometry = new THREE.BufferGeometry().setFromPoints([...starPoints, starPoints[0]]);
   const star = new THREE.Line(starGeometry, landmarkMaterials.gateEmber);
@@ -1550,7 +1575,7 @@ function addOpenedGateCrater() {
   const runeCount = 18;
   for (let i = 0; i < runeCount; i++) {
     const angle = i / runeCount * Math.PI * 2;
-    openedGateGroup.add(makeGateRune(angle, 4.75 + (i % 2) * 0.35, 0.09 + (i % 3) * 0.025, 0.65 + (i % 4) * 0.2));
+    openedGateGroup.add(makeGateRune(angle, 4.55 + (i % 2) * 0.25, 0.09 + (i % 3) * 0.025, 0.65 + (i % 4) * 0.2, bottomY + 0.07));
   }
 
   for (let i = 0; i < 12; i++) {
@@ -2020,6 +2045,16 @@ function onPointerLockChange() {
   updatePointerStatus();
 }
 
+function processDebugPasscode(event) {
+  if (event.repeat || !/^\d$/.test(event.key)) return false;
+  debugPasscodeBuffer = (debugPasscodeBuffer + event.key).slice(-DEBUG_GUARDIAN_PASSCODE.length);
+  if (debugPasscodeBuffer !== DEBUG_GUARDIAN_PASSCODE) return false;
+  debugPasscodeBuffer = '';
+  killAllGuardiansDebug(performance.now());
+  event.preventDefault();
+  return true;
+}
+
 function onKeyDown(event) {
   if (!active && !loading) return;
   if (loading && event.code === 'Escape') {
@@ -2027,6 +2062,7 @@ function onKeyDown(event) {
     return;
   }
   if (!active) return;
+  if (processDebugPasscode(event)) return;
   if (playerDead) return;
   if (event.code === 'Escape' && document.pointerLockElement !== renderer.domElement) {
     close();
@@ -2058,6 +2094,7 @@ function collidesAt(x, z) {
 }
 
 function groundHeightAt(x, z) {
+  if (gateOpened && Math.hypot(x, z) <= OPEN_GATE_RADIUS * 0.92) return -OPEN_GATE_DEPTH;
   if (Math.abs(z) > EAST_BRIDGE_HALF_WIDTH) return 0;
   const bridgeHalfLength = (EAST_RIVER_WIDTH + 5) / 2;
   const distanceFromCenter = Math.abs(x - EAST_RIVER_X);
@@ -2449,6 +2486,31 @@ function damageEyeGuardian(guardian, time) {
   setCombatStatus('THE WATCHING EYE IS BLINDED', 1800, time);
 }
 
+function killAllGuardiansDebug(time = performance.now()) {
+  let killed = 0;
+  for (const guardian of eyeGuardians) {
+    if (!guardian.alive) continue;
+    guardian.hp = 0;
+    guardian.alive = false;
+    guardian.attackStartedAt = 0;
+    guardian.activeBolt = null;
+    guardian.root.visible = false;
+    createCombatBurst(guardian.root.position, 0xff001f, time, 4.5);
+    killed++;
+  }
+
+  if (!killed) {
+    setCombatStatus('DEBUG // GUARDIANS ALREADY DEAD', 1100, time);
+    return;
+  }
+
+  clearEyeBolts(time);
+  wardensSlain = eyeGuardians.filter(guardian => !guardian.alive).length;
+  updateWardenStatus();
+  if (wardensSlain >= eyeGuardians.length) setOpenedGateState(true);
+  setCombatStatus('DEBUG // GUARDIANS SLAIN', 1500, time);
+}
+
 function updateEyeBolts(time, dt) {
   for (const bolt of [...eyeBolts]) {
     if (!eyeBolts.includes(bolt)) continue;
@@ -2575,10 +2637,17 @@ function updateTentacles(time) {
     const dx = camera.position.x - tentacle.group.position.x;
     const dz = camera.position.z - tentacle.group.position.z;
     const distance = Math.hypot(dx, dz);
-    tentacle.group.visible = distance < 20;
+    const insideLight = DEBUG_INFINITE_VISION || distance <= PLAYER_LIGHT_RADIUS;
+    tentacle.group.visible = insideLight;
 
     let lunge = 0;
-    if (!playerDead && age > 1100 && !tentacle.attackStartedAt && distance <= TENTACLE_ATTACK_RANGE && time >= tentacle.nextAttackAt) {
+    if (!insideLight && tentacle.attackStartedAt) {
+      tentacle.attackStartedAt = 0;
+      tentacle.attackResolved = false;
+      tentacle.nextAttackAt = time + 900 + Math.random() * 700;
+    }
+
+    if (!playerDead && insideLight && age > 1100 && !tentacle.attackStartedAt && distance <= Math.min(TENTACLE_ATTACK_RANGE, PLAYER_LIGHT_RADIUS) && time >= tentacle.nextAttackAt) {
       tentacle.attackStartedAt = time;
       tentacle.attackResolved = false;
       tentacle.attackDirection.set(dx, 0, dz).normalize();
@@ -2666,11 +2735,18 @@ function updateMovement(dt) {
 }
 
 function maybeExitThroughOpenedGate() {
-  if (!gateOpened || playerDead || grounded) return false;
-  if (Math.hypot(camera.position.x, camera.position.z) > 3.25) return false;
-  if (camera.position.y < EYE_HEIGHT + 0.22) return false;
+  if (!gateOpened || playerDead) return false;
+  if (Math.hypot(camera.position.x, camera.position.z) > OPEN_GATE_RADIUS * 0.86) return false;
+  if (camera.position.y > EYE_HEIGHT - 1.25) return false;
   setCombatStatus('DESCENDING THROUGH THE OPEN GATE', 800);
   close();
+  window.setTimeout(() => {
+    if (window.AetherBoss2D && typeof window.AetherBoss2D.open === 'function') {
+      window.AetherBoss2D.open();
+      return;
+    }
+    window.location.href = new URL('../boss2d/preview.html', import.meta.url).href;
+  }, 120);
   return true;
 }
 
@@ -2905,6 +2981,7 @@ function resetPlayer() {
 function beginWorldRun(time = performance.now()) {
   clearTentacles();
   wardensSlain = 0;
+  debugPasscodeBuffer = '';
   setOpenedGateState(false);
   updateWardenStatus();
   resetEyeGuardians(time);
@@ -2962,6 +3039,7 @@ function close() {
   parryHeld = false;
   parryActiveUntil = 0;
   nextParryAt = 0;
+  debugPasscodeBuffer = '';
   playerDead = false;
   attackUntil = 0;
   attackCooldownUntil = 0;

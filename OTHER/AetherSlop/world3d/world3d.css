@@ -246,7 +246,7 @@ body.aether-world-active #perf-overlay {
 }
 
 .aether-world-status {
-  display: block;
+  display: none;
   margin-top: 5px;
   color: #82d7ff;
 }
