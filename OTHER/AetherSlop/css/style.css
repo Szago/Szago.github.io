@@ -579,7 +579,7 @@ body.endgame-calamity #night-tint {
   top: 50.4167%;
   width: 124px;
   height: 84px;
-  transform: translate(-50%, -64%);
+  transform: translate(-50%, -74%);
   background: url("../assets/map/fountain-sideview-bloody-map.png") center / contain no-repeat;
   image-rendering: pixelated;
   filter: drop-shadow(0 0 18px rgba(255, 0, 70, 0.95)) drop-shadow(2px 5px 0 rgba(24, 0, 8, 0.58));

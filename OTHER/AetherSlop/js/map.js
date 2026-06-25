@@ -68,7 +68,7 @@ function drawGeneratedFountain(ctx, cx, cy, era) {
   if (!MAP_FOUNTAIN_IMG || !MAP_FOUNTAIN_IMG.complete || !MAP_FOUNTAIN_IMG.naturalWidth) return false;
   const w = era >= 2 ? 96 : 78;
   const h = Math.round(w * 66 / 96);
-  ctx.drawImage(MAP_FOUNTAIN_IMG, Math.round(cx - w / 2), Math.round(cy + 17 - h), w, h);
+  ctx.drawImage(MAP_FOUNTAIN_IMG, Math.round(cx - w / 2), Math.round(cy + 8 - h), w, h);
   return true;
 }
 
