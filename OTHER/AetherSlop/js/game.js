@@ -2449,13 +2449,24 @@ function importSave(text) {
     return;
   }
   if (!confirm('Import this save? Your CURRENT progress will be overwritten.')) return;
+  resetEndgameSceneBookmark();
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* ignore */ }
   location.reload();
+}
+
+function resetEndgameSceneBookmark() {
+  if (window.AetherEndgame && typeof window.AetherEndgame.resetScene === 'function') {
+    window.AetherEndgame.resetScene();
+    return;
+  }
+
+  try { localStorage.removeItem('aetherEndgameScene'); } catch (e) { /* ignore */ }
 }
 
 function wipeSave() {
   if (!confirm('Wipe ALL progress (including Ascensions and items)? This cannot be undone.')) return;
   try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
+  resetEndgameSceneBookmark();
   location.reload();
 }
 
@@ -4829,7 +4840,11 @@ function debugRender() {
       return;
     }
     closeMenu();
-    window.AetherWorld3D.open();
+    if (window.AetherEndgame && typeof window.AetherEndgame.openWorld === 'function') {
+      window.AetherEndgame.openWorld();
+      return;
+    }
+    window.AetherWorld3D.open({ forceWorld: true });
   };
   $('dbg-boss2d').onclick = () => {
     if (!window.AetherBoss2D) {
@@ -4837,6 +4852,10 @@ function debugRender() {
       return;
     }
     closeMenu();
+    if (window.AetherEndgame && typeof window.AetherEndgame.openBoss === 'function') {
+      window.AetherEndgame.openBoss();
+      return;
+    }
     window.AetherBoss2D.open();
   };
 

@@ -8,10 +8,12 @@ const JUMP_SPEED = 8;
 const GRAVITY = 24;
 const PLAYER_RADIUS = 0.42;
 const ROAD_WIDTH = 8.5;
-const BASE_RENDER_RADIUS = 7;
 const DEBUG_INFINITE_VISION = false;
-const PLAYER_LIGHT_RADIUS = BASE_RENDER_RADIUS * 1.5;
-const NEAR_RENDER_RADIUS = BASE_RENDER_RADIUS * 2;
+const PLAYER_LIGHT_RADIUS = 20;
+const NEAR_RENDER_RADIUS = 20;
+const PLAYER_FOG_DENSITY = 1.55 / PLAYER_LIGHT_RADIUS;
+const PLAYER_LIGHT_INTENSITY = 20;
+const PLAYER_LIGHT_DECAY = 0.90;
 const NEAR_RENDER_HYSTERESIS = 3;
 const CULL_CELL_SIZE = 18;
 const CULL_UPDATE_INTERVAL = 120;
@@ -54,8 +56,14 @@ const EYE_BOLT_SPEED = 15;
 const EYE_REFLECT_SPEED = 25;
 const EYE_PARRY_FACING_DOT = Math.cos(THREE.MathUtils.degToRad(20));
 const OPEN_GATE_RADIUS = 3.25;
-const OPEN_GATE_DEPTH = 5.2;
+const OPEN_GATE_DEPTH = 16;
+const GATE_FADE_DURATION = 2000;
+const ENDGAME_SCENE_STORAGE_KEY = 'aetherEndgameScene';
 const DEBUG_GUARDIAN_PASSCODE = '2137';
+const gateHoleUniforms = {
+  opened: { value: 0 },
+  radiusSq: { value: OPEN_GATE_RADIUS * OPEN_GATE_RADIUS }
+};
 
 let overlay;
 let viewport;
@@ -66,6 +74,7 @@ let loadingText;
 let deathPanel;
 let damageFlash;
 let parryFlash;
+let gateFade;
 let wardenStatus;
 let renderer;
 let scene;
@@ -114,6 +123,7 @@ let pitch = 0;
 let grounded = true;
 let pointerLockChangedAt = 0;
 let debugPasscodeBuffer = '';
+let gateTransitioning = false;
 
 const velocity = new THREE.Vector3();
 const desiredVelocity = new THREE.Vector3();
@@ -146,6 +156,7 @@ function makeOverlay() {
       '<div class="aether-world-crosshair"></div>' +
       '<div id="aether-world-damage-flash" class="aether-world-damage-flash"></div>' +
       '<div id="aether-world-parry-flash" class="aether-world-parry-flash"><span>PARRIED</span></div>' +
+      '<div id="aether-world-gate-fade" class="aether-world-gate-fade"></div>' +
       '<div class="aether-world-help">' +
         'ESC TO UNFOCUS &nbsp; RIGHT CLICK TO PARRY' +
         '<span id="aether-world-status" class="aether-world-status">CLICK THE DARKNESS TO CAPTURE THE MOUSE</span>' +
@@ -172,6 +183,7 @@ function makeOverlay() {
   deathPanel = document.getElementById('aether-world-death');
   damageFlash = document.getElementById('aether-world-damage-flash');
   parryFlash = document.getElementById('aether-world-parry-flash');
+  gateFade = document.getElementById('aether-world-gate-fade');
   wardenStatus = document.getElementById('aether-world-warden-status');
   renderHearts();
   document.getElementById('aether-world-close').addEventListener('click', close);
@@ -524,6 +536,7 @@ function removeCollider(collider) {
 
 function setOpenedGateState(opened) {
   gateOpened = opened;
+  gateHoleUniforms.opened.value = opened ? 1 : 0;
   if (fountainGroup) fountainGroup.visible = !opened;
   if (openedGateGroup) openedGateGroup.visible = opened;
 
@@ -541,10 +554,59 @@ function setCombatStatus(text, duration = 900, time = performance.now()) {
   combatStatusUntil = time + duration;
 }
 
+function getSavedEndgameScene() {
+  try {
+    return window.localStorage.getItem(ENDGAME_SCENE_STORAGE_KEY) || 'world3d';
+  } catch (err) {
+    return 'world3d';
+  }
+}
+
+function setSavedEndgameScene(sceneName) {
+  try {
+    window.localStorage.setItem(ENDGAME_SCENE_STORAGE_KEY, sceneName);
+  } catch (err) {
+    // Storage may be unavailable in some embedded/preview contexts.
+  }
+}
+
+function resetSavedEndgameScene() {
+  try {
+    window.localStorage.removeItem(ENDGAME_SCENE_STORAGE_KEY);
+  } catch (err) {
+    // Storage may be unavailable in some embedded/preview contexts.
+  }
+}
+
+function openBossScene() {
+  setSavedEndgameScene('boss2d');
+  if (window.AetherBoss2D && typeof window.AetherBoss2D.open === 'function') {
+    window.AetherBoss2D.open();
+    return;
+  }
+  window.location.href = new URL('../boss2d/preview.html', import.meta.url).href;
+}
+
 function disableFogOnMaterials(materials) {
   for (const material of Object.values(materials)) {
     if (material) material.fog = false;
   }
+}
+
+function applyGateHoleCutout(material) {
+  material.onBeforeCompile = shader => {
+    shader.uniforms.gateHoleOpen = gateHoleUniforms.opened;
+    shader.uniforms.gateHoleRadiusSq = gateHoleUniforms.radiusSq;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGateWorldPosition;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvGateWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float gateHoleOpen;\nuniform float gateHoleRadiusSq;\nvarying vec3 vGateWorldPosition;')
+      .replace(
+        '#include <dithering_fragment>',
+        'if (gateHoleOpen > 0.5 && dot(vGateWorldPosition.xz, vGateWorldPosition.xz) < gateHoleRadiusSq) discard;\n#include <dithering_fragment>'
+      );
+  };
 }
 
 function randomTentacleDelay() {
@@ -614,6 +676,9 @@ function initMaterials() {
     fireOuter: new THREE.MeshBasicMaterial({ color: 0xe73b0c, transparent: true, opacity: 0.72 }),
     fireInner: new THREE.MeshBasicMaterial({ color: 0xffc43d, transparent: true, opacity: 0.9 })
   };
+  applyGateHoleCutout(ruinMaterials.ground);
+  applyGateHoleCutout(ruinMaterials.road);
+  applyGateHoleCutout(ruinMaterials.roadEdge);
 
   tentacleMaterials = {
     flesh: new THREE.MeshStandardMaterial({
@@ -648,22 +713,17 @@ function initMaterials() {
     riverSheen: new THREE.MeshBasicMaterial({ color: 0x8c3038, transparent: true, opacity: 0.46, depthWrite: false }),
     bridgeWood: new THREE.MeshStandardMaterial({ color: 0x21130e, roughness: 1 }),
     bridgeIron: new THREE.MeshStandardMaterial({ color: 0x29282d, roughness: 0.72, metalness: 0.48 }),
-    gateVoid: new THREE.MeshBasicMaterial({ color: 0x050006, side: THREE.DoubleSide }),
-    gateBlood: new THREE.MeshBasicMaterial({ color: 0x6e0613, transparent: true, opacity: 0.88, side: THREE.DoubleSide }),
+    gateVoid: new THREE.MeshBasicMaterial({ color: 0x050006, fog: false, side: THREE.DoubleSide }),
+    gateMouth: new THREE.MeshBasicMaterial({ color: 0x020003, fog: false, side: THREE.DoubleSide }),
+    gateBlood: new THREE.MeshBasicMaterial({ color: 0x6e0613, fog: false, transparent: true, opacity: 0.88, side: THREE.DoubleSide }),
     gateRune: new THREE.MeshBasicMaterial({
-      color: 0xa51cff,
-      transparent: true,
-      opacity: 0.82,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      color: 0x7a0013,
+      fog: false,
       side: THREE.DoubleSide
     }),
     gateEmber: new THREE.MeshBasicMaterial({
-      color: 0xe00b32,
-      transparent: true,
-      opacity: 0.72,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
+      color: 0x8f0018,
+      fog: false
     })
   };
 
@@ -699,7 +759,7 @@ function initMaterials() {
 function makeWorld() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(DEBUG_INFINITE_VISION ? 0x090705 : 0x020101);
-  scene.fog = DEBUG_INFINITE_VISION ? null : new THREE.FogExp2(0x020101, 0.24);
+  scene.fog = DEBUG_INFINITE_VISION ? null : new THREE.FogExp2(0x020101, PLAYER_FOG_DENSITY);
 
   camera = new THREE.PerspectiveCamera(72, 1, 0.05, DEBUG_INFINITE_VISION ? 1200 : EYE_GUARDIAN_WAKE_RANGE + 32);
   camera.position.set(0, EYE_HEIGHT, 10.8);
@@ -736,7 +796,12 @@ function makeWorld() {
   ashenMoon.shadow.mapSize.set(1024, 1024);
   scene.add(ashenMoon);
 
-  playerLight = new THREE.PointLight(0xffb16a, DEBUG_INFINITE_VISION ? 32 : 42, DEBUG_INFINITE_VISION ? 0 : PLAYER_LIGHT_RADIUS, 2.2);
+  playerLight = new THREE.PointLight(
+    0xffb16a,
+    DEBUG_INFINITE_VISION ? 32 : PLAYER_LIGHT_INTENSITY,
+    DEBUG_INFINITE_VISION ? 0 : PLAYER_LIGHT_RADIUS,
+    DEBUG_INFINITE_VISION ? 2.2 : PLAYER_LIGHT_DECAY
+  );
   playerLight.castShadow = false;
   scene.add(playerLight);
 
@@ -762,7 +827,7 @@ function makeWorld() {
 function makeWeaponMaterial(color, opacity = 1) {
   return new THREE.MeshBasicMaterial({
     color,
-    transparent: opacity < 1,
+    transparent: true,
     opacity,
     depthTest: false,
     depthWrite: false
@@ -773,13 +838,13 @@ function addPlayerSword() {
   sword = new THREE.Group();
   sword.position.set(0.54, -0.48, -0.88);
   sword.rotation.set(-0.28, -0.48, -0.42);
-  sword.renderOrder = 50;
+  sword.renderOrder = 10000;
 
   // The weapon is drawn with depthTest off (always on top), so visible layering
   // is controlled purely by renderOrder: low = behind, high = in front.
   const add = (geometry, material, order, place) => {
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.renderOrder = order;
+    mesh.renderOrder = 10000 + order;
     place(mesh);
     sword.add(mesh);
     return mesh;
@@ -1516,12 +1581,72 @@ function makeGateRune(angle, radius, width = 0.12, length = 1.15, y = 0.11) {
   return rune;
 }
 
+function makeGatePentagramArm(start, end, y) {
+  const dx = end.x - start.x;
+  const dz = end.z - start.z;
+  const length = Math.hypot(dx, dz);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.045, length), landmarkMaterials.gateEmber);
+  arm.position.set((start.x + end.x) * 0.5, y, (start.z + end.z) * 0.5);
+  arm.rotation.y = Math.atan2(dx, dz);
+  return arm;
+}
+
+function makeJaggedGatePit(random) {
+  const segments = 34;
+  const levels = 9;
+  const positions = [];
+  const normals = [];
+  const indices = [];
+  const radii = [];
+
+  for (let yLevel = 0; yLevel <= levels; yLevel++) {
+    const depthT = yLevel / levels;
+    const baseRadius = THREE.MathUtils.lerp(OPEN_GATE_RADIUS * 1.03, OPEN_GATE_RADIUS * 0.68, depthT);
+    const ring = [];
+    for (let i = 0; i < segments; i++) {
+      const angle = i / segments * Math.PI * 2;
+      const strata = Math.sin(angle * 3 + yLevel * 0.9) * 0.28 +
+        Math.sin(angle * 7 - yLevel * 0.45) * 0.16;
+      const chip = (random() - 0.5) * 0.5;
+      ring.push(baseRadius + strata + chip);
+    }
+    radii.push(ring);
+  }
+
+  for (let yLevel = 0; yLevel <= levels; yLevel++) {
+    const y = -OPEN_GATE_DEPTH * (yLevel / levels);
+    for (let i = 0; i < segments; i++) {
+      const angle = i / segments * Math.PI * 2;
+      const radius = radii[yLevel][i];
+      positions.push(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+      normals.push(Math.cos(angle), 0.18, Math.sin(angle));
+    }
+  }
+
+  for (let yLevel = 0; yLevel < levels; yLevel++) {
+    const row = yLevel * segments;
+    const nextRow = (yLevel + 1) * segments;
+    for (let i = 0; i < segments; i++) {
+      const next = (i + 1) % segments;
+      indices.push(row + i, nextRow + i, row + next);
+      indices.push(row + next, nextRow + i, nextRow + next);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 function addOpenedGateCrater() {
   const random = mulberry32(0x6A7E0);
   openedGateGroup = new THREE.Group();
   openedGateGroup.visible = false;
 
-  const outerScorch = new THREE.Mesh(new THREE.CircleGeometry(9.4, 24), ruinMaterials.char);
+  const outerScorch = new THREE.Mesh(new THREE.RingGeometry(OPEN_GATE_RADIUS * 1.02, 9.4, 24), ruinMaterials.char);
   outerScorch.rotation.x = -Math.PI / 2;
   outerScorch.position.y = 0.072;
   openedGateGroup.add(outerScorch);
@@ -1531,37 +1656,15 @@ function addOpenedGateCrater() {
   rim.position.y = 0.092;
   openedGateGroup.add(rim);
 
-  const mouth = new THREE.Mesh(new THREE.CircleGeometry(OPEN_GATE_RADIUS * 0.98, 28), landmarkMaterials.gateVoid);
-  mouth.rotation.x = -Math.PI / 2;
-  mouth.position.y = 0.101;
-  openedGateGroup.add(mouth);
-
   const pitMaterial = ruinMaterials.darkStone.clone();
   pitMaterial.side = THREE.DoubleSide;
-  const pit = new THREE.Mesh(new THREE.CylinderGeometry(OPEN_GATE_RADIUS, 4.35, OPEN_GATE_DEPTH, 28, 1, true), pitMaterial);
-  pit.position.y = -OPEN_GATE_DEPTH / 2;
+  const pit = new THREE.Mesh(makeJaggedGatePit(random), pitMaterial);
   openedGateGroup.add(pit);
 
   const bottomY = -OPEN_GATE_DEPTH + 0.06;
-  const abyss = new THREE.Mesh(new THREE.CircleGeometry(4.35, 28), landmarkMaterials.gateVoid);
-  abyss.rotation.x = -Math.PI / 2;
-  abyss.position.y = bottomY;
-  openedGateGroup.add(abyss);
-
-  const portalDisc = new THREE.Mesh(new THREE.CircleGeometry(4.05, 30), landmarkMaterials.gateRune);
-  portalDisc.rotation.x = -Math.PI / 2;
-  portalDisc.position.y = bottomY + 0.012;
-  openedGateGroup.add(portalDisc);
-
-  const blackCore = new THREE.Mesh(new THREE.CircleGeometry(3.28, 24), landmarkMaterials.gateVoid);
-  blackCore.rotation.x = -Math.PI / 2;
-  blackCore.position.y = bottomY + 0.024;
-  openedGateGroup.add(blackCore);
-
-  const bloodRing = new THREE.Mesh(new THREE.RingGeometry(3.45, 4.02, 24), landmarkMaterials.gateBlood);
-  bloodRing.rotation.x = -Math.PI / 2;
-  bloodRing.position.y = bottomY + 0.036;
-  openedGateGroup.add(bloodRing);
+  const gateGlow = new THREE.PointLight(0x720010, 3.8, 13, 1.2);
+  gateGlow.position.set(0, bottomY + 0.8, 0);
+  openedGateGroup.add(gateGlow);
 
   const starPoints = [];
   for (let i = 0; i < 5; i++) {
@@ -1571,11 +1674,15 @@ function addOpenedGateCrater() {
   const starGeometry = new THREE.BufferGeometry().setFromPoints([...starPoints, starPoints[0]]);
   const star = new THREE.Line(starGeometry, landmarkMaterials.gateEmber);
   openedGateGroup.add(star);
+  for (let i = 0; i < starPoints.length; i++) {
+    openedGateGroup.add(makeGatePentagramArm(starPoints[i], starPoints[(i + 1) % starPoints.length], bottomY + 0.082));
+  }
 
   const runeCount = 18;
   for (let i = 0; i < runeCount; i++) {
     const angle = i / runeCount * Math.PI * 2;
-    openedGateGroup.add(makeGateRune(angle, 4.55 + (i % 2) * 0.25, 0.09 + (i % 3) * 0.025, 0.65 + (i % 4) * 0.2, bottomY + 0.07));
+    const rune = makeGateRune(angle, 4.55 + (i % 2) * 0.25, 0.09 + (i % 3) * 0.025, 0.65 + (i % 4) * 0.2, bottomY + 0.07);
+    openedGateGroup.add(rune);
   }
 
   for (let i = 0; i < 12; i++) {
@@ -1587,6 +1694,21 @@ function addOpenedGateCrater() {
     );
     rock.position.set(Math.cos(angle) * radius, rock.geometry.parameters.height / 2, Math.sin(angle) * radius);
     rock.rotation.set(random() * 0.65, random() * Math.PI, random() * 0.65);
+    openedGateGroup.add(rock);
+  }
+
+  for (let i = 0; i < 44; i++) {
+    const angle = random() * Math.PI * 2;
+    const depth = 0.8 + random() * (OPEN_GATE_DEPTH - 1.8);
+    const wallT = depth / OPEN_GATE_DEPTH;
+    const radius = THREE.MathUtils.lerp(OPEN_GATE_RADIUS * 1.02, OPEN_GATE_RADIUS * 0.72, wallT) - 0.08 + random() * 0.28;
+    const rock = new THREE.Mesh(
+      new THREE.BoxGeometry(0.25 + random() * 0.8, 0.18 + random() * 0.9, 0.35 + random() * 1.2),
+      random() < 0.58 ? ruinMaterials.darkStone : ruinMaterials.char
+    );
+    rock.position.set(Math.cos(angle) * radius, -depth, Math.sin(angle) * radius);
+    rock.rotation.set(random() * Math.PI, -angle + random() * 0.65, random() * Math.PI);
+    rock.scale.set(0.8 + random() * 0.8, 0.7 + random() * 1.6, 0.75 + random() * 1.1);
     openedGateGroup.add(rock);
   }
 
@@ -2062,6 +2184,10 @@ function onKeyDown(event) {
     return;
   }
   if (!active) return;
+  if (gateTransitioning) {
+    event.preventDefault();
+    return;
+  }
   if (processDebugPasscode(event)) return;
   if (playerDead) return;
   if (event.code === 'Escape' && document.pointerLockElement !== renderer.domElement) {
@@ -2578,6 +2704,13 @@ function updateEyeGuardians(time, dt) {
       guardian.home.z
     );
     guardian.visual.rotation.y = Math.atan2(dx, dz);
+    guardian.visual.rotation.x = 0;
+    const verticalLook = THREE.MathUtils.clamp(
+      Math.atan2(guardian.root.position.y - camera.position.y, Math.max(1, distance)),
+      -0.55,
+      0.72
+    );
+    guardian.pupil.position.set(0, -verticalLook * 0.58, 1.9);
     const breathing = 1 + Math.sin(time * 0.003 + guardian.phase) * 0.035;
     guardian.body.scale.set(1.05 * breathing, 1.02 / breathing, 0.58);
     const hitPulse = time < guardian.hitFlashUntil ? 1.2 : 1;
@@ -2699,6 +2832,7 @@ function updateTentacles(time) {
 }
 
 function updateMovement(dt) {
+  if (gateTransitioning) return;
   const forwardInput = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
   const rightInput = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
   const speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? SPRINT_SPEED : WALK_SPEED;
@@ -2734,25 +2868,41 @@ function updateMovement(dt) {
   }
 }
 
-function maybeExitThroughOpenedGate() {
-  if (!gateOpened || playerDead) return false;
-  if (Math.hypot(camera.position.x, camera.position.z) > OPEN_GATE_RADIUS * 0.86) return false;
-  if (camera.position.y > EYE_HEIGHT - 1.25) return false;
-  setCombatStatus('DESCENDING THROUGH THE OPEN GATE', 800);
-  close();
+function startGateTransition(time = performance.now()) {
+  gateTransitioning = true;
+  keys.clear();
+  velocity.set(0, 0, 0);
+  setCombatStatus('DESCENDING THROUGH THE OPEN GATE', GATE_FADE_DURATION, time);
+  if (gateFade) {
+    gateFade.classList.remove('visible');
+    void gateFade.offsetWidth;
+    gateFade.classList.add('visible');
+  }
+
   window.setTimeout(() => {
-    if (window.AetherBoss2D && typeof window.AetherBoss2D.open === 'function') {
-      window.AetherBoss2D.open();
-      return;
-    }
-    window.location.href = new URL('../boss2d/preview.html', import.meta.url).href;
-  }, 120);
+    close();
+    openBossScene();
+  }, GATE_FADE_DURATION);
+}
+
+function maybeExitThroughOpenedGate() {
+  if (!gateOpened || playerDead || gateTransitioning) return false;
+  if (Math.hypot(camera.position.x, camera.position.z) > OPEN_GATE_RADIUS * 0.86) return false;
+  if (camera.position.y > EYE_HEIGHT - Math.min(7, OPEN_GATE_DEPTH * 0.5)) return false;
+  startGateTransition();
   return true;
 }
 
 function updateAtmosphere(time) {
-  playerLight.position.set(camera.position.x, camera.position.y + 0.12, camera.position.z);
-  playerLight.intensity = 42 + Math.sin(time * 0.0027) * 1.4 + Math.sin(time * 0.011) * 0.5;
+  forward.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+  playerLight.position.set(
+    camera.position.x + forward.x * 1.35,
+    camera.position.y - 0.45,
+    camera.position.z + forward.z * 1.35
+  );
+  playerLight.intensity = PLAYER_LIGHT_INTENSITY +
+    Math.sin(time * 0.0027) * 2.4 +
+    Math.sin(time * 0.011) * 0.8;
 
   for (const fire of fires) {
     if (!fire.group.visible) continue;
@@ -2982,6 +3132,8 @@ function beginWorldRun(time = performance.now()) {
   clearTentacles();
   wardensSlain = 0;
   debugPasscodeBuffer = '';
+  gateTransitioning = false;
+  if (gateFade) gateFade.classList.remove('visible');
   setOpenedGateState(false);
   updateWardenStatus();
   resetEyeGuardians(time);
@@ -2998,9 +3150,17 @@ function beginWorldRun(time = performance.now()) {
   if (deathPanel) deathPanel.classList.add('hidden');
 }
 
-function open() {
+function open(options = {}) {
   if (active || loading) return;
+  const forceWorld = Boolean(options.forceWorld);
+  if (!forceWorld && getSavedEndgameScene() === 'boss2d' &&
+      window.AetherBoss2D && typeof window.AetherBoss2D.open === 'function') {
+    openBossScene();
+    return;
+  }
+
   if (!overlay) makeOverlay();
+  setSavedEndgameScene('world3d');
 
   overlay.classList.remove('hidden');
   document.body.classList.add('aether-world-active');
@@ -3040,6 +3200,7 @@ function close() {
   parryActiveUntil = 0;
   nextParryAt = 0;
   debugPasscodeBuffer = '';
+  gateTransitioning = false;
   playerDead = false;
   attackUntil = 0;
   attackCooldownUntil = 0;
@@ -3051,6 +3212,7 @@ function close() {
   clearCombatEffects();
   if (deathPanel) deathPanel.classList.add('hidden');
   if (parryFlash) parryFlash.classList.remove('visible');
+  if (gateFade) gateFade.classList.remove('visible');
   overlay.classList.add('hidden');
   document.body.classList.remove('aether-world-active');
   dispatchState();
@@ -3077,4 +3239,13 @@ window.AetherWorld3D = Object.freeze({
   isParrying,
   isAttacking,
   setPlayerHp
+});
+
+window.AetherEndgame = Object.freeze({
+  open: () => open(),
+  openWorld: () => open({ forceWorld: true }),
+  openBoss: openBossScene,
+  getScene: getSavedEndgameScene,
+  setScene: setSavedEndgameScene,
+  resetScene: resetSavedEndgameScene
 });

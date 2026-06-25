@@ -78,6 +78,7 @@
   const BG_SCALE = 0.25;          // quarter-res layer, enlarged as visible 4x pixels
   const BG_FRAME_MS = 1000 / 30;  // slow writhing does not need a 60 Hz redraw
   const OUTER_WIDTH_MULT = 2;     // global art-direction scale for every depth plane
+  const ENDGAME_SCENE_STORAGE_KEY = 'aetherEndgameScene';
 
   const ARENA_CX = BOARD / 2;
   const ARENA_CY = BOARD / 2;
@@ -102,6 +103,14 @@
 
   const easeInQuad = (t) => t * t;
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+  function setSavedEndgameScene(sceneName) {
+    try {
+      window.localStorage.setItem(ENDGAME_SCENE_STORAGE_KEY, sceneName);
+    } catch (err) {
+      // Storage can be unavailable in embedded preview contexts.
+    }
+  }
 
   // ---- Scriptable arena geometry ----------------------------------------
   // The canvas remains a stable 500x500 world. The arena can move, resize and
@@ -978,6 +987,7 @@
   // ---- Lifecycle ---------------------------------------------------------
   function open() {
     if (active) return;
+    setSavedEndgameScene('boss2d');
     if (!overlay) makeOverlay();
     if (!borderCanvas) buildBorder();
 
