@@ -58,6 +58,7 @@ let state = {
   buildBuyAmount: 1,
   unitBuyAmount: 1,
   endgameTimers: { item: 0, pot: 0 },
+  endgame: { cultistHp: 100, bossActive: false, fulfilled: false, finalStarted: false },
   autoOn: { bup: false, uup: false, build: false, unit: false, equip: false, skill: false, forge: false, fuse: false },
   notifyOff: {},
   lastSave: Date.now(),
@@ -83,6 +84,11 @@ function ensureShape(s) {
   if (!s.endgameTimers) s.endgameTimers = { item: 0, pot: 0 };
   if (s.endgameTimers.item === undefined) s.endgameTimers.item = 0;
   if (s.endgameTimers.pot === undefined) s.endgameTimers.pot = 0;
+  if (!s.endgame) s.endgame = {};
+  if (typeof s.endgame.cultistHp !== 'number') s.endgame.cultistHp = 100;
+  if (s.endgame.bossActive === undefined) s.endgame.bossActive = false;
+  if (s.endgame.fulfilled === undefined) s.endgame.fulfilled = false;
+  if (s.endgame.finalStarted === undefined) s.endgame.finalStarted = false;
   const eq = defaultEquip();
   if (!s.equip) s.equip = eq;
   for (const u of UNITS) {
@@ -174,6 +180,41 @@ function uUp(id) { return state.unitUp[id] || 0; }
 function subLvl(sub) { return sub.statKey ? state[sub.statKey] : uUp(sub.id); }
 function totalBuildings() { return BUILDINGS.reduce((n, b) => n + bCount(b.id), 0); }
 
+/* ---------------- endgame: hidden progress & sacrifice ---------------- */
+
+const ENDGAME_CULTIST_MAX_HP = 100;
+let endgameLastChaosStage = -1;
+let endgameFinalTimer = 0;
+
+function endgameProgressRatio() {
+  if (!PRESTIGE_TREE.length) return 0;
+  return Math.min(1, PRESTIGE_TREE.filter(n => hasTree(n.id)).length / PRESTIGE_TREE.length);
+}
+
+function endgameTreeComplete() {
+  return PRESTIGE_TREE.length > 0 && PRESTIGE_TREE.every(n => hasTree(n.id));
+}
+
+function endgameRitualAvailable() {
+  return endgameTreeComplete() && !(state.endgame && state.endgame.bossActive);
+}
+
+function endgameForcesNight() {
+  const e = state.endgame;
+  return !!(e && e.bossActive && e.cultistHp <= 95);
+}
+
+function endgameCalamityStage() {
+  const e = state.endgame;
+  if (!e || !e.bossActive) return 0;
+  return Math.max(0, Math.min(19, Math.floor((ENDGAME_CULTIST_MAX_HP - e.cultistHp) / 5)));
+}
+
+function endgameCultistHp() {
+  const e = state.endgame || {};
+  return Math.max(0, Math.min(ENDGAME_CULTIST_MAX_HP, e.cultistHp || ENDGAME_CULTIST_MAX_HP));
+}
+
 /* ---------------- lightweight performance profiler ----------------
    Enabled only while the draggable monitor is open, so normal play pays almost
    no instrumentation cost. Snapshots are rolled once per second. */
@@ -263,10 +304,12 @@ function perfReset() {
 /* ---------------- day / night ---------------- */
 
 function isNight() {
+  if (endgameForcesNight()) return true;
   return (state.cycleSec % CYCLE_SEC) >= DAY_SEC;
 }
 
 function cycleRemaining() {
+  if (endgameForcesNight()) return 0;
   const phase = state.cycleSec % CYCLE_SEC;
   return isNight() ? CYCLE_SEC - phase : DAY_SEC - phase;
 }
@@ -2130,6 +2173,10 @@ function unequipItem(unitId, slot) {
 /* ---------------- combat ---------------- */
 
 function spawnMonster() {
+  if (state.endgame && state.endgame.bossActive) {
+    renderEndgameCultistMonster();
+    return;
+  }
   const m = monsterFor(state.zone, state.killIdx);
   if (isNight()) {
     m.hp = Math.ceil(m.hp * NIGHT_HP_MULT);
@@ -2149,6 +2196,22 @@ function spawnMonster() {
 function damageMonster(dmg, fromClick) {
   const m = state.monster;
   if (!m) return;
+  if (m.endgameCultist) {
+    if (!fromClick || (state.endgame && state.endgame.fulfilled)) return;
+    m.hp = Math.max(5, m.hp - 1);
+    state.endgame.cultistHp = m.hp;
+    if (m.hp <= 95) state.cycleSec = Math.max(state.cycleSec, DAY_SEC);
+    if (fromClick) {
+      const area = $('monster-area');
+      area.classList.remove('hit');
+      void area.offsetWidth;
+      area.classList.add('hit');
+    }
+    if (m.hp === 95) toast('Night falls at her first wound.');
+    if (m.hp <= 5) triggerEndgameSacrifice();
+    updateEndgameVisualState();
+    return;
+  }
   m.hp -= dmg;
   /* Executioner: non-boss monsters below 15% HP are slain outright */
   if (hasTree('xwar9') && !m.isBoss && m.hp > 0 && m.hp < m.maxHp * 0.15) m.hp = 0;
@@ -2211,6 +2274,15 @@ function killMonster() {
 
 function onMonsterClick() {
   state.stats.clicks++;
+  if (state.monster && state.monster.endgameCultist) {
+    if (state.endgame && state.endgame.fulfilled) {
+      spawnFloater('0', 'dmg');
+      return;
+    }
+    spawnFloater('-1', 'dmg');
+    damageMonster(1, true);
+    return;
+  }
   let dmg = C.click;
   if (Math.random() < C.critChance) {
     dmg *= C.critMult;
@@ -2368,6 +2440,7 @@ function buyNode(id) {
   applyNodeInstant(id);
   if (node.gate) maybeTerrain(true); // the roads get better!
   renderPrestige();
+  updateEndgameVisualState();
   save();
 }
 
@@ -2389,6 +2462,7 @@ function buyAllPrestigeNodes() {
   }
   if (gates) maybeTerrain(true);
   renderPrestige();
+  updateEndgameVisualState();
   save();
   toast(bought ? 'CROWN PLANNER: bought ' + fmt(bought) + ' node(s) for ' + fmt(spent) + ' Sigils.' : 'No affordable Advancement nodes.');
 }
@@ -4021,6 +4095,221 @@ function maybeTerrain(force) {
   return true;
 }
 
+function ensureEndgameLayers() {
+  const world = $('map-world');
+  if (!world) return {};
+  let ritual = $('endgame-ritual');
+  if (!ritual) {
+    ritual = document.createElement('div');
+    ritual.id = 'endgame-ritual';
+    world.appendChild(ritual);
+  }
+  let chaos = $('endgame-map-chaos');
+  if (!chaos) {
+    chaos = document.createElement('div');
+    chaos.id = 'endgame-map-chaos';
+    world.appendChild(chaos);
+  }
+  return { ritual, chaos };
+}
+
+function endgamePentagramSvg() {
+  return '<svg viewBox="0 0 100 100" aria-hidden="true">' +
+    '<circle cx="50" cy="50" r="43" fill="rgba(60,0,90,0.22)" stroke="#d98cff" stroke-width="4"/>' +
+    '<polygon points="50,7 62,38 95,38 68,58 79,91 50,71 21,91 32,58 5,38 38,38" ' +
+      'fill="rgba(126,32,160,0.16)" stroke="#b03bf0" stroke-width="4" stroke-linejoin="miter"/>' +
+    '<circle cx="50" cy="50" r="8" fill="#4a003f" stroke="#ff3d7a" stroke-width="3"/>' +
+    '</svg>';
+}
+
+function endgameWaveLine(x1, y1, x2, y2) {
+  const line = document.createElement('div');
+  const dx = x2 - x1, dy = y2 - y1;
+  line.className = 'endgame-wave';
+  line.style.left = x1 + 'px';
+  line.style.top = y1 + 'px';
+  line.style.width = Math.hypot(dx, dy) + 'px';
+  line.style.transform = 'rotate(' + (Math.atan2(dy, dx) * 180 / Math.PI).toFixed(2) + 'deg)';
+  return line;
+}
+
+function updateEndgameRitual() {
+  const layers = ensureEndgameLayers();
+  if (!layers.ritual) return;
+  const available = endgameRitualAvailable() && !(state.endgame && state.endgame.fulfilled);
+  if (!available) {
+    layers.ritual.innerHTML = '';
+    return;
+  }
+  if (layers.ritual.dataset.ready === '1') return;
+  layers.ritual.dataset.ready = '1';
+  layers.ritual.innerHTML = '';
+
+  const cx = ((PLAZA.x1 + PLAZA.x2 + 1) / 2) * TILE;
+  const cy = ((PLAZA.y1 + PLAZA.y2 + 1) / 2) * TILE;
+  const w = MAP_W * TILE, h = MAP_H * TILE;
+  const waveStarts = [
+    [0, cy], [w, cy], [cx, 0], [cx, h],
+    [0, 0], [w, 0], [0, h], [w, h],
+  ];
+  for (const [x, y] of waveStarts) layers.ritual.appendChild(endgameWaveLine(x, y, cx, cy));
+
+  const blood = document.createElement('div');
+  blood.className = 'endgame-fountain-blood';
+  layers.ritual.appendChild(blood);
+
+  const hot = document.createElement('div');
+  hot.className = 'endgame-ritual-hotspot';
+  hot.title = 'The ritual is waiting.';
+  hot.innerHTML = endgamePentagramSvg() + '<div class="endgame-chibi-cultist"></div>';
+  hot.onclick = ev => {
+    ev.stopPropagation();
+    if (!mapDragged) startEndgameCultist();
+  };
+  layers.ritual.appendChild(hot);
+}
+
+function endgameRand(seed) {
+  const x = Math.sin(seed * 127.31) * 10000;
+  return x - Math.floor(x);
+}
+
+function endgameChaosPoint(i) {
+  const centerPadX = MAP_W * TILE * 0.18;
+  const centerPadY = MAP_H * TILE * 0.18;
+  const x = centerPadX + endgameRand(i + 1) * (MAP_W * TILE - centerPadX * 2);
+  const y = centerPadY + endgameRand(i + 41) * (MAP_H * TILE - centerPadY * 2);
+  return [Math.round(x), Math.round(y)];
+}
+
+function addEndgameChaosEl(parent, cls, index, countOffset = 0) {
+  const [x, y] = endgameChaosPoint(index + countOffset);
+  const el = document.createElement('div');
+  el.className = cls;
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.style.zIndex = Math.round(y);
+  if (cls === 'endgame-tentacle') {
+    el.style.setProperty('--tentacle-rot', (-18 + endgameRand(index + 99) * 36).toFixed(1) + 'deg');
+  }
+  parent.appendChild(el);
+}
+
+function renderEndgameChaos(stage) {
+  const layers = ensureEndgameLayers();
+  if (!layers.chaos || stage === endgameLastChaosStage) return;
+  endgameLastChaosStage = stage;
+  layers.chaos.innerHTML = '';
+  if (state.endgame && state.endgame.bossActive) {
+    const bloodFountain = document.createElement('div');
+    bloodFountain.className = 'endgame-fountain-blood';
+    layers.chaos.appendChild(bloodFountain);
+  }
+  if (stage <= 0) return;
+
+  const hp = endgameCultistHp();
+  const fireCount = hp <= 50 ? 3 + Math.floor((50 - hp) / 5) * 2 : 0;
+  const bloodCount = hp <= 45 ? 5 + Math.floor((45 - hp) / 5) * 3 : 0;
+  const pentagramCount = hp <= 30 ? 5 + Math.floor((30 - hp) / 5) * 2 : 0;
+  const tentacleCount = hp <= 25 ? 4 + Math.floor((25 - hp) / 5) * 2 : 0;
+  const rubbleCount = hp <= 20 ? 5 + Math.floor((20 - Math.max(10, hp)) / 5) * 4 : 0;
+
+  for (let i = 0; i < fireCount; i++) addEndgameChaosEl(layers.chaos, 'endgame-fire', i, 100);
+  for (let i = 0; i < bloodCount; i++) addEndgameChaosEl(layers.chaos, 'endgame-blood', i, 200);
+  for (let i = 0; i < pentagramCount; i++) addEndgameChaosEl(layers.chaos, 'endgame-small-pentagram', i, 300);
+  for (let i = 0; i < tentacleCount; i++) addEndgameChaosEl(layers.chaos, 'endgame-tentacle', i, 400);
+  for (let i = 0; i < rubbleCount; i++) addEndgameChaosEl(layers.chaos, 'endgame-rubble', i, 500);
+}
+
+function updateEndgameProgressUi() {
+  const fill = $('game-progress-fill');
+  const text = $('game-progress-text');
+  if (!fill || !text) return;
+  const complete = endgameTreeComplete();
+  const ratio = endgameProgressRatio();
+  fill.style.width = (ratio * 100).toFixed(2) + '%';
+  text.textContent = complete ? '???%' : Math.floor(ratio * 100) + '%';
+  document.body.classList.toggle('endgame-ready', complete && !(state.endgame && state.endgame.bossActive));
+}
+
+function renderEndgameCultistMonster() {
+  const hp = endgameCultistHp();
+  state.endgame.cultistHp = hp;
+  state.monster = {
+    sprite: 'shadowcultist',
+    name: 'The Shadow Cultist',
+    hp,
+    maxHp: ENDGAME_CULTIST_MAX_HP,
+    gold: 0,
+    isBoss: true,
+    endgameCultist: true,
+  };
+  const visual = $('monster-visual');
+  if (visual) {
+    visual.innerHTML = '';
+    visual.appendChild(spriteCanvas('shadowcultist', 9));
+  }
+  if ($('monster-name')) $('monster-name').textContent = 'The Shadow Cultist';
+  if ($('monster-area')) $('monster-area').classList.add('boss', 'endgame-cultist');
+  if ($('zone-pips')) $('zone-pips').innerHTML = '';
+}
+
+function startEndgameCultist() {
+  if (!endgameTreeComplete() || (state.endgame && state.endgame.bossActive)) return;
+  state.endgame.bossActive = true;
+  state.endgame.fulfilled = false;
+  state.endgame.finalStarted = false;
+  state.endgame.cultistHp = ENDGAME_CULTIST_MAX_HP;
+  endgameLastChaosStage = -1;
+  renderEndgameCultistMonster();
+  updateEndgameRitual();
+  renderEndgameChaos(0);
+  centerMapOn(((PLAZA.x1 + PLAZA.x2 + 1) / 2) * TILE, ((PLAZA.y1 + PLAZA.y2 + 1) / 2) * TILE);
+  toast('The Shadow Cultist kneels at the dead center of Aetherholm.');
+  save();
+}
+
+function triggerEndgameSacrifice() {
+  if (!state.endgame || state.endgame.fulfilled) return;
+  state.endgame.fulfilled = true;
+  state.endgame.cultistHp = 5;
+  if (state.monster && state.monster.endgameCultist) state.monster.hp = 5;
+  const overlay = $('endgame-final-overlay');
+  if (overlay) {
+    overlay.classList.remove('hidden');
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+  }
+  document.body.classList.add('endgame-calamity');
+  document.body.style.setProperty('--endgame-tint-opacity', '1');
+  document.body.style.setProperty('--endgame-night-opacity', '1');
+  if (!state.endgame.finalStarted) {
+    state.endgame.finalStarted = true;
+    save();
+    clearTimeout(endgameFinalTimer);
+    endgameFinalTimer = setTimeout(() => {
+      if (window.AetherEndgame && typeof window.AetherEndgame.openWorld === 'function') {
+        window.AetherEndgame.openWorld();
+      } else if (window.AetherWorld3D && typeof window.AetherWorld3D.open === 'function') {
+        window.AetherWorld3D.open({ forceWorld: true });
+      } else {
+        toast('The 3D world could not be loaded. Check the console for script errors.');
+      }
+    }, 3400);
+  }
+}
+
+function updateEndgameVisualState() {
+  updateEndgameProgressUi();
+  updateEndgameRitual();
+  const stage = endgameCalamityStage();
+  document.body.classList.toggle('endgame-calamity', stage > 0 || !!(state.endgame && state.endgame.fulfilled));
+  const darkStep = Math.min(8, Math.max(0, stage - 1));
+  document.body.style.setProperty('--endgame-tint-opacity', stage > 0 ? (0.16 + darkStep * 0.085).toFixed(3) : '0');
+  document.body.style.setProperty('--endgame-night-opacity', stage > 0 ? Math.min(1, 0.28 + darkStep * 0.09).toFixed(3) : '1');
+  renderEndgameChaos(stage);
+  if (state.endgame && state.endgame.fulfilled) triggerEndgameSacrifice();
+}
+
 /* ---------------- treasure chests ---------------- */
 
 let activeChest = null;
@@ -5083,10 +5372,11 @@ function updateCycleUi() {
     $('night-tint').classList.toggle('on', night);
     document.body.classList.toggle('night', night);
   }
-  $('cycle-time').textContent = fmtClock(cycleRemaining());
+  $('cycle-time').textContent = endgameForcesNight() ? '??:??' : fmtClock(cycleRemaining());
 }
 
 function updateHud() {
+  updateEndgameVisualState();
   $('res-gold').textContent = fmt(state.gold);
   $('res-gold-rate').textContent = '+' + fmt(C.prod.gold) + '/s';
   $('res-wood').textContent = fmt(state.wood);
@@ -5096,16 +5386,24 @@ function updateHud() {
   $('res-mana').textContent = fmt(state.mana);
   $('res-mana-rate').textContent = '+' + fmt(C.prod.mana) + '/s';
 
-  $('zone-name').textContent = 'Zone ' + fmt(state.zone) + ' — ' + zoneName(state.zone);
   const m = state.monster;
+  $('zone-name').textContent = m && m.endgameCultist
+    ? 'ENDGAME - THE RITUAL'
+    : 'Zone ' + fmt(state.zone) + ' — ' + zoneName(state.zone);
   if (m) {
     const pct = Math.max(0, m.hp / m.maxHp * 100);
     $('hp-fill').style.width = pct + '%';
     $('hp-text').textContent = fmt(Math.max(0, m.hp)) + ' / ' + fmt(m.maxHp);
   }
-  $('stat-click').textContent = fmt(C.click);
-  $('stat-dps').textContent = fmt(C.dps);
-  $('stat-bounty').textContent = fmt((m ? m.gold : 0) * C.killMult);
+  if (m && m.endgameCultist) {
+    $('stat-click').textContent = state.endgame && state.endgame.fulfilled ? '0' : '1';
+    $('stat-dps').textContent = '0';
+    $('stat-bounty').textContent = '0';
+  } else {
+    $('stat-click').textContent = fmt(C.click);
+    $('stat-dps').textContent = fmt(C.dps);
+    $('stat-bounty').textContent = fmt((m ? m.gold : 0) * C.killMult);
+  }
 
   const pending = pendingSigils();
   const ascBtn = $('ascend-btn');
@@ -5160,9 +5458,10 @@ function tick() {
   perfEnd('Derived stats calc', perfPart);
 
   perfPart = perfStart();
-  if (C.dps > 0) damageMonster(C.dps / TICKS_PER_SEC, false);
+  const cultistImmune = state.monster && state.monster.endgameCultist;
+  if (C.dps > 0 && !cultistImmune) damageMonster(C.dps / TICKS_PER_SEC, false);
 
-  if (C.spiritRate > 0) {
+  if (C.spiritRate > 0 && !cultistImmune) {
     autoClickAcc += C.spiritRate / TICKS_PER_SEC;
     while (autoClickAcc >= 1) {
       autoClickAcc -= 1;
@@ -5230,6 +5529,7 @@ function init() {
   buildUnitCards();
   renderCity(true);
   spawnMonster();
+  updateEndgameVisualState();
   syncRightPanel();
   updateCycleUi();
 

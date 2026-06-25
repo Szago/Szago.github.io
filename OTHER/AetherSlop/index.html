@@ -48,6 +48,12 @@
 
     <!-- ============ MIDDLE: THE CITY ============ -->
     <main id="city" class="panel">
+      <div id="game-progress" title="The city's hidden endgame progress">
+        <span>GAME PROGRESS</span>
+        <div id="game-progress-bar"><div id="game-progress-fill"></div></div>
+        <b id="game-progress-text">0%</b>
+      </div>
+
       <div id="resources">
         <div class="res"><canvas id="ico-gold"></canvas><span><span id="res-gold">0</span><span class="rate" id="res-gold-rate">+0/s</span></span></div>
         <div class="res"><canvas id="ico-wood"></canvas><span><span id="res-wood">0</span><span class="rate" id="res-wood-rate">+0/s</span></span></div>
@@ -66,12 +72,16 @@
         </div>
         <div id="night-tint"></div>
         <canvas id="lights"></canvas>
+        <div id="endgame-calamity-tint"></div>
         <div id="map-ui">
           <button id="zoom-in" title="Zoom in">+</button>
           <button id="zoom-out" title="Zoom out">-</button>
           <button id="zoom-fit" title="Reset view">&#8962;</button>
         </div>
         <div id="toasts"></div>
+        <div id="endgame-final-overlay" class="hidden">
+          <div>THE SACRIFICE HAS BEEN FULFILLED</div>
+        </div>
 
         <!-- stats / settings overlay (replaces the city visualisation) -->
         <div id="menu-overlay" class="hidden">

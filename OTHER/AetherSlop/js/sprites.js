@@ -136,6 +136,11 @@ const RASTER_SPRITES = {
     display: { 4: 112, 6: 176, 9: 256 },
     fallback: 'gravemoon',
   },
+  shadowcultist: {
+    src: 'assets/enemies/shadow-cultist.png',
+    display: { 4: 112, 6: 176, 9: 256 },
+    fallback: 'cultist',
+  },
 };
 
 const SPRITES = {

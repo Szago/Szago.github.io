@@ -263,6 +263,7 @@ function ambientFrame(ts) {
   if (!ambCtx) return;
   const ctx = ambCtx;
   ctx.clearRect(0, 0, MAP_W * TILE, MAP_H * TILE);
+  const calamityStage = typeof endgameCalamityStage === 'function' ? endgameCalamityStage() : 0;
 
   /* --- water shimmer & flow --- */
   const phase = Math.floor(ts / 200);
@@ -276,7 +277,10 @@ function ambientFrame(ts) {
   }
 
   /* --- villagers --- */
-  for (const v of ambVillagers) {
+  const villagerVanish = calamityStage >= 11 ? Math.min(1, (calamityStage - 10) / 4) : 0;
+  for (let vi = 0; vi < ambVillagers.length; vi++) {
+    if (villagerVanish > 0 && ((vi * 37) % 100) / 100 < villagerVanish) continue;
+    const v = ambVillagers[vi];
     v.p += v.dir * v.speed * dt;
     if (v.p < v.min) { v.p = v.min; v.dir = 1; }
     if (v.p > v.max) { v.p = v.max; v.dir = -1; }

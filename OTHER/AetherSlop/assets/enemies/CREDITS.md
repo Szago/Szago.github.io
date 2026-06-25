@@ -190,3 +190,10 @@
 - Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
 - Post-processing: flat green chroma key converted to PNG transparency
 - Prompt summary: adult revenant frost bride with a black-rose crown, ruined bridal gown, icy parasol-spear and bouquet of icicle daggers
+
+## The Shadow Cultist
+
+- File: `shadow-cultist.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: hooded kneeling anime cultist in dark gray robes with dark red and purple details, dark silver hair visible under the hood and an emotionless mouth

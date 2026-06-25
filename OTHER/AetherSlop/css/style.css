@@ -45,7 +45,7 @@ canvas.pix, canvas { image-rendering: pixelated; }
 
 #city {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   justify-self: stretch;
   align-self: stretch;
   height: 100%;
@@ -337,6 +337,44 @@ canvas.pix, canvas { image-rendering: pixelated; }
 
 /* ================= MIDDLE: CITY ================= */
 
+#game-progress {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  background: #181126;
+  border-bottom: 2px solid #3a2a57;
+  padding: 6px 8px;
+  color: #b8a9dd;
+  font-size: 7px;
+}
+#game-progress-bar {
+  height: 10px;
+  background: #0c0914;
+  border: 2px solid #3b3154;
+  overflow: hidden;
+}
+#game-progress-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, #5fd9ff, #ffd23e, #a85ccc);
+  transition: width 1.4s ease-out;
+}
+#game-progress-text {
+  min-width: 38px;
+  text-align: right;
+  color: var(--gold);
+}
+body.endgame-ready #game-progress {
+  border-bottom-color: #7d4ea0;
+  color: #e1d2ff;
+  box-shadow: inset 0 -8px 18px rgba(125, 78, 160, 0.22);
+}
+body.endgame-ready #game-progress-fill {
+  background: repeating-linear-gradient(90deg, #4d235d 0 8px, #b03bb8 8px 14px, #e04848 14px 18px);
+}
+body.endgame-ready #game-progress-text { color: #d98cff; }
+
 #resources {
   display: flex;
   justify-content: space-around;
@@ -481,6 +519,218 @@ canvas.pix, canvas { image-rendering: pixelated; }
   transform-origin: 0 0;
   pointer-events: none;
   z-index: 6;
+}
+
+#endgame-calamity-tint {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(100, 0, 0, 0) 0%, rgba(30, 0, 0, 0.24) 62%, rgba(0, 0, 0, 0.68) 100%),
+    linear-gradient(180deg, rgba(70, 0, 10, 0.48), rgba(13, 0, 0, 0.72));
+  opacity: var(--endgame-tint-opacity, 0);
+  mix-blend-mode: multiply;
+  transition: opacity 0.8s linear;
+}
+body.endgame-calamity #night-tint {
+  background:
+    linear-gradient(180deg, rgba(18, 0, 16, 0.78), rgba(70, 0, 0, 0.72)),
+    rgba(0, 0, 0, 0.25);
+  opacity: var(--endgame-night-opacity, 1);
+}
+
+#endgame-ritual,
+#endgame-map-chaos {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#endgame-ritual {
+  z-index: 13;
+}
+#endgame-map-chaos {
+  z-index: 12;
+}
+.endgame-ritual-hotspot {
+  position: absolute;
+  left: 50.3125%;
+  top: 50.4167%;
+  width: 180px;
+  height: 180px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
+  filter: drop-shadow(0 0 12px rgba(180, 55, 255, 0.95));
+}
+.endgame-ritual-hotspot svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  image-rendering: pixelated;
+  animation: ritualPulse 1.1s steps(2, end) infinite;
+}
+.endgame-ritual-hotspot:hover svg {
+  filter: brightness(1.35);
+}
+.endgame-fountain-blood {
+  position: absolute;
+  left: 50.3125%;
+  top: 50.4167%;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  background:
+    repeating-linear-gradient(90deg, #ff2442 0 4px, #9e071b 4px 8px),
+    #ff2442;
+  border: 4px solid #5b0010;
+  box-shadow: 0 0 14px rgba(255, 0, 70, 0.9);
+}
+.endgame-chibi-cultist {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 38px;
+  height: 38px;
+  transform: translate(-50%, -92%);
+  background:
+    linear-gradient(#34323c 0 0) 11px 4px / 16px 12px no-repeat,
+    linear-gradient(#151219 0 0) 8px 11px / 22px 16px no-repeat,
+    linear-gradient(#4a263f 0 0) 7px 25px / 24px 8px no-repeat,
+    linear-gradient(#9aa0ad 0 0) 12px 13px / 3px 12px no-repeat,
+    linear-gradient(#c0c5cf 0 0) 23px 13px / 3px 12px no-repeat,
+    linear-gradient(#2f2d35 0 0) 4px 24px / 30px 10px no-repeat;
+  image-rendering: pixelated;
+}
+.endgame-chibi-cultist::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 16px;
+  width: 10px;
+  height: 2px;
+  background: #bfa3a3;
+  box-shadow: 0 4px 0 #7f2940;
+}
+.endgame-wave {
+  position: absolute;
+  height: 6px;
+  transform-origin: 0 50%;
+  background: repeating-linear-gradient(90deg, rgba(116, 35, 160, 0) 0 10px, rgba(190, 64, 255, 0.85) 10px 18px, rgba(90, 0, 130, 0.5) 18px 26px);
+  box-shadow: 0 0 7px rgba(196, 75, 255, 0.8);
+  animation: ritualWaveFlow 0.55s steps(4, end) infinite;
+}
+@keyframes ritualPulse {
+  0%, 100% { transform: scale(1); opacity: 0.86; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+@keyframes ritualWaveFlow {
+  to { background-position: 52px 0; }
+}
+
+.endgame-fire,
+.endgame-blood,
+.endgame-small-pentagram,
+.endgame-tentacle,
+.endgame-rubble {
+  position: absolute;
+  image-rendering: pixelated;
+}
+.endgame-fire {
+  width: 18px;
+  height: 24px;
+  background:
+    linear-gradient(#ffd23e 0 0) 7px 5px / 5px 13px no-repeat,
+    linear-gradient(#ff8c2e 0 0) 4px 8px / 10px 13px no-repeat,
+    linear-gradient(#c43c3c 0 0) 2px 12px / 14px 10px no-repeat,
+    linear-gradient(#2a1510 0 0) 1px 21px / 16px 3px no-repeat;
+  filter: drop-shadow(0 0 7px rgba(255, 83, 32, 0.9));
+  animation: fireFlicker 0.34s steps(2, end) infinite;
+}
+.endgame-blood {
+  width: 22px;
+  height: 12px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 30% 45%, #ff304a 0 2px, transparent 3px),
+    radial-gradient(circle at 66% 40%, #7d0012 0 8px, transparent 9px),
+    #47000b;
+  opacity: 0.92;
+}
+.endgame-small-pentagram {
+  width: 30px;
+  height: 30px;
+  border: 2px solid #b03bf0;
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(176, 59, 240, 0.8);
+}
+.endgame-small-pentagram::before,
+.endgame-small-pentagram::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 13px;
+  width: 18px;
+  height: 2px;
+  background: #d98cff;
+  box-shadow: 0 -7px 0 rgba(217, 140, 255, 0.65), 0 7px 0 rgba(217, 140, 255, 0.65);
+}
+.endgame-small-pentagram::after {
+  transform: rotate(60deg);
+}
+.endgame-tentacle {
+  width: 13px;
+  height: 42px;
+  border-radius: 9px 9px 5px 5px;
+  background:
+    linear-gradient(90deg, #21091e, #6f1b5f 45%, #1a0718 100%);
+  box-shadow: inset 3px 0 #a63a7e, 0 0 7px rgba(95, 0, 120, 0.7);
+  animation: tentacleSway 1s ease-in-out infinite alternate;
+}
+.endgame-rubble {
+  width: 38px;
+  height: 28px;
+  background:
+    linear-gradient(#5d626b 0 0) 2px 17px / 14px 7px no-repeat,
+    linear-gradient(#3a3e46 0 0) 16px 10px / 18px 13px no-repeat,
+    linear-gradient(#8d939c 0 0) 7px 5px / 23px 6px no-repeat,
+    linear-gradient(#2a2138 0 0) 0 24px / 38px 4px no-repeat;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.45));
+}
+@keyframes fireFlicker {
+  0% { transform: translateY(0) scaleX(1); filter: drop-shadow(0 0 5px rgba(255, 83, 32, 0.8)); }
+  100% { transform: translateY(-1px) scaleX(1.12); filter: drop-shadow(0 0 10px rgba(255, 120, 20, 1)); }
+}
+@keyframes tentacleSway {
+  from { transform: rotate(var(--tentacle-rot, -8deg)); }
+  to { transform: rotate(calc(var(--tentacle-rot, -8deg) + 15deg)); }
+}
+
+#endgame-final-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  color: #d60016;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 2.4s ease-in;
+}
+#endgame-final-overlay.visible { opacity: 1; }
+#endgame-final-overlay > div {
+  width: min(980px, 92vw);
+  font-size: clamp(18px, 5vw, 54px);
+  line-height: 1.35;
+  text-shadow: 4px 4px 0 #310006, 0 0 22px rgba(255, 0, 40, 0.8);
+  animation: sacrificeText 0.42s steps(2, end) infinite;
+}
+@keyframes sacrificeText {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(3px, -2px); }
 }
 
 #map-ui {
