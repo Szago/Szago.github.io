@@ -197,3 +197,10 @@
 - Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
 - Post-processing: flat green chroma key converted to PNG transparency
 - Prompt summary: hooded kneeling anime cultist in dark gray robes with dark red and purple details, dark silver hair visible under the hood and an emotionless mouth
+
+## The Shadow Cultist Chibi
+
+- File: `shadow-cultist-chibi.png`
+- Generated specifically for AetherSlop with OpenAI's built-in image-generation tool
+- Post-processing: flat green chroma key converted to PNG transparency
+- Prompt summary: tiny kneeling chibi version of the Shadow Cultist for the city-map ritual marker, with hooded dark robes, silver hair and hidden eyes

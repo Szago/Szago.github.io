@@ -523,18 +523,29 @@ function renderTerrain(canvas, tier, houseCount, ownedKeys, builtIds, era, satTi
   {
     const cx = ((PLAZA.x1 + PLAZA.x2 + 1) / 2) * TILE, cy = ((PLAZA.y1 + PLAZA.y2 + 1) / 2) * TILE;
     if (era >= 2) {
-      rect(cx - 7, cy - 7, 14, 14, MapPal.rockDark);
-      rect(cx - 6, cy - 6, 12, 12, MapPal.rock);
-      rect(cx - 4, cy - 4, 8, 8, era >= 3 ? '#5fd9ff' : MapPal.water);
-      rect(cx - 1, cy - 5, 2, 6, MapPal.wallStoneLight);  // statue plinth
-      rect(cx - 1, cy - 7, 2, 2, '#ffd23e');              // gilded figure
-      px(cx + 2, cy + 1, MapPal.waterLight);
-      px(cx - 3, cy - 2, MapPal.waterLight);
+      rect(cx - 20, cy + 2, 40, 7, MapPal.rockDark);
+      rect(cx - 17, cy - 2, 34, 9, MapPal.rock);
+      rect(cx - 14, cy - 5, 28, 7, era >= 3 ? '#5fd9ff' : MapPal.water);
+      rect(cx - 10, cy - 3, 20, 3, era >= 3 ? '#d8f6ff' : MapPal.waterLight);
+      rect(cx - 13, cy + 7, 26, 6, MapPal.rockDark);
+      rect(cx - 8, cy + 12, 16, 5, MapPal.rock);
+      rect(cx - 3, cy - 23, 6, 21, MapPal.wallStoneLight);
+      rect(cx - 6, cy - 28, 12, 6, '#ffd23e');
+      rect(cx - 1, cy - 34, 2, 10, era >= 3 ? '#d8f6ff' : MapPal.waterLight);
+      rect(cx - 5, cy - 14, 3, 9, era >= 3 ? '#d8f6ff' : MapPal.waterLight);
+      rect(cx + 3, cy - 12, 3, 8, era >= 3 ? '#d8f6ff' : MapPal.waterLight);
+      px(cx - 17, cy - 1, MapPal.wallStoneLight);
+      px(cx + 16, cy + 4, MapPal.wallStoneLight);
     } else {
-      rect(cx - 4, cy - 4, 8, 8, MapPal.rockDark);
-      rect(cx - 3, cy - 3, 6, 6, MapPal.rock);
-      rect(cx - 2, cy - 2, 4, 4, MapPal.water);
-      px(cx - 1, cy - 1, MapPal.waterLight);
+      rect(cx - 13, cy + 1, 26, 6, MapPal.rockDark);
+      rect(cx - 10, cy - 2, 20, 6, MapPal.rock);
+      rect(cx - 8, cy - 4, 16, 5, MapPal.water);
+      rect(cx - 5, cy - 2, 10, 2, MapPal.waterLight);
+      rect(cx - 2, cy - 14, 4, 12, MapPal.wallStoneLight);
+      rect(cx - 1, cy - 20, 2, 7, MapPal.waterLight);
+      rect(cx - 8, cy + 6, 16, 4, MapPal.rockDark);
+      px(cx - 10, cy, MapPal.wallStoneLight);
+      px(cx + 9, cy + 3, MapPal.wallStoneLight);
     }
   }
 

@@ -89,6 +89,12 @@ function ensureShape(s) {
   if (s.endgame.bossActive === undefined) s.endgame.bossActive = false;
   if (s.endgame.fulfilled === undefined) s.endgame.fulfilled = false;
   if (s.endgame.finalStarted === undefined) s.endgame.finalStarted = false;
+  if (s.endgame.fulfilled || s.endgame.finalStarted) {
+    s.endgame.bossActive = false;
+    s.endgame.fulfilled = false;
+    s.endgame.finalStarted = false;
+    s.endgame.cultistHp = 100;
+  }
   const eq = defaultEquip();
   if (!s.equip) s.equip = eq;
   for (const u of UNITS) {
@@ -213,6 +219,44 @@ function endgameCalamityStage() {
 function endgameCultistHp() {
   const e = state.endgame || {};
   return Math.max(0, Math.min(ENDGAME_CULTIST_MAX_HP, e.cultistHp || ENDGAME_CULTIST_MAX_HP));
+}
+
+function endgameRuinRatio() {
+  const e = state.endgame;
+  if (!e || !e.bossActive) return 0;
+  return Math.max(0, Math.min(1, (ENDGAME_CULTIST_MAX_HP - endgameCultistHp()) / 90));
+}
+
+function endgameProductionMult() {
+  const r = endgameRuinRatio();
+  return r <= 0 ? 1 : Math.pow(1 - r, 2.2);
+}
+
+function endgameCityLocked() {
+  return !!(state.endgame && state.endgame.bossActive);
+}
+
+function resetEndgameToPentagram() {
+  if (!state.endgame) state.endgame = {};
+  state.endgame.bossActive = false;
+  state.endgame.fulfilled = false;
+  state.endgame.finalStarted = false;
+  state.endgame.cultistHp = ENDGAME_CULTIST_MAX_HP;
+  endgameLastChaosStage = -1;
+  clearTimeout(endgameFinalTimer);
+  const overlay = $('endgame-final-overlay');
+  if (overlay) overlay.classList.add('hidden');
+  if (overlay) overlay.classList.remove('visible');
+  if ($('monster-area')) $('monster-area').classList.remove('endgame-cultist');
+  document.body.classList.remove('endgame-calamity');
+  document.body.style.setProperty('--endgame-tint-opacity', '0');
+  document.body.style.setProperty('--endgame-night-opacity', '1');
+  if (endgameTreeComplete()) {
+    updateEndgameVisualState();
+    centerMapOn(((PLAZA.x1 + PLAZA.x2 + 1) / 2) * TILE, ((PLAZA.y1 + PLAZA.y2 + 1) / 2) * TILE);
+  }
+  if (state.monster && state.monster.endgameCultist) spawnMonster();
+  save();
 }
 
 /* ---------------- lightweight performance profiler ----------------
@@ -685,6 +729,9 @@ function calc() {
     stone: stoneMult * auraMult * industrial * sigilMaster * (twBless.stone || 1),
     mana: manaMult * auraMult * industrial * sigilMaster * (twBless.mana || 1),
   };
+  const calamityProd = endgameProductionMult();
+  c.endgameProductionMult = calamityProd;
+  if (calamityProd < 1) for (const res of RESOURCES) c.prodFactors[res] *= calamityProd;
   for (const res of RESOURCES) prod[res] *= c.prodFactors[res];
   c.prod = prod;
 
@@ -1219,6 +1266,10 @@ function resolveAmount(b) {
 }
 
 function buyBuilding(id) {
+  if (endgameCityLocked()) {
+    toast('The city is burning. Nothing more can be built.');
+    return;
+  }
   if (!districtOwnedFor(id)) return;
   const b = BUILDINGS.find(x => x.id === id);
   const amt = buyAmountFor('build') === 'max' ? maxAffordable(b) : resolveAmount(b);
@@ -1234,6 +1285,7 @@ function buyBuilding(id) {
 }
 
 function buyBuildingOne(id, deferRender, knownCost) {
+  if (endgameCityLocked()) return false;
   if (!districtOwnedFor(id)) return;
   const b = BUILDINGS.find(x => x.id === id);
   const cost = knownCost || buildingCost(b, bCount(id), 1);
@@ -1247,6 +1299,7 @@ function buyBuildingOne(id, deferRender, knownCost) {
 
 /* buy ONE level of a building upgrade (greedy loops use this) */
 function buyBuildingUpgradeStep(bid, upId, deferRender) {
+  if (endgameCityLocked()) return false;
   const up = (BUILDING_UPGRADES[bid] || []).find(u => u.id === upId);
   const lvl = bUp(upId);
   if (lvl >= up.max || bCount(bid) < 1) return false;
@@ -1959,6 +2012,7 @@ function grantPrintedItem(label, extraTier, extraAffixChance) {
 
 function tickEndgameBuildings(dt) {
   if (!state.endgameTimers) state.endgameTimers = { item: 0, pot: 0 };
+  if (endgameCityLocked()) return;
 
   const press = bCount('reliquarypress');
   const vault = bCount('abyssalvault');
@@ -3324,7 +3378,7 @@ function buildBuildingDetail(bid) {
     cost: () => buildingCost(b, bCount(bid), resolveAmount(b)),
     costPrefix: () => 'Buy x' + fmt(resolveAmount(b)) + ': ',
     onBuy: () => buyBuilding(bid),
-    disabled: () => !districtOwnedFor(bid) || (buyAmountFor('build') === 'max' && maxAffordable(b) < 1),
+    disabled: () => endgameCityLocked() || !districtOwnedFor(bid) || (buyAmountFor('build') === 'max' && maxAffordable(b) < 1),
   });
 
   const ups = BUILDING_UPGRADES[bid] || [];
@@ -3338,7 +3392,7 @@ function buildBuildingDetail(bid) {
         cost: () => bUp(up.id) >= up.max ? null : subBatch(up.cost, bUp(up.id), up.max).cost,
         costPrefix: () => 'Buy x' + fmt(subBatch(up.cost, bUp(up.id), up.max).n) + ': ',
         onBuy: () => buyBuildingUpgrade(bid, up.id),
-        disabled: () => bCount(bid) < 1,
+        disabled: () => endgameCityLocked() || bCount(bid) < 1,
         doneText: up.max === 1 ? 'BUILT' : 'MAX',
       });
     }
@@ -3739,7 +3793,8 @@ function refreshShop() {
     const amt = maxMode ? Math.max(1, maxBuy) : resolveAmount(b);
     const cost = buildingCost(b, owned, amt);
     const districtOk = districtOwnedFor(b.id);
-    const afford = canAfford(cost) && districtOk && !(maxMode && maxBuy < 1);
+    const cityLocked = endgameCityLocked();
+    const afford = !cityLocked && canAfford(cost) && districtOk && !(maxMode && maxBuy < 1);
     if (ui.row.disabled !== !afford) ui.row.disabled = !afford;
     ui.row.classList.toggle('afford', afford);
     setText(ui, 'owned', ui.ownedEl, owned > 0 ? 'x' + fmt(owned) : '');
@@ -3763,8 +3818,10 @@ function refreshShop() {
     }).join(' • ') : '';
     setText(ui, 'share', ui.shareEl, shareTxt);
 
-    setHtml(ui, 'cost', ui.costEl, 'Buy x' + fmt(amt) + ': ' + costHtml(cost) +
-      (districtOk ? '' : ' <span class="lock-note">needs ' + DISTRICT_NAMES[BUILDING_DISTRICT[b.id]] + '</span>'));
+    setHtml(ui, 'cost', ui.costEl, cityLocked
+      ? '<span class="lock-note">CITY DESTROYED - BUILDING HALTED</span>'
+      : 'Buy x' + fmt(amt) + ': ' + costHtml(cost) +
+        (districtOk ? '' : ' <span class="lock-note">needs ' + DISTRICT_NAMES[BUILDING_DISTRICT[b.id]] + '</span>'));
   }
 }
 
@@ -4115,10 +4172,20 @@ function ensureEndgameLayers() {
 
 function endgamePentagramSvg() {
   return '<svg viewBox="0 0 100 100" aria-hidden="true">' +
-    '<circle cx="50" cy="50" r="43" fill="rgba(60,0,90,0.22)" stroke="#d98cff" stroke-width="4"/>' +
-    '<polygon points="50,7 62,38 95,38 68,58 79,91 50,71 21,91 32,58 5,38 38,38" ' +
-      'fill="rgba(126,32,160,0.16)" stroke="#b03bf0" stroke-width="4" stroke-linejoin="miter"/>' +
-    '<circle cx="50" cy="50" r="8" fill="#4a003f" stroke="#ff3d7a" stroke-width="3"/>' +
+    '<circle cx="50" cy="50" r="46" fill="rgba(60,0,90,0.22)" stroke="#d98cff" stroke-width="3.5"/>' +
+    '<circle cx="50" cy="50" r="34" fill="none" stroke="#ff3d7a" stroke-width="2" opacity="0.85"/>' +
+    '<path d="M50 94 L21 9 L95 62 L5 62 L79 9 Z" fill="none" stroke="#d98cff" stroke-width="5" stroke-linejoin="miter"/>' +
+    '<path d="M50 94 L21 9 L95 62 L5 62 L79 9 Z" fill="none" stroke="#5f0d8a" stroke-width="10" stroke-linejoin="miter" opacity="0.26"/>' +
+    '<path d="M50 4 V18 M50 82 V96 M4 50 H18 M82 50 H96" stroke="#f1b5ff" stroke-width="2" opacity="0.75"/>' +
+    '<circle cx="50" cy="50" r="9" fill="#4a003f" stroke="#ff3d7a" stroke-width="3"/>' +
+    '</svg>';
+}
+
+function endgameTinyPentagramSvg() {
+  return '<svg viewBox="0 0 100 100" aria-hidden="true">' +
+    '<circle cx="50" cy="50" r="43" fill="rgba(70,0,88,0.4)" stroke="#d98cff" stroke-width="6"/>' +
+    '<circle cx="50" cy="50" r="31" fill="none" stroke="#ff3d7a" stroke-width="4" opacity="0.8"/>' +
+    '<path d="M50 92 L22 10 L94 61 L6 61 L78 10 Z" fill="none" stroke="#f1b5ff" stroke-width="8" stroke-linejoin="miter"/>' +
     '</svg>';
 }
 
@@ -4139,6 +4206,7 @@ function updateEndgameRitual() {
   const available = endgameRitualAvailable() && !(state.endgame && state.endgame.fulfilled);
   if (!available) {
     layers.ritual.innerHTML = '';
+    delete layers.ritual.dataset.ready;
     return;
   }
   if (layers.ritual.dataset.ready === '1') return;
@@ -4161,7 +4229,7 @@ function updateEndgameRitual() {
   const hot = document.createElement('div');
   hot.className = 'endgame-ritual-hotspot';
   hot.title = 'The ritual is waiting.';
-  hot.innerHTML = endgamePentagramSvg() + '<div class="endgame-chibi-cultist"></div>';
+  hot.innerHTML = endgamePentagramSvg() + '<img class="endgame-chibi-cultist" src="assets/enemies/shadow-cultist-chibi.png" alt="">';
   hot.onclick = ev => {
     ev.stopPropagation();
     if (!mapDragged) startEndgameCultist();
@@ -4189,10 +4257,64 @@ function addEndgameChaosEl(parent, cls, index, countOffset = 0) {
   el.style.left = x + 'px';
   el.style.top = y + 'px';
   el.style.zIndex = Math.round(y);
+  if (cls === 'endgame-small-pentagram') el.innerHTML = endgameTinyPentagramSvg();
   if (cls === 'endgame-tentacle') {
     el.style.setProperty('--tentacle-rot', (-18 + endgameRand(index + 99) * 36).toFixed(1) + 'deg');
   }
   parent.appendChild(el);
+}
+
+function addEndgameWallBreach(parent, index) {
+  addEndgameWallDamage(parent, index, 'endgame-wall-breach');
+}
+
+function endgameWallDamagePoint(index) {
+  const owned = state.districts && state.districts.length ? state.districts : [HOME_KEY];
+  let entries = [];
+  if (typeof buildWallSet === 'function') {
+    entries = Array.from(buildWallSet(owned).entries());
+  }
+  if (!entries.length) {
+    const home = HOME_KEY.split(',').map(Number);
+    entries = [
+      [home[0] * DISTRICT_W + ',' + home[1] * DISTRICT_H, { h: true }],
+      [(home[0] + 1) * DISTRICT_W - 1 + ',' + home[1] * DISTRICT_H, { v: true }],
+      [home[0] * DISTRICT_W + ',' + ((home[1] + 1) * DISTRICT_H - 1), { h: true }],
+      [home[0] * DISTRICT_W + ',' + home[1] * DISTRICT_H, { v: true }],
+    ];
+  }
+  const pick = Math.floor(endgameRand(index + 931) * entries.length) % entries.length;
+  const [key, o] = entries[pick];
+  const [tx, ty] = key.split(',').map(Number);
+  const vertical = o.v && (!o.h || endgameRand(index + 937) > 0.5);
+  const jitter = (endgameRand(index + 941) - 0.5) * TILE * 0.55;
+  return {
+    x: tx * TILE + TILE / 2 + (vertical ? jitter : 0),
+    y: ty * TILE + TILE / 2 + (vertical ? 0 : jitter),
+    angle: (vertical ? 90 : 0) + (-10 + endgameRand(index + 947) * 20),
+  };
+}
+
+function addEndgameWallDamage(parent, index, cls) {
+  const p = endgameWallDamagePoint(index);
+  const el = document.createElement('div');
+  el.className = cls;
+  el.style.left = p.x.toFixed(1) + 'px';
+  el.style.top = p.y.toFixed(1) + 'px';
+  el.style.zIndex = Math.round(p.y + 10);
+  el.style.transform = 'translate(-50%, -50%) rotate(' + p.angle.toFixed(1) + 'deg)';
+  parent.appendChild(el);
+}
+
+function addEndgameWaterBlood(parent) {
+  if (!Array.isArray(WATER_TILES)) return;
+  for (const [tx, ty] of WATER_TILES) {
+    const el = document.createElement('div');
+    el.className = 'endgame-water-blood';
+    el.style.left = (tx * TILE) + 'px';
+    el.style.top = (ty * TILE) + 'px';
+    parent.appendChild(el);
+  }
 }
 
 function renderEndgameChaos(stage) {
@@ -4208,17 +4330,25 @@ function renderEndgameChaos(stage) {
   if (stage <= 0) return;
 
   const hp = endgameCultistHp();
-  const fireCount = hp <= 50 ? 3 + Math.floor((50 - hp) / 5) * 2 : 0;
-  const bloodCount = hp <= 45 ? 5 + Math.floor((45 - hp) / 5) * 3 : 0;
-  const pentagramCount = hp <= 30 ? 5 + Math.floor((30 - hp) / 5) * 2 : 0;
-  const tentacleCount = hp <= 25 ? 4 + Math.floor((25 - hp) / 5) * 2 : 0;
-  const rubbleCount = hp <= 20 ? 5 + Math.floor((20 - Math.max(10, hp)) / 5) * 4 : 0;
+  const fireCount = hp <= 50 ? 24 + Math.floor((50 - hp) / 5) * 12 : 0;
+  const bloodCount = hp <= 45 ? 14 + Math.floor((45 - hp) / 5) * 8 : 0;
+  const pentagramCount = hp <= 30 ? 9 + Math.floor((30 - hp) / 5) * 5 : 0;
+  const tentacleCount = hp <= 25 ? 8 + Math.floor((25 - hp) / 5) * 5 : 0;
+  const rubbleCount = hp <= 20 ? 26 + Math.floor((20 - Math.max(5, hp)) / 5) * 20 : 0;
+  const scorchCount = hp <= 50 ? 8 + Math.floor((50 - hp) / 5) * 4 : 0;
+  const crackCount = hp <= 40 ? 7 + Math.floor((40 - hp) / 5) * 4 : 0;
+  const breachCount = hp <= 30 ? 5 + Math.floor((30 - Math.max(5, hp)) / 5) * 6 : 0;
+
+  if (hp <= 50) addEndgameWaterBlood(layers.chaos);
 
   for (let i = 0; i < fireCount; i++) addEndgameChaosEl(layers.chaos, 'endgame-fire', i, 100);
   for (let i = 0; i < bloodCount; i++) addEndgameChaosEl(layers.chaos, 'endgame-blood', i, 200);
   for (let i = 0; i < pentagramCount; i++) addEndgameChaosEl(layers.chaos, 'endgame-small-pentagram', i, 300);
   for (let i = 0; i < tentacleCount; i++) addEndgameChaosEl(layers.chaos, 'endgame-tentacle', i, 400);
   for (let i = 0; i < rubbleCount; i++) addEndgameChaosEl(layers.chaos, 'endgame-rubble', i, 500);
+  for (let i = 0; i < scorchCount; i++) addEndgameWallDamage(layers.chaos, i, 'endgame-wall-scorch');
+  for (let i = 0; i < crackCount; i++) addEndgameWallDamage(layers.chaos, i + 30, 'endgame-wall-crack');
+  for (let i = 0; i < breachCount; i++) addEndgameWallBreach(layers.chaos, i);
 }
 
 function updateEndgameProgressUi() {
@@ -4304,8 +4434,11 @@ function updateEndgameVisualState() {
   const stage = endgameCalamityStage();
   document.body.classList.toggle('endgame-calamity', stage > 0 || !!(state.endgame && state.endgame.fulfilled));
   const darkStep = Math.min(8, Math.max(0, stage - 1));
-  document.body.style.setProperty('--endgame-tint-opacity', stage > 0 ? (0.16 + darkStep * 0.085).toFixed(3) : '0');
-  document.body.style.setProperty('--endgame-night-opacity', stage > 0 ? Math.min(1, 0.28 + darkStep * 0.09).toFixed(3) : '1');
+  const ruin = endgameRuinRatio();
+  document.body.style.setProperty('--endgame-tint-opacity', stage > 0 ? Math.min(0.76, 0.08 + darkStep * 0.045 + ruin * 0.18).toFixed(3) : '0');
+  document.body.style.setProperty('--endgame-night-opacity', stage > 0 ? Math.min(0.82, 0.20 + darkStep * 0.04 + ruin * 0.12).toFixed(3) : '1');
+  document.body.style.setProperty('--endgame-plot-dim', stage > 0 ? Math.max(0.2, 1 - ruin * 0.76).toFixed(3) : '1');
+  document.body.style.setProperty('--endgame-plot-red', stage > 0 ? (ruin * 0.85).toFixed(3) : '0');
   renderEndgameChaos(stage);
   if (state.endgame && state.endgame.fulfilled) triggerEndgameSacrifice();
 }
@@ -5433,6 +5566,11 @@ let gameSuspended = false;
 
 window.addEventListener('aetherworldchange', e => {
   gameSuspended = !!(e.detail && e.detail.active);
+  if (!gameSuspended && state.endgame && (state.endgame.fulfilled || state.endgame.finalStarted)) {
+    resetEndgameToPentagram();
+    C = calc();
+    updateHud();
+  }
 });
 
 function tick() {

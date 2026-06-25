@@ -171,8 +171,7 @@ function makeOverlay() {
       '<div class="aether-world-loading-title">THE RUINS ARE WAKING</div>' +
       '<div class="aether-world-loading-track"><div id="aether-world-loading-bar"></div></div>' +
       '<div id="aether-world-loading-text" class="aether-world-loading-text">0%</div>' +
-    '</div>' +
-    '<button id="aether-world-close" type="button">LEAVE RUINS</button>';
+    '</div>';
   document.body.appendChild(overlay);
 
   viewport = document.getElementById('aether-world-viewport');
@@ -186,7 +185,6 @@ function makeOverlay() {
   gateFade = document.getElementById('aether-world-gate-fade');
   wardenStatus = document.getElementById('aether-world-warden-status');
   renderHearts();
-  document.getElementById('aether-world-close').addEventListener('click', close);
   document.getElementById('aether-world-resummon').addEventListener('click', resummonAtFountain);
   viewport.addEventListener('click', captureMouse);
 }

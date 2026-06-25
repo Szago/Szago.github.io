@@ -314,27 +314,6 @@ body.aether-world-active #perf-overlay {
   line-height: 1.8;
 }
 
-#aether-world-close {
-  position: absolute;
-  z-index: 5;
-  top: 18px;
-  right: 20px;
-  pointer-events: auto;
-  padding: 10px 12px;
-  border: 3px solid #695c88;
-  background: rgba(15, 13, 27, 0.9);
-  color: #f0ecff;
-  font: 9px "Press Start 2P", monospace;
-  cursor: pointer;
-}
-
-#aether-world-close:hover,
-#aether-world-close:focus-visible {
-  border-color: #ef7e8f;
-  color: #ffabb7;
-  outline: none;
-}
-
 .aether-world-crosshair {
   position: absolute;
   left: 50%;
@@ -379,12 +358,5 @@ body.aether-world-active #perf-overlay {
     left: 14px;
     bottom: 12px;
     max-width: calc(100vw - 28px);
-  }
-
-  #aether-world-close {
-    top: 12px;
-    right: 12px;
-    padding: 8px;
-    font-size: 7px;
   }
 }

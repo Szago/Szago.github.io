@@ -30,6 +30,7 @@ const SKIN = '#f0c8a0';
 
 let lightsCtx = null;
 let glowWarm = null, glowGreen = null;
+let glowRed = null;
 let cityGlow = null; // {x, y, r} ambient dome over the city
 
 function makeVillager(i, hMin, hMax, vMin, vMax) {
@@ -108,6 +109,7 @@ function ambientInit() {
   lightsCtx.imageSmoothingEnabled = true; // smooth, moody light
   glowWarm = makeGlow(255, 200, 110);
   glowGreen = makeGlow(190, 255, 130);
+  glowRed = makeGlow(255, 32, 52);
   requestAnimationFrame(ambientFrame);
 }
 
@@ -264,10 +266,11 @@ function ambientFrame(ts) {
   const ctx = ambCtx;
   ctx.clearRect(0, 0, MAP_W * TILE, MAP_H * TILE);
   const calamityStage = typeof endgameCalamityStage === 'function' ? endgameCalamityStage() : 0;
+  const bloodWater = !!(state.endgame && state.endgame.bossActive && typeof endgameCultistHp === 'function' && endgameCultistHp() <= 50);
 
   /* --- water shimmer & flow --- */
   const phase = Math.floor(ts / 200);
-  ctx.fillStyle = MapPal.waterLight;
+  ctx.fillStyle = bloodWater ? '#ff4058' : MapPal.waterLight;
   for (const [tx, ty] of WATER_TILES) {
     const h1 = (tx * 13 + ty * 7) % 11;
     const px = tx * TILE + ((h1 * 3 + phase) % 14);
@@ -398,11 +401,13 @@ function ambientFrame(ts) {
     lctx.clearRect(0, 0, MAP_W * TILE, MAP_H * TILE);
     if (typeof isNight === 'function' && isNight()) {
       lctx.globalCompositeOperation = 'lighter';
+      const bloodLight = calamityStage > 0;
+      const cityLight = bloodLight ? glowRed : glowWarm;
 
       /* warm ambient dome over the whole city */
       if (cityGlow) {
-        lctx.globalAlpha = 0.22;
-        lctx.drawImage(glowWarm, cityGlow.x - cityGlow.r, cityGlow.y - cityGlow.r, cityGlow.r * 2, cityGlow.r * 2);
+        lctx.globalAlpha = bloodLight ? 0.34 : 0.22;
+        lctx.drawImage(cityLight, cityGlow.x - cityGlow.r, cityGlow.y - cityGlow.r, cityGlow.r * 2, cityGlow.r * 2);
       }
 
       /* street lamps: pools of light with gentle flicker */
@@ -410,18 +415,18 @@ function ambientFrame(ts) {
         const [lx, ly] = LAMP_POINTS[i];
         const flick = 0.85 + 0.15 * Math.sin(ts / 350 + i * 1.7);
         lctx.globalAlpha = 0.55 * flick;
-        lctx.drawImage(glowWarm, lx - 26, ly - 26, 52, 52);
+        lctx.drawImage(cityLight, lx - 32, ly - 32, 64, 64);
         lctx.globalAlpha = 0.9 * flick;
-        lctx.drawImage(glowWarm, lx - 8, ly - 8, 16, 16);
+        lctx.drawImage(cityLight, lx - 10, ly - 10, 20, 20);
       }
 
       /* windows: cosy hearth light */
       for (const [gx, gy, seed] of ambGlows) {
         const flick = 0.8 + 0.2 * Math.sin(ts / 700 + seed);
-        lctx.globalAlpha = 0.4 * flick;
-        lctx.drawImage(glowWarm, gx - 14, gy - 14, 30, 30);
-        lctx.globalAlpha = 0.85 * flick;
-        lctx.drawImage(glowWarm, gx - 4, gy - 4, 10, 10);
+        lctx.globalAlpha = (bloodLight ? 0.62 : 0.4) * flick;
+        lctx.drawImage(cityLight, gx - 17, gy - 17, 36, 36);
+        lctx.globalAlpha = (bloodLight ? 0.95 : 0.85) * flick;
+        lctx.drawImage(cityLight, gx - 5, gy - 5, 12, 12);
       }
 
       /* fireflies: soft green sparks in the wild */
@@ -430,7 +435,7 @@ function ambientFrame(ts) {
         if (blink < 0.2) continue;
         lctx.globalAlpha = blink * 0.8;
         const ox2 = Math.sin(ts / 700 + seed) * 4, oy2 = Math.cos(ts / 900 + seed) * 3;
-        lctx.drawImage(glowGreen, fx + ox2 - 5, fy + oy2 - 5, 10, 10);
+        lctx.drawImage(bloodLight ? glowRed : glowGreen, fx + ox2 - 5, fy + oy2 - 5, 10, 10);
       }
 
       lctx.globalAlpha = 1;
