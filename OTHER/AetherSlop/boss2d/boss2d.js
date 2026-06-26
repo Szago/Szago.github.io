@@ -14,6 +14,17 @@
 (function () {
   'use strict';
 
+  // ---- Asset paths (resolved relative to this script's own location) -----
+  // boss2d.js is loaded from different depths (the standalone preview vs. the
+  // full game's index.html), so derive the directory from the script URL and
+  // build sprite paths off it rather than assuming a fixed relative root.
+  const SCRIPT_DIR = (function () {
+    const src = (document.currentScript && document.currentScript.src) || '';
+    return src ? src.slice(0, src.lastIndexOf('/') + 1) : '';
+  })();
+  const CULTIST_KNEEL_SRC = SCRIPT_DIR + 'spritesV2/shadow-cultist.png';
+  const CULTIST_STAND_SRC = SCRIPT_DIR + 'spritesV2/shadow-cultist-standing-v2.png';
+
   // ---- Combat window geometry -------------------------------------------
   const BOARD = 500;            // the static 500x500 combat window (outer)
   const BORDER = 16;            // bloody border thickness, drawn inside the box
@@ -51,10 +62,15 @@
   let bgCanvas = null;     // full-viewport layer behind the box
   let bgCtx = null;
   let borderCanvas = null; // pre-rendered static bloody frame
+  let cultistElement = null; // the boss sprite looming in the room above the arena
   let active = false;
   let animationFrame = 0;
   let previousTime = 0;
   const keys = new Set();
+
+  // Secret debug sequence: typing these digits quits the rift outright.
+  const DEBUG_QUIT_SEQUENCE = '2137';
+  let debugBuffer = '';
 
   // Hero position is the centre of the sprite, in board space.
   const hero = { x: BOARD / 2, y: BOARD / 2 };
@@ -320,14 +336,20 @@
     overlay.innerHTML =
       '<canvas id="aether-boss2d-bg" class="aether-boss2d-bg"></canvas>' +
       '<div id="aether-boss2d-fps" class="aether-boss2d-fps">FPS --</div>' +
-      '<div class="aether-boss2d-title">THROUGH THE RIFT</div>' +
+      // The boss is two stacked layers so the kneel->stand swap can crossfade
+      // and rise, and so the standing form can float and pixel-jitter on top.
+      '<div id="aether-boss2d-cultist" class="aether-boss2d-cultist">' +
+        '<img class="aether-boss2d-cultist-kneel" alt="" src="' + CULTIST_KNEEL_SRC + '" />' +
+        '<div class="aether-boss2d-cultist-stand-wrap">' +
+          '<img class="aether-boss2d-cultist-stand" alt="" src="' + CULTIST_STAND_SRC + '" />' +
+        '</div>' +
+      '</div>' +
       '<div class="aether-boss2d-stage">' +
         '<canvas id="aether-boss2d-canvas" width="' + BOARD + '" height="' + BOARD + '"></canvas>' +
       '</div>' +
       '<div class="aether-boss2d-help">WASD / ARROWS MOVE' +
-        '<span class="aether-boss2d-status">ENTER SKIP INTRO &nbsp;&middot;&nbsp; ESC TO LEAVE THE RIFT</span>' +
-      '</div>' +
-      '<button id="aether-boss2d-close" type="button">LEAVE THE RIFT</button>';
+        '<span class="aether-boss2d-status">ENTER SKIP INTRO</span>' +
+      '</div>';
     document.body.appendChild(overlay);
 
     canvas = document.getElementById('aether-boss2d-canvas');
@@ -336,7 +358,7 @@
     bgCanvas = document.getElementById('aether-boss2d-bg');
     bgCtx = bgCanvas.getContext('2d');
     fpsElement = document.getElementById('aether-boss2d-fps');
-    document.getElementById('aether-boss2d-close').addEventListener('click', close);
+    cultistElement = document.getElementById('aether-boss2d-cultist');
   }
 
   // ---- Rendering ---------------------------------------------------------
@@ -865,6 +887,10 @@
   function setPhase(next) {
     phase = next;
     phaseTime = 0;
+    // When the scripted intro ends and the fight begins, the cultist rises from
+    // her kneeling form into her standing combat pose (crossfade + rise driven
+    // by the `.standing` class).
+    if (next === PHASE.ACTIVE && cultistElement) cultistElement.classList.add('standing');
   }
 
   // Dev shortcut: skip the scripted intro and drop straight into the fight
@@ -968,7 +994,11 @@
 
   function onKeyDown(event) {
     if (!active) return;
-    if (event.code === 'Escape') { close(); return; }
+    // Secret debug sequence (2137): typing it bails out of the rift.
+    if (event.key && event.key.length === 1 && event.key >= '0' && event.key <= '9') {
+      debugBuffer = (debugBuffer + event.key).slice(-DEBUG_QUIT_SEQUENCE.length);
+      if (debugBuffer === DEBUG_QUIT_SEQUENCE) { debugBuffer = ''; close(); return; }
+    }
     if (event.code === 'Enter') { skipToActive(); event.preventDefault(); return; }
     if (MOVE_CODES.has(event.code)) {
       keys.add(event.code);
@@ -1008,6 +1038,8 @@
     hero.x = ARENA_CX;
     hero.y = FALL_START_Y;
     keys.clear();
+    debugBuffer = '';
+    if (cultistElement) cultistElement.classList.remove('standing');
     fpsSampleStart = 0;
     fpsFrames = 0;
     if (fpsElement) fpsElement.textContent = 'FPS --';

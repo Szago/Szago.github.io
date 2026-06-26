@@ -7,8 +7,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 18px;
+  /* Stack from the top so the arena sits low, leaving a room above it for the
+     boss. The cultist fills that upper space; her taller standing form rises
+     up into the padding above the kneel baseline. */
+  justify-content: flex-start;
+  padding-top: 140px;
+  gap: 26px;
   /* The black empty plane the fight floats in. */
   background:
     radial-gradient(circle at 50% 45%, #120203 0%, #060001 55%, #000000 100%);
@@ -46,19 +50,81 @@
 }
 
 /* Keep the actual fight UI above the background tentacles. */
-.aether-boss2d-title,
+.aether-boss2d-cultist,
 .aether-boss2d-stage,
-.aether-boss2d-help,
-#aether-boss2d-close {
+.aether-boss2d-help {
   position: relative;
   z-index: 1;
 }
 
-.aether-boss2d-title {
-  color: #ff5a4a;
-  font-size: 14px;
-  letter-spacing: 2px;
-  text-shadow: 0 0 10px #8a0a06, 0 0 22px #3a0302;
+/* The boss looming in the room above the arena. Two layers (kneel + stand)
+   share a bottom baseline so swapping forms reads as her rising in place. The
+   box is sized to the kneeling form; the taller standing form overflows upward
+   into the overlay's top padding. */
+.aether-boss2d-cultist {
+  width: 260px;
+  height: 240px;
+  pointer-events: none;
+}
+
+.aether-boss2d-cultist-kneel,
+.aether-boss2d-cultist-stand-wrap {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+}
+
+.aether-boss2d-cultist-kneel {
+  height: 240px;             /* kneeling form keeps its original size */
+  width: auto;
+  transform: translateX(-50%);
+  opacity: 1;
+  transition: opacity 0.55s ease;
+  filter: drop-shadow(0 0 20px rgba(120, 6, 4, 0.55));
+}
+
+.aether-boss2d-cultist-stand-wrap {
+  height: 360px;             /* standing form 1.5x the kneeling height */
+  opacity: 0;
+  /* Start a touch lower and faded; crossfade + rise on activation. */
+  transform: translateX(-50%) translateY(28px);
+  transition: opacity 0.6s ease, transform 0.7s ease;
+}
+
+.aether-boss2d-cultist-stand {
+  display: block;
+  height: 360px;
+  width: auto;
+  filter: drop-shadow(0 0 22px rgba(120, 6, 4, 0.6));
+  /* Discrete 1px pixel-shift jitter so the sprite never reads as fully static. */
+  animation: aether-cultist-jitter 0.9s steps(1) infinite;
+}
+
+/* --- Transition to the standing combat form ---------------------------- */
+.aether-boss2d-cultist.standing .aether-boss2d-cultist-kneel {
+  opacity: 0;
+}
+
+.aether-boss2d-cultist.standing .aether-boss2d-cultist-stand-wrap {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  /* The rise transition (0.7s) hands off to the gentle float loop. */
+  animation: aether-cultist-float 4s ease-in-out 0.7s infinite;
+}
+
+@keyframes aether-cultist-float {
+  0%   { transform: translateX(-50%) translateY(0); }
+  50%  { transform: translateX(-50%) translateY(-9px); }
+  100% { transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes aether-cultist-jitter {
+  0%   { transform: translate(0, 0); }
+  20%  { transform: translate(-1px, 0); }
+  40%  { transform: translate(1px, -1px); }
+  60%  { transform: translate(-1px, 1px); }
+  80%  { transform: translate(1px, 0); }
+  100% { transform: translate(0, 0); }
 }
 
 .aether-boss2d-stage {
@@ -79,36 +145,25 @@
   image-rendering: crisp-edges;
 }
 
+/* Controls reference, tucked into the bottom-right corner of the screen. */
 .aether-boss2d-help {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 6px;
   color: #c98b86;
   font-size: 9px;
   letter-spacing: 1px;
+  text-align: right;
+  pointer-events: none;
 }
 
 .aether-boss2d-status {
   color: #7a4a47;
   font-size: 8px;
-}
-
-#aether-boss2d-close {
-  cursor: pointer;
-  padding: 10px 18px;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 10px;
-  letter-spacing: 1px;
-  color: #ffd2cc;
-  background: #1a0405;
-  border: 2px solid #7a1210;
-  text-shadow: 0 0 8px #ff3a2a;
-}
-
-#aether-boss2d-close:hover {
-  background: #2a0708;
-  border-color: #b3201c;
 }
 
 /* While the rift boss is open, hide the rest of the page behind it. */
