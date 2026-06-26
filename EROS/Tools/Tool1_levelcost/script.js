@@ -74,7 +74,7 @@ function retrieveCost() {
         }
     } else {
         const lvl = parseInt(document.getElementById('labelInput').value) || 0;
-        if (lvl > 0 && lvl <= 220) {
+        if (lvl > 0 && lvl <= 230) {
             const singleCost = levels[lvl - 1];
             const cumulative = calculateTotalCost(lvl);
             
