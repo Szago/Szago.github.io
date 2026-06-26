@@ -34,16 +34,41 @@
   image-rendering: pixelated;
 }
 
+/* Full-viewport layer for boss attacks (pentagrams + beams), which originate
+   outside the playfield around the cultist and reach into it. Sits above the
+   fight so the beams overlay the arena and the boss. */
+.aether-boss2d-attacks {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
 /* Temporary standalone performance readout for the boss scene. */
 .aether-boss2d-fps {
   position: absolute;
   top: 12px;
   left: 12px;
-  z-index: 2;
+  z-index: 5;
   padding: 7px 9px;
   color: #ffb0a6;
   background: rgba(10, 0, 2, 0.82);
   border: 1px solid #64100e;
+  font-size: 9px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Debug tempo readout, mirrored into the top-right corner. */
+.aether-boss2d-bpm {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+  padding: 7px 9px;
+  color: #d6a6ff;
+  background: rgba(10, 0, 2, 0.82);
+  border: 1px solid #4a1064;
   font-size: 9px;
   line-height: 1;
   pointer-events: none;

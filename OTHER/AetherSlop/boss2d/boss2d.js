@@ -53,7 +53,7 @@
   const HERO_SCALE = 3;
   const HERO_W = HERO.rows[0].length * HERO_SCALE; // 45
   const HERO_H = HERO.rows.length * HERO_SCALE;    // 36
-  const MOVE_SPEED = 0.21; // px per ms (~12.6 px/frame @60fps)
+  const MOVE_SPEED = 0.21; // base px per ms at BASE_BPM; scales with tempo
 
   // ---- Module state ------------------------------------------------------
   let overlay = null;
@@ -61,8 +61,13 @@
   let ctx = null;
   let bgCanvas = null;     // full-viewport layer behind the box
   let bgCtx = null;
+  let attackCanvas = null; // full-viewport layer for pentagrams + beams
+  let actx = null;
   let borderCanvas = null; // pre-rendered static bloody frame
-  let cultistElement = null; // the boss sprite looming in the room above the arena
+  let cultistElement = null;   // the boss container (kneel + stand layers)
+  let cultistStandWrap = null; // standing layer wrapper (carries the float loop)
+  let cultistStandImg = null;  // standing sprite img (carries the pixel jitter)
+  let bpmElement = null;       // debug BPM readout, top-right
   let active = false;
   let animationFrame = 0;
   let previousTime = 0;
@@ -116,6 +121,76 @@
   let fpsFrames = 0;
   let boxRect = null;           // viewport rect of the combat window
   const pentagram = { arm: 0, armTime: 0, paused: false, pauseTime: 0, circleTime: 0 };
+
+  // ---- Tempo --------------------------------------------------------------
+  // The whole fight runs on a beat. Tempo starts the instant the cultist stands
+  // and climbs by 1 BPM every 30s; every paced thing (telegraphs, attacks, even
+  // her idle animations) derives its speed from the current beat.
+  const BASE_BPM = 60;
+  const BPM_RAMP_MS = 5000;         // +1 BPM per 30s of fight
+  const FLOAT_BASE_MS = 4000;        // her float loop at BASE_BPM
+  const JITTER_BASE_MS = 900;        // her pixel-jitter loop at BASE_BPM
+  let fightClock = 0;                // ms since the fight (standing form) began
+  let bpm = BASE_BPM;
+  let beatMs = 60000 / BASE_BPM;     // duration of one beat at the current tempo
+  let beatPhase = 0;                 // ms elapsed inside the current beat
+  let beatIndex = 0;                 // beats elapsed since the fight began
+  let lastAnimBpm = -1;              // last tempo pushed to the CSS animations
+
+  // ---- Attacks ------------------------------------------------------------
+  // Every attack telegraphs first: a dark-purple outline snakes out across the
+  // floor at the beat's pace, and the strike lands a beat after it finishes.
+  // Attacks live in viewport space (the attack canvas) because the summoning
+  // pentagrams sit outside the playfield, pinned to the cultist's body.
+  const ATTACK_REST_BEATS = 1;       // beats of breathing room between attack waves
+  // Spawn points expressed as fractions of the standing sprite's bounding box
+  // (x from its left, y from its top), so each pentagram tracks a body part.
+  // Leg pentagrams sit well clear of her legs; head pentagrams sit twice as far
+  // from her centre line as the leg pentagrams do.
+  const LEG_SPACING = 0.5;
+  const HEAD_SPACING = LEG_SPACING * 2;
+  const ATTACK_ANCHORS = {
+    leftLeg:   { fx: 0.5 - LEG_SPACING,  fy: 0.86 },
+    rightLeg:  { fx: 0.5 + LEG_SPACING,  fy: 0.86 },
+    leftHead:  { fx: 0.5 - HEAD_SPACING, fy: 0.17 },
+    rightHead: { fx: 0.5 + HEAD_SPACING, fy: 0.17 },
+  };
+  // Attacks aim at shared nodes — the five tips of the centre playfield
+  // pentagram plus its middle (see pentAimNodes). Each body pentagram crosses
+  // to the opposite tip: left side aims right, right side aims left.
+  const ATTACK_AIM = {
+    leftLeg:   'bottomRight',
+    rightLeg:  'bottomLeft',
+    leftHead:  'topRight',
+    rightHead: 'topLeft',
+  };
+  // A full pattern is a sequence of waves; every pentagram in a wave telegraphs
+  // and fires together, all aimed at the playfield centre. The pattern loops.
+  const ATTACK_PATTERN = [
+    // Each pentagram on its own.
+    ['leftLeg'],
+    ['leftHead'],
+    ['rightHead'],
+    ['rightLeg'],
+    // Both on a side, then both on an end.
+    ['leftLeg', 'leftHead'],     // both left
+    ['rightLeg', 'rightHead'],   // both right
+    ['leftHead', 'rightHead'],   // both top
+    ['leftLeg', 'rightLeg'],     // both bottom
+    // Each diagonal axis (a pair of opposite pentagrams).
+    ['leftHead', 'rightLeg'],
+    ['rightHead', 'leftLeg'],
+    // The four ways to fire three at once (each omits one pentagram).
+    ['leftHead', 'rightHead', 'rightLeg'], // omit left leg
+    ['leftLeg', 'leftHead', 'rightHead'],  // omit right leg
+    ['leftLeg', 'rightHead', 'rightLeg'],  // omit left head
+    ['leftLeg', 'leftHead', 'rightLeg'],   // omit right head
+    // All four together.
+    ['leftLeg', 'leftHead', 'rightHead', 'rightLeg'],
+  ];
+  let patternIndex = 0;
+  let attacks = [];
+  let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
 
   const easeInQuad = (t) => t * t;
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
@@ -335,7 +410,9 @@
     overlay.setAttribute('aria-label', 'The rift boss');
     overlay.innerHTML =
       '<canvas id="aether-boss2d-bg" class="aether-boss2d-bg"></canvas>' +
+      '<canvas id="aether-boss2d-attacks" class="aether-boss2d-attacks"></canvas>' +
       '<div id="aether-boss2d-fps" class="aether-boss2d-fps">FPS --</div>' +
+      '<div id="aether-boss2d-bpm" class="aether-boss2d-bpm">BPM --</div>' +
       // The boss is two stacked layers so the kneel->stand swap can crossfade
       // and rise, and so the standing form can float and pixel-jitter on top.
       '<div id="aether-boss2d-cultist" class="aether-boss2d-cultist">' +
@@ -357,8 +434,13 @@
     ctx.imageSmoothingEnabled = false;
     bgCanvas = document.getElementById('aether-boss2d-bg');
     bgCtx = bgCanvas.getContext('2d');
+    attackCanvas = document.getElementById('aether-boss2d-attacks');
+    actx = attackCanvas.getContext('2d');
     fpsElement = document.getElementById('aether-boss2d-fps');
+    bpmElement = document.getElementById('aether-boss2d-bpm');
     cultistElement = document.getElementById('aether-boss2d-cultist');
+    cultistStandWrap = overlay.querySelector('.aether-boss2d-cultist-stand-wrap');
+    cultistStandImg = overlay.querySelector('.aether-boss2d-cultist-stand');
   }
 
   // ---- Rendering ---------------------------------------------------------
@@ -565,6 +647,16 @@
     bgCtx.setTransform(BG_SCALE, 0, 0, BG_SCALE, 0, 0);
     bgCtx.imageSmoothingEnabled = false;
     bgLastFrame = -Infinity;
+  }
+
+  // Full-resolution viewport canvas the attacks (pentagrams + beams) draw onto.
+  function sizeAttackCanvas() {
+    if (!attackCanvas) return;
+    attackCanvas.width = window.innerWidth;
+    attackCanvas.height = window.innerHeight;
+    attackCanvas.style.width = window.innerWidth + 'px';
+    attackCanvas.style.height = window.innerHeight + 'px';
+    actx.imageSmoothingEnabled = true;
   }
 
   function spawnOuterTentacles(instant) {
@@ -877,9 +969,11 @@
     if (keys.has('KeyS') || keys.has('ArrowDown')) dy += 1;
     if (dx === 0 && dy === 0) return;
     // Normalise so diagonals aren't faster — true Undertale free movement.
+    // Speed rides the tempo so the hero keeps pace as the fight accelerates.
     const len = Math.hypot(dx, dy);
-    hero.x += (dx / len) * MOVE_SPEED * dt;
-    hero.y += (dy / len) * MOVE_SPEED * dt;
+    const speed = MOVE_SPEED * (bpm / BASE_BPM);
+    hero.x += (dx / len) * speed * dt;
+    hero.y += (dy / len) * speed * dt;
     clampHero();
   }
 
@@ -889,8 +983,64 @@
     phaseTime = 0;
     // When the scripted intro ends and the fight begins, the cultist rises from
     // her kneeling form into her standing combat pose (crossfade + rise driven
-    // by the `.standing` class).
-    if (next === PHASE.ACTIVE && cultistElement) cultistElement.classList.add('standing');
+    // by the `.standing` class), and the tempo clock starts ticking.
+    if (next === PHASE.ACTIVE) {
+      if (cultistElement) cultistElement.classList.add('standing');
+      startFight();
+    }
+  }
+
+  // ---- Tempo / beat clock -----------------------------------------------
+  function startFight() {
+    fightClock = 0;
+    bpm = BASE_BPM;
+    beatMs = 60000 / bpm;
+    beatPhase = 0;
+    beatIndex = 0;
+    lastAnimBpm = -1;
+    attacks = [];
+    patternIndex = 0;
+    nextAttackBeat = 2; // a couple of beats to read the room before the first strike
+    applyTempoToAnimations();
+    if (bpmElement) bpmElement.textContent = 'BPM ' + bpm;
+  }
+
+  // Scale the cultist's idle CSS animations to the beat: faster tempo, faster
+  // float and jitter. Only touched when the integer BPM changes.
+  function applyTempoToAnimations() {
+    const scale = BASE_BPM / bpm;
+    if (cultistStandWrap) cultistStandWrap.style.animationDuration = (FLOAT_BASE_MS * scale) + 'ms';
+    if (cultistStandImg) cultistStandImg.style.animationDuration = (JITTER_BASE_MS * scale) + 'ms';
+  }
+
+  function updateTempo(dt) {
+    fightClock += dt;
+    const targetBpm = BASE_BPM + Math.floor(fightClock / BPM_RAMP_MS);
+    if (targetBpm !== bpm) {
+      bpm = targetBpm;
+      beatMs = 60000 / bpm;
+    }
+    beatPhase += dt;
+    while (beatPhase >= beatMs) {
+      beatPhase -= beatMs;
+      beatIndex++;
+      onBeat(beatIndex);
+    }
+    if (bpm !== lastAnimBpm) {
+      lastAnimBpm = bpm;
+      applyTempoToAnimations();
+      if (bpmElement) bpmElement.textContent = 'BPM ' + bpm;
+    }
+  }
+
+  // Fires on every beat boundary while the fight is active: the attack
+  // scheduler lives here.
+  function onBeat(beat) {
+    if (phase !== PHASE.ACTIVE) return;
+    if (beat >= nextAttackBeat && attacks.length === 0) {
+      spawnWave();
+      nextAttackBeat = Infinity; // re-armed once the current wave resolves
+    }
   }
 
   // Dev shortcut: skip the scripted intro and drop straight into the fight
@@ -957,7 +1107,209 @@
         if (pentagram.circleTime >= CIRCLE_BURN) setPhase(PHASE.ACTIVE);
       }
     } else if (phase === PHASE.ACTIVE) {
+      updateTempo(dt);
+      updateAttacks(dt);
       updateMovement(dt);
+    }
+  }
+
+  // ---- Attacks -----------------------------------------------------------
+  // Attack lifecycle, all paced by the beat:
+  //   telegraph -> (snake reaches full length) -> armed -> (next beat) -> fire -> done
+  // The six shared aim nodes in viewport space: the five tips of the centre
+  // playfield pentagram (same geometry as the burned-in seal) plus its middle.
+  function pentAimNodes(board) {
+    const sx = board.width / BOARD;
+    const sy = board.height / BOARD;
+    const toView = (bx, by) => ({ x: board.left + bx * sx, y: board.top + by * sy });
+    const tip = (k) => {
+      const a = -Math.PI / 2 + k * (Math.PI * 2 / 5);
+      return toView(ARENA_CX + Math.cos(a) * PENT_RADIUS, ARENA_CY + Math.sin(a) * PENT_RADIUS);
+    };
+    return {
+      top: tip(0),
+      topRight: tip(1),
+      bottomRight: tip(2),
+      bottomLeft: tip(3),
+      topLeft: tip(4),
+      center: toView(ARENA_CX, ARENA_CY),
+    };
+  }
+
+  // Spawns the next wave of the pattern; every pentagram in it fires together.
+  function spawnWave() {
+    const wave = ATTACK_PATTERN[patternIndex % ATTACK_PATTERN.length];
+    patternIndex++;
+    const sprite = cultistStandImg && cultistStandImg.getBoundingClientRect();
+    const board = canvas && canvas.getBoundingClientRect();
+    if (!sprite || !board || !sprite.width || !board.width) return;
+    const nodes = pentAimNodes(board);
+    for (const anchorKey of wave) spawnPentaBeam(anchorKey, sprite, nodes);
+  }
+
+  // One pentagram beam, pinned to a body part on the standing sprite and aimed
+  // at its assigned node. Positions are captured in viewport space at spawn
+  // time, so the beam stays anchored while she keeps floating.
+  function spawnPentaBeam(anchorKey, sprite, nodes) {
+    const anchor = ATTACK_ANCHORS[anchorKey];
+    const ox = sprite.left + sprite.width * anchor.fx;
+    const oy = sprite.top + sprite.height * anchor.fy;
+    const aim = nodes[ATTACK_AIM[anchorKey]] || nodes.center;
+    const angle = Math.atan2(aim.y - oy, aim.x - ox);
+    // Fixed length that always overshoots the screen, so every beam telegraphs
+    // at the same rate and on the same timing regardless of where it starts.
+    const length = Math.hypot(window.innerWidth, window.innerHeight) * 1.2;
+    attacks.push({
+      type: 'pentaBeam',
+      state: 'telegraph',
+      anchor: anchorKey,
+      x: ox, y: oy, angle,   // viewport-space origin (pentagram centre)
+      radius: 30,
+      length,
+      width: 57.5,           // 1.25x the original beam width
+      stretch: 0,            // 0..1 telegraph growth
+      stretchBeats: 0.75,    // shorter telegraph: less time to dodge
+      readyBeat: 0,
+      fire: 0,               // 0..1 beam life
+      fireBeats: 1,
+    });
+  }
+
+  function updateAttacks(dt) {
+    for (const a of attacks) {
+      if (a.state === 'telegraph') {
+        // The snake advances at the beat's pace, reaching the far edge in one beat.
+        a.stretch += dt / (beatMs * a.stretchBeats);
+        if (a.stretch >= 1) {
+          a.stretch = 1;
+          a.state = 'armed';
+          a.readyBeat = beatIndex;
+        }
+      } else if (a.state === 'armed') {
+        // The strike lands on the first beat after the telegraph finished.
+        if (beatIndex > a.readyBeat) { a.state = 'fire'; a.fire = 0; }
+      } else if (a.state === 'fire') {
+        a.fire += dt / (beatMs * a.fireBeats);
+        if (a.fire >= 1) { a.fire = 1; a.state = 'done'; }
+      }
+    }
+    if (attacks.length && attacks.every((a) => a.state === 'done')) {
+      attacks = [];
+      nextAttackBeat = beatIndex + ATTACK_REST_BEATS;
+    }
+  }
+
+  // Clears and repaints the full-viewport attack canvas (pentagrams + beams).
+  function renderAttackLayer() {
+    if (!actx) return;
+    actx.clearRect(0, 0, attackCanvas.width, attackCanvas.height);
+    if (phase !== PHASE.ACTIVE) return;
+    for (const a of attacks) {
+      if (a.type === 'pentaBeam') renderPentaBeam(a);
+    }
+  }
+
+  // The summoning pentagram: a small dark-purple five-pointed star + ring, one
+  // point aimed along `angle`. `glow` (0..1) brightens it as the beam charges.
+  function drawAttackPentagram(x, y, radius, angle, glow) {
+    const verts = [];
+    for (let k = 0; k < 5; k++) {
+      const a = angle + k * (Math.PI * 2 / 5);
+      verts.push({ x: x + Math.cos(a) * radius, y: y + Math.sin(a) * radius });
+    }
+    const order = [0, 2, 4, 1, 3, 0];
+    const tracePath = () => {
+      actx.beginPath();
+      for (let i = 0; i < order.length; i++) {
+        const v = verts[order[i]];
+        if (i === 0) actx.moveTo(v.x, v.y); else actx.lineTo(v.x, v.y);
+      }
+    };
+    actx.save();
+    actx.lineCap = 'round';
+    actx.lineJoin = 'round';
+    actx.shadowColor = 'rgba(150, 60, 230, ' + (0.5 + glow * 0.5).toFixed(3) + ')';
+    actx.shadowBlur = 8 + glow * 18;
+    // Charred dark base.
+    actx.strokeStyle = 'rgba(34, 6, 52, 0.95)';
+    actx.lineWidth = 5;
+    tracePath(); actx.stroke();
+    actx.beginPath(); actx.arc(x, y, radius, 0, Math.PI * 2); actx.stroke();
+    // Glowing purple line on top.
+    actx.strokeStyle = 'rgba(168, 84, 232, ' + (0.7 + glow * 0.3).toFixed(3) + ')';
+    actx.lineWidth = 2;
+    tracePath(); actx.stroke();
+    actx.beginPath(); actx.arc(x, y, radius, 0, Math.PI * 2); actx.stroke();
+    actx.restore();
+  }
+
+  // Build the beam corridor as a quad of length `len` from the pentagram.
+  function corridorPath(a, len, hw) {
+    const dx = Math.cos(a.angle);
+    const dy = Math.sin(a.angle);
+    const nx = -dy;
+    const ny = dx;
+    const x1 = a.x + dx * len;
+    const y1 = a.y + dy * len;
+    actx.beginPath();
+    actx.moveTo(a.x + nx * hw, a.y + ny * hw);
+    actx.lineTo(x1 + nx * hw, y1 + ny * hw);
+    actx.lineTo(x1 - nx * hw, y1 - ny * hw);
+    actx.lineTo(a.x - nx * hw, a.y - ny * hw);
+    actx.closePath();
+  }
+
+  function renderPentaBeam(a) {
+    const hw = a.width / 2;
+
+    if (a.state === 'telegraph' || a.state === 'armed') {
+      // Dark-purple outline snaking across the ground, leading the beam.
+      const len = a.length * a.stretch;
+      actx.save();
+      corridorPath(a, len, hw);
+      actx.fillStyle = 'rgba(58, 10, 80, 0.22)';
+      actx.fill();
+      actx.strokeStyle = 'rgba(120, 40, 170, 0.85)';
+      actx.lineWidth = 2;
+      actx.stroke();
+      // Energy creeping inward along the corridor edges.
+      actx.setLineDash([7, 9]);
+      actx.lineDashOffset = -clock * 0.04;
+      actx.strokeStyle = 'rgba(186, 96, 236, ' + (a.state === 'armed' ? 0.85 : 0.55).toFixed(3) + ')';
+      actx.lineWidth = 1.5;
+      actx.stroke();
+      actx.setLineDash([]);
+      // Bright snaking tip while it is still extending.
+      if (a.state === 'telegraph') {
+        const tx = a.x + Math.cos(a.angle) * len;
+        const ty = a.y + Math.sin(a.angle) * len;
+        actx.shadowColor = 'rgba(190, 100, 240, 0.9)';
+        actx.shadowBlur = 14;
+        actx.fillStyle = 'rgba(214, 150, 255, 0.95)';
+        actx.beginPath(); actx.arc(tx, ty, 4, 0, Math.PI * 2); actx.fill();
+      }
+      actx.restore();
+      drawAttackPentagram(a.x, a.y, a.radius, a.angle, a.state === 'armed' ? 1 : a.stretch);
+      return;
+    }
+
+    if (a.state === 'fire' || a.state === 'done') {
+      // The beam: bright at the strike, easing out over its life.
+      const life = 1 - easeOutCubic(a.fire);
+      actx.save();
+      // Outer glow.
+      corridorPath(a, a.length, hw);
+      actx.shadowColor = 'rgba(150, 60, 230, ' + (0.8 * life).toFixed(3) + ')';
+      actx.shadowBlur = 26 * life;
+      actx.fillStyle = 'rgba(96, 22, 150, ' + (0.55 * life).toFixed(3) + ')';
+      actx.fill();
+      // Hot core.
+      corridorPath(a, a.length, hw * 0.42);
+      actx.shadowBlur = 16 * life;
+      actx.fillStyle = 'rgba(224, 168, 255, ' + (0.92 * life).toFixed(3) + ')';
+      actx.fill();
+      actx.restore();
+      drawAttackPentagram(a.x, a.y, a.radius, a.angle, life);
     }
   }
 
@@ -983,6 +1335,7 @@
     if (phase === PHASE.ACTIVE) clampHero();
     renderBackground(time, false);
     renderScene();
+    renderAttackLayer();
     animationFrame = requestAnimationFrame(frame);
   }
 
@@ -1040,6 +1393,17 @@
     keys.clear();
     debugBuffer = '';
     if (cultistElement) cultistElement.classList.remove('standing');
+    // Tempo / attacks idle until she stands (PHASE.ACTIVE -> startFight()).
+    fightClock = 0;
+    bpm = BASE_BPM;
+    beatMs = 60000 / bpm;
+    beatPhase = 0;
+    beatIndex = 0;
+    lastAnimBpm = -1;
+    attacks = [];
+    patternIndex = 0;
+    nextAttackBeat = Infinity;
+    if (bpmElement) bpmElement.textContent = 'BPM --';
     fpsSampleStart = 0;
     fpsFrames = 0;
     if (fpsElement) fpsElement.textContent = 'FPS --';
@@ -1048,6 +1412,7 @@
     document.body.classList.add('aether-boss2d-active');
     active = true;
     sizeBackground();
+    sizeAttackCanvas();
     previousTime = performance.now();
     renderBackground(previousTime, true);
     renderScene();
@@ -1069,6 +1434,7 @@
   function onResize() {
     if (!active) return;
     sizeBackground();
+    sizeAttackCanvas();
     // Re-anchor the long tentacles to the box's new position, already grown.
     if (outerTentacles.length) spawnOuterTentacles(true);
   }
