@@ -269,10 +269,23 @@
     { fx: 0.25, fy: 0.75, armFrac: 0.22 }, // bottom-left
   ];
 
+  // ---- Blood orbit movement ----------------------------------------------
+  // A dark-blood ray drops from the sky onto the centre, then splits into five
+  // sky-beams whose impact points orbit the centre like planets — the orbit
+  // widening as it turns clockwise until the beams sweep past the playfield
+  // edges. One sustained wave; the player circles to stay between them.
+  const BLOOD_BEAMS = 5;
+  const BLOOD_TURNS = 1.5;           // orbit revolutions over the attack
+  const BLOOD_BEAM_WIDTH = 16;       // sky-column thickness in board space
+  const BLOOD_TELEGRAPH_BEATS = 1;   // purple warning at the centre
+  const BLOOD_HOLD_BEATS = 0.25;
+  const BLOOD_FIRE_BEATS = 6;        // the full expanding sweep
+  const BLOOD_REST_BEATS = 1;
+
   // The fight cycles through a list of movements; each runs a fixed number of
   // waves (one wave = everything that telegraphs and fires together), and when
   // its waves are spent the next movement takes over.
-  const MOVEMENT_SEQUENCE = ['pentagrams', 'tentacles', 'xrays'];
+  const MOVEMENT_SEQUENCE = ['pentagrams', 'tentacles', 'xrays', 'bloodspiral'];
   let movementIndex = 0;             // which movement is currently running
   let movementWave = 0;             // wave reached within the current movement
   let attacks = [];
@@ -280,6 +293,7 @@
 
   const easeInQuad = (t) => t * t;
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+  const smoothstep = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
 
   function setSavedEndgameScene(sceneName) {
     try {
@@ -1260,6 +1274,7 @@
     let total;
     if (movement === 'tentacles') total = spawnTentacleWave(movementWave, board);
     else if (movement === 'xrays') total = spawnXRayWave(movementWave, board);
+    else if (movement === 'bloodspiral') total = spawnBloodSpiralWave(movementWave, board);
     else total = spawnPentagramWave(movementWave, board);
     if (!total) return;
     movementWave++;
@@ -1369,6 +1384,36 @@
     return X_PATTERN.length;
   }
 
+  // The blood-spiral movement: a single sustained wave centred on the arena.
+  function spawnBloodSpiralWave(waveIndex, board) {
+    const sx = board.width / BOARD;
+    const sy = board.height / BOARD;
+    const openLo = BORDER;
+    const openHi = BOARD - BORDER;
+    const clipX0 = board.left + openLo * sx;
+    const clipX1 = board.left + openHi * sx;
+    const clipY0 = board.top + openLo * sy;
+    const clipY1 = board.top + openHi * sy;
+    attacks.push({
+      type: 'bloodSpiral',
+      state: 'telegraph',
+      cx: board.left + board.width / 2,
+      cy: board.top + board.height / 2,
+      // Reach past the opening's farthest corner so the arms clear every edge.
+      maxRadius: Math.hypot((clipX1 - clipX0) / 2, (clipY1 - clipY0) / 2) * 1.05,
+      beamWidth: BLOOD_BEAM_WIDTH * ((sx + sy) / 2),
+      clipX0, clipX1, clipY0, clipY1,
+      stretch: 0,
+      stretchBeats: BLOOD_TELEGRAPH_BEATS,
+      holdBeats: BLOOD_HOLD_BEATS,
+      holdTime: 0,
+      fire: 0,
+      fireBeats: BLOOD_FIRE_BEATS,
+      restBeats: BLOOD_REST_BEATS,
+    });
+    return 1;
+  }
+
   // One pentagram beam, pinned to a body part on the standing sprite and aimed
   // at its assigned node. Positions are captured in viewport space at spawn
   // time, so the beam stays anchored while she keeps floating.
@@ -1439,12 +1484,15 @@
       if (a.type === 'pentaBeam') renderPentaBeam(a);
       else if (a.type === 'tentacle') renderTentacleAttack(a);
       else if (a.type === 'xRay') renderXRay(a);
+      else if (a.type === 'bloodSpiral') renderBloodSpiral(a);
     }
   }
 
   // The summoning pentagram: a small dark-purple five-pointed star + ring, one
-  // point aimed along `angle`. `glow` (0..1) brightens it as the beam charges.
-  function drawAttackPentagram(x, y, radius, angle, glow) {
+  // point aimed along `angle`. `glow` (0..1) brightens it as the beam charges;
+  // `fade` (0..1, default 1) scales its overall opacity so it can ease out with
+  // the beam instead of blinking away when the wave ends.
+  function drawAttackPentagram(x, y, radius, angle, glow, fade) {
     const verts = [];
     for (let k = 0; k < 5; k++) {
       const a = angle + k * (Math.PI * 2 / 5);
@@ -1459,6 +1507,7 @@
       }
     };
     actx.save();
+    actx.globalAlpha = fade == null ? 1 : Math.max(0, Math.min(1, fade));
     actx.lineCap = 'round';
     actx.lineJoin = 'round';
     actx.shadowColor = 'rgba(150, 60, 230, ' + (0.5 + glow * 0.5).toFixed(3) + ')';
@@ -1527,8 +1576,9 @@
     }
 
     if (a.state === 'fire' || a.state === 'done') {
-      // The beam: bright at the strike, easing out over its life.
-      const life = 1 - easeOutCubic(a.fire);
+      // The beam flares at the strike, holds an instant, then eases smoothly out
+      // across the rest of the beat so it never blinks away in a single frame.
+      const life = 1 - smoothstep((a.fire - 0.2) / 0.8);
       actx.save();
       // Outer glow.
       corridorPath(a, a.length, hw);
@@ -1542,7 +1592,7 @@
       actx.fillStyle = 'rgba(224, 168, 255, ' + (0.92 * life).toFixed(3) + ')';
       actx.fill();
       actx.restore();
-      drawAttackPentagram(a.x, a.y, a.radius, a.angle, life);
+      drawAttackPentagram(a.x, a.y, a.radius, a.angle, life, life);
     }
   }
 
@@ -1676,15 +1726,13 @@
     return { ex, ey };
   }
 
-  // A super-fast bloody column that drops from the top of the screen onto the
-  // strike point at the instant the cross fires. Drawn unclipped (it comes from
-  // the sky, above the box), so it runs before renderXRay applies its clip.
-  function renderXSkyRay(a) {
-    if (a.fire > 0.5) return;
-    const descend = easeOutCubic(Math.min(1, a.fire / 0.16)); // head reaches centre fast
-    const headY = a.cy * descend;                              // from screen top (0) down
-    const alpha = 1 - easeOutCubic(Math.min(1, a.fire / 0.5));
-    const hw = a.armWidth * 0.5;
+  // A bloody column that drops from the top of the screen onto a strike point.
+  // `descend` (0..1) is the head's progress down to the point; `alpha` fades it.
+  // Drawn unclipped (it comes from the sky, above the box), so callers run it
+  // before applying their playfield clip.
+  function drawSkyRay(cx, cy, hw, descend, alpha) {
+    if (alpha <= 0) return;
+    const headY = cy * descend;
     actx.save();
     // Streak fading up into the dark, brightest at the descending head.
     const grad = actx.createLinearGradient(0, 0, 0, Math.max(1, headY));
@@ -1692,15 +1740,140 @@
     grad.addColorStop(0.7, 'rgba(220, 24, 18, ' + (0.5 * alpha).toFixed(3) + ')');
     grad.addColorStop(1, 'rgba(255, 90, 60, ' + (0.9 * alpha).toFixed(3) + ')');
     actx.fillStyle = grad;
-    actx.fillRect(a.cx - hw, 0, hw * 2, headY);
+    actx.fillRect(cx - hw, 0, hw * 2, headY);
     // Hot inner core.
     actx.fillStyle = 'rgba(255, 210, 200, ' + (0.55 * alpha).toFixed(3) + ')';
-    actx.fillRect(a.cx - hw * 0.32, 0, hw * 0.64, headY);
+    actx.fillRect(cx - hw * 0.32, 0, hw * 0.64, headY);
     // Glowing impact head.
     actx.shadowColor = 'rgba(255, 80, 60, ' + alpha.toFixed(3) + ')';
     actx.shadowBlur = 26 * alpha;
     actx.fillStyle = 'rgba(255, 220, 210, ' + alpha.toFixed(3) + ')';
-    actx.beginPath(); actx.arc(a.cx, headY, hw * 1.15, 0, Math.PI * 2); actx.fill();
+    actx.beginPath(); actx.arc(cx, headY, hw * 1.15, 0, Math.PI * 2); actx.fill();
+    actx.restore();
+  }
+
+  // The cross's super-fast strike ray, dropping at the instant it fires.
+  function renderXSkyRay(a) {
+    if (a.fire > 0.5) return;
+    const descend = easeOutCubic(Math.min(1, a.fire / 0.16)); // head reaches centre fast
+    const alpha = 1 - easeOutCubic(Math.min(1, a.fire / 0.5));
+    drawSkyRay(a.cx, a.cy, a.armWidth * 0.5, descend, alpha);
+  }
+
+  // Foot of orbiting beam k at orbit progress t: angle winds clockwise, radius
+  // widens with t. The orbit (and thus beam speed) rides a.fire, which advances
+  // in beats, so the whole attack scales with the tempo.
+  function bloodBeamFoot(a, k, t) {
+    const ang = Math.PI * 2 * BLOOD_TURNS * t + k * Math.PI * 2 / BLOOD_BEAMS;
+    const r = a.maxRadius * t;
+    return { x: a.cx + Math.cos(ang) * r, y: a.cy + Math.sin(ang) * r };
+  }
+
+  function renderBloodSpiral(a) {
+    const firing = a.state === 'fire' || a.state === 'done';
+    // Orbit progress: starts once the initial ray has landed and split.
+    const tau = firing ? Math.max(0, Math.min(1, (a.fire - 0.08) / 0.92)) : 0;
+    // A quarter-second of orbit ahead of where the beams are now.
+    const tauFuture = Math.max(0, Math.min(1, tau + (250 / (beatMs * a.fireBeats)) / 0.92));
+    // Ease the whole attack out over its final stretch instead of cutting it.
+    const endFade = 1 - smoothstep((a.fire - 0.82) / 0.18);
+
+    // --- Sky beams (unclipped: they fall from above the box) ---------------
+    if (firing) {
+      // The centre beam lands (descend animation) and then stays — the static
+      // sixth beam at the eye of the orbit.
+      const introDescend = easeOutCubic(Math.min(1, a.fire / 0.05));
+      drawSkyRay(a.cx, a.cy, a.beamWidth * 0.9, introDescend, 0.92 * endFade);
+      // Five beams whose feet orbit the centre on an ever-widening ring.
+      if (tau > 0) {
+        for (let k = 0; k < BLOOD_BEAMS; k++) {
+          const f = bloodBeamFoot(a, k, tau);
+          drawSkyRay(f.x, f.y, a.beamWidth * 0.7, 1, 0.92 * endFade);
+        }
+      }
+    }
+
+    // --- Floor layer (clipped to the opening) -----------------------------
+    actx.save();
+    actx.beginPath();
+    actx.rect(a.clipX0, a.clipY0, a.clipX1 - a.clipX0, a.clipY1 - a.clipY0);
+    actx.clip();
+
+    if (!firing) {
+      // Purple reticle that CLOSES in onto the impact point, plus a bright core.
+      const glow = a.state === 'armed' ? 1 : a.stretch;
+      actx.strokeStyle = 'rgba(120, 40, 170, 0.85)';
+      actx.lineWidth = 2;
+      actx.beginPath();
+      actx.arc(a.cx, a.cy, a.maxRadius * 0.5 * (1 - glow) + 3, 0, Math.PI * 2);
+      actx.stroke();
+      actx.shadowColor = 'rgba(150, 60, 230, ' + (0.5 + glow * 0.5).toFixed(3) + ')';
+      actx.shadowBlur = 8 + glow * 16;
+      actx.fillStyle = 'rgba(168, 84, 232, ' + (0.6 + glow * 0.4).toFixed(3) + ')';
+      actx.beginPath(); actx.arc(a.cx, a.cy, 4 + glow * 3, 0, Math.PI * 2); actx.fill();
+    } else {
+      actx.globalAlpha = endFade; // fade the floor layer out with the beams
+      // Future-path shadow: where each orbiting beam will sweep over the next
+      // second, in the same purple telegraph used by every other attack.
+      if (tau > 0 && tauFuture > tau) {
+        const steps = 14;
+        const hw = a.beamWidth / 2;
+        const fpx = [];
+        const fpy = [];
+        actx.lineCap = 'round';
+        actx.lineJoin = 'round';
+        for (let k = 0; k < BLOOD_BEAMS; k++) {
+          for (let i = 0; i <= steps; i++) {
+            const f = bloodBeamFoot(a, k, tau + (tauFuture - tau) * (i / steps));
+            fpx[i] = f.x;
+            fpy[i] = f.y;
+          }
+          // A dark shadow the full width of the column — subtle, not a bright line.
+          actx.beginPath();
+          actx.moveTo(fpx[0], fpy[0]);
+          for (let i = 1; i <= steps; i++) actx.lineTo(fpx[i], fpy[i]);
+          actx.strokeStyle = 'rgba(28, 5, 42, 0.55)';
+          actx.lineWidth = a.beamWidth;
+          actx.stroke();
+          // Thin brighter outline down each edge of the band for definition.
+          actx.strokeStyle = 'rgba(168, 84, 232, 0.5)';
+          actx.lineWidth = 1;
+          for (let side = -1; side <= 1; side += 2) {
+            actx.beginPath();
+            for (let i = 0; i <= steps; i++) {
+              const p = Math.max(0, i - 1);
+              const q = Math.min(steps, i + 1);
+              const dx = fpx[q] - fpx[p];
+              const dy = fpy[q] - fpy[p];
+              const tl = Math.hypot(dx, dy) || 1;
+              const x = fpx[i] + (-dy / tl) * hw * side;
+              const y = fpy[i] + (dx / tl) * hw * side;
+              if (i === 0) actx.moveTo(x, y); else actx.lineTo(x, y);
+            }
+            actx.stroke();
+          }
+          // Ghost foot where the beam will be a moment from now.
+          const fEnd = bloodBeamFoot(a, k, tauFuture);
+          actx.fillStyle = 'rgba(28, 5, 42, 0.55)';
+          actx.beginPath(); actx.arc(fEnd.x, fEnd.y, hw * 1.4, 0, Math.PI * 2); actx.fill();
+          actx.strokeStyle = 'rgba(168, 84, 232, 0.5)';
+          actx.lineWidth = 1;
+          actx.stroke();
+        }
+      }
+      // Dark-blood pools where each beam meets the floor, plus the static eye.
+      actx.shadowColor = 'rgba(160, 10, 12, 0.9)';
+      actx.shadowBlur = 18;
+      actx.fillStyle = 'rgba(90, 4, 8, 0.95)';
+      if (tau > 0) {
+        for (let k = 0; k < BLOOD_BEAMS; k++) {
+          const f = bloodBeamFoot(a, k, tau);
+          actx.beginPath(); actx.arc(f.x, f.y, a.beamWidth * 0.7, 0, Math.PI * 2); actx.fill();
+        }
+      }
+      actx.beginPath(); actx.arc(a.cx, a.cy, a.beamWidth * 0.6, 0, Math.PI * 2); actx.fill();
+    }
+
     actx.restore();
   }
 
