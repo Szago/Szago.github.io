@@ -74,6 +74,35 @@
   pointer-events: none;
 }
 
+/* Debug: pattern-picker buttons under the BPM readout, top-right. */
+.aether-boss2d-debug {
+  position: absolute;
+  top: 38px;
+  right: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.aether-boss2d-debug-btn {
+  padding: 6px 9px;
+  color: #d6a6ff;
+  background: rgba(10, 0, 2, 0.82);
+  border: 1px solid #4a1064;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.aether-boss2d-debug-btn:hover {
+  background: rgba(40, 8, 56, 0.92);
+  color: #f0d6ff;
+}
+
 /* Keep the actual fight UI above the background tentacles. */
 .aether-boss2d-cultist,
 .aether-boss2d-stage,

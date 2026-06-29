@@ -188,7 +188,73 @@
     // All four together.
     ['leftLeg', 'leftHead', 'rightHead', 'rightLeg'],
   ];
-  let patternIndex = 0;
+  // ---- Tentacle sweep movement -------------------------------------------
+  // A second attack pattern: limbs lash clear across the playfield, telegraph
+  // first, then strike. The movement is a scripted sequence of waves that grows
+  // from a single creeping limb into multi-limb walls and a column finale.
+  const TENTACLE_ROWS = 6;           // horizontal sweeps to cross the field
+  const TENTACLE_COLS = 6;           // vertical sweeps (column attacks)
+  const TENTACLE_BAND_H = 58;        // limb thickness in board space
+  const TENTACLE_STRETCH_BEATS = 0.85;
+  const TENTACLE_FIRE_BEATS = 0.9;   // strike + withdraw; shorter = quicker clear
+  const TENTACLE_REST_BEATS = 0.25;  // breathing room before the next limb rises
+
+  // Each wave is a list of limb specs that telegraph and strike together:
+  //   { orient: 'row'|'col', index, side }
+  //   row limbs span horizontally (side 'left'/'right' is the origin wall);
+  //   col limbs span vertically  (side 'top'/'bottom').
+  // Rows are indexed 0 (top) -> ROWS-1 (bottom); columns 0 (left) -> COLS-1.
+  const TENTACLE_PATTERN = (function buildTentaclePattern() {
+    const row = (index, side) => ({ orient: 'row', index, side });
+    const col = (index, side) => ({ orient: 'col', index, side });
+    // Edge groups: the two bands hugging each wall. Verticals on the left/right
+    // walls run opposite ways; horizontals own the top/bottom rows. Used so the
+    // outer rows and columns fill while the centre rows/cols stay open.
+    const leftVerticals = () => [0, 1].map((c) => col(c, 'top'));
+    const rightVerticals = () => [TENTACLE_COLS - 2, TENTACLE_COLS - 1].map((c) => col(c, 'bottom'));
+    const topHorizontals = () => [0, 1].map((r) => row(r, 'left'));
+    const bottomHorizontals = () => [TENTACLE_ROWS - 2, TENTACLE_ROWS - 1].map((r) => row(r, 'right'));
+
+    const waves = [];
+    // 1) Bottom -> top, one limb at a time, alternating walls.
+    for (let i = 0; i < TENTACLE_ROWS; i++) {
+      waves.push([row(TENTACLE_ROWS - 1 - i, i % 2 ? 'right' : 'left')]);
+    }
+    // 2) Top -> bottom, two rows at a time, from opposite walls.
+    for (let r = 0; r + 1 < TENTACLE_ROWS; r += 2) {
+      waves.push([row(r, 'left'), row(r + 1, 'right')]);
+    }
+    // 3) Top -> bottom, three rows at a time.
+    for (let r = 0; r + 2 < TENTACLE_ROWS; r += 3) {
+      waves.push([row(r, 'left'), row(r + 1, 'right'), row(r + 2, 'left')]);
+    }
+    // 4) The odd rows at once (1,3,5 -> 0-indexed 0,2,4).
+    waves.push([row(0, 'left'), row(2, 'right'), row(4, 'left')]);
+    // 5) The even rows at once (2,4,6 -> 0-indexed 1,3,5).
+    waves.push([row(1, 'right'), row(3, 'left'), row(5, 'right')]);
+    // 6) Two vertical limbs hugging the left wall (descending).
+    waves.push(leftVerticals());
+    // 7) Two vertical limbs on the right, the opposite direction (rising).
+    waves.push(rightVerticals());
+    // 8) Left + bottom edges together (an L bracket; the top-right stays open).
+    waves.push([...leftVerticals(), ...bottomHorizontals()]);
+    // 9) The same bracket mirrored onto the top + right edges.
+    waves.push([...topHorizontals(), ...rightVerticals()]);
+    // 10) All four edges at once — every outer band fills, only the centre is safe.
+    waves.push([
+      ...leftVerticals(), ...rightVerticals(),
+      ...topHorizontals(), ...bottomHorizontals(),
+    ]);
+    return waves;
+  })();
+
+  // The fight cycles through a list of movements; each runs a fixed number of
+  // waves (one wave = everything that telegraphs and fires together), and when
+  // its waves are spent the next movement takes over. The pentagram barrage and
+  // the tentacle sweep simply alternate.
+  const MOVEMENT_SEQUENCE = ['pentagrams', 'tentacles'];
+  let movementIndex = 0;             // which movement is currently running
+  let movementWave = 0;             // wave reached within the current movement
   let attacks = [];
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
 
@@ -413,6 +479,7 @@
       '<canvas id="aether-boss2d-attacks" class="aether-boss2d-attacks"></canvas>' +
       '<div id="aether-boss2d-fps" class="aether-boss2d-fps">FPS --</div>' +
       '<div id="aether-boss2d-bpm" class="aether-boss2d-bpm">BPM --</div>' +
+      '<div id="aether-boss2d-debug" class="aether-boss2d-debug"></div>' +
       // The boss is two stacked layers so the kneel->stand swap can crossfade
       // and rise, and so the standing form can float and pixel-jitter on top.
       '<div id="aether-boss2d-cultist" class="aether-boss2d-cultist">' +
@@ -441,6 +508,18 @@
     cultistElement = document.getElementById('aether-boss2d-cultist');
     cultistStandWrap = overlay.querySelector('.aether-boss2d-cultist-stand-wrap');
     cultistStandImg = overlay.querySelector('.aether-boss2d-cultist-stand');
+
+    // Debug: one button per attack movement. Clicking aborts whatever is
+    // running and restarts the fight on the chosen pattern.
+    const debugPanel = document.getElementById('aether-boss2d-debug');
+    MOVEMENT_SEQUENCE.forEach((name, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'aether-boss2d-debug-btn';
+      btn.textContent = name.toUpperCase();
+      btn.addEventListener('click', () => { startMovement(i); btn.blur(); });
+      debugPanel.appendChild(btn);
+    });
   }
 
   // ---- Rendering ---------------------------------------------------------
@@ -999,7 +1078,8 @@
     beatIndex = 0;
     lastAnimBpm = -1;
     attacks = [];
-    patternIndex = 0;
+    movementIndex = 0;
+    movementWave = 0;
     nextAttackBeat = 2; // a couple of beats to read the room before the first strike
     applyTempoToAnimations();
     if (bpmElement) bpmElement.textContent = 'BPM ' + bpm;
@@ -1058,6 +1138,19 @@
     hero.x = ARENA_CX;
     hero.y = ARENA_CY;
     setPhase(PHASE.ACTIVE);
+  }
+
+  // Debug: abort the running pattern and start the fight on `index` of
+  // MOVEMENT_SEQUENCE, spawning its first wave at once.
+  function startMovement(index) {
+    if (!active) return;
+    if (phase !== PHASE.ACTIVE) skipToActive(); // ensures the fight has begun
+    attacks = [];
+    if (actx) actx.clearRect(0, 0, attackCanvas.width, attackCanvas.height);
+    movementIndex = index;
+    movementWave = 0;
+    spawnWave();
+    nextAttackBeat = Infinity; // re-armed once this wave resolves
   }
 
   function updatePhase(dt) {
@@ -1136,15 +1229,91 @@
     };
   }
 
-  // Spawns the next wave of the pattern; every pentagram in it fires together.
+  // Spawns the next wave of the current movement. Each spawn helper returns the
+  // movement's total wave count (or null if it couldn't measure the stage yet,
+  // in which case we leave the schedule untouched and retry on the next beat).
+  // When the current movement's waves are spent, the next movement takes over.
   function spawnWave() {
-    const wave = ATTACK_PATTERN[patternIndex % ATTACK_PATTERN.length];
-    patternIndex++;
-    const sprite = cultistStandImg && cultistStandImg.getBoundingClientRect();
     const board = canvas && canvas.getBoundingClientRect();
-    if (!sprite || !board || !sprite.width || !board.width) return;
+    if (!board || !board.width) return;
+    const movement = MOVEMENT_SEQUENCE[movementIndex % MOVEMENT_SEQUENCE.length];
+    const total = movement === 'tentacles'
+      ? spawnTentacleWave(movementWave, board)
+      : spawnPentagramWave(movementWave, board);
+    if (!total) return;
+    movementWave++;
+    if (movementWave >= total) {
+      movementIndex++;
+      movementWave = 0;
+    }
+  }
+
+  // One pentagram-barrage wave; every pentagram in it telegraphs and fires
+  // together, all aimed at the playfield's shared nodes.
+  function spawnPentagramWave(waveIndex, board) {
+    const sprite = cultistStandImg && cultistStandImg.getBoundingClientRect();
+    if (!sprite || !sprite.width) return null;
     const nodes = pentAimNodes(board);
+    const wave = ATTACK_PATTERN[waveIndex % ATTACK_PATTERN.length];
     for (const anchorKey of wave) spawnPentaBeam(anchorKey, sprite, nodes);
+    return ATTACK_PATTERN.length;
+  }
+
+  // One wave of the tentacle movement: spawns every limb in the scripted wave
+  // (all telegraph and strike together) and reports the movement's length.
+  function spawnTentacleWave(waveIndex, board) {
+    const wave = TENTACLE_PATTERN[waveIndex];
+    wave.forEach((spec, k) => pushTentacle(spec, board, waveIndex + k));
+    return TENTACLE_PATTERN.length;
+  }
+
+  // Builds one limb from a spec into viewport space. Geometry is captured as a
+  // root point, a stretch direction, and a perpendicular (band thickness axis),
+  // so the same renderer handles horizontal rows and vertical columns. Roots sit
+  // on the outer box edges; the clip rect (the frame opening) tucks each limb's
+  // start and end under the bloody border.
+  function pushTentacle(spec, board, phaseSeed) {
+    const sx = board.width / BOARD;
+    const sy = board.height / BOARD;
+    const openLo = BORDER;
+    const openHi = BOARD - BORDER;
+    let rx, ry, dirX, dirY, nx, ny, len, hw;
+    if (spec.orient === 'col') {
+      const spacing = (openHi - openLo) / TENTACLE_COLS;
+      const cx = board.left + (openLo + (spec.index + 0.5) * spacing) * sx;
+      nx = 1; ny = 0;                       // band thickness runs horizontally
+      hw = (TENTACLE_BAND_H / 2) * sx;
+      len = board.height;
+      if (spec.side === 'bottom') { rx = cx; ry = board.top + board.height; dirX = 0; dirY = -1; }
+      else { rx = cx; ry = board.top; dirX = 0; dirY = 1; }
+    } else {
+      const spacing = (openHi - openLo) / TENTACLE_ROWS;
+      const cy = board.top + (openLo + (spec.index + 0.5) * spacing) * sy;
+      nx = 0; ny = 1;                       // band thickness runs vertically
+      hw = (TENTACLE_BAND_H / 2) * sy;
+      len = board.width;
+      if (spec.side === 'right') { rx = board.left + board.width; ry = cy; dirX = -1; dirY = 0; }
+      else { rx = board.left; ry = cy; dirX = 1; dirY = 0; }
+    }
+    attacks.push({
+      type: 'tentacle',
+      state: 'telegraph',
+      rx, ry, dirX, dirY, nx, ny, len, hw,
+      clipX0: board.left + openLo * sx,
+      clipX1: board.left + openHi * sx,
+      clipY0: board.top + openLo * sy,
+      clipY1: board.top + openHi * sy,
+      waves: 1.6,
+      amp: hw * 0.4,
+      speed: 0.004,
+      phase: phaseSeed * 1.7,
+      stretch: 0,
+      stretchBeats: TENTACLE_STRETCH_BEATS,
+      readyBeat: 0,
+      fire: 0,
+      fireBeats: TENTACLE_FIRE_BEATS,
+      restBeats: TENTACLE_REST_BEATS,
+    });
   }
 
   // One pentagram beam, pinned to a body part on the standing sprite and aimed
@@ -1172,6 +1341,7 @@
       readyBeat: 0,
       fire: 0,               // 0..1 beam life
       fireBeats: 1,
+      restBeats: ATTACK_REST_BEATS,
     });
   }
 
@@ -1194,8 +1364,11 @@
       }
     }
     if (attacks.length && attacks.every((a) => a.state === 'done')) {
+      // Each movement carries its own breathing room (tentacles rest less than
+      // the pentagram barrage); all attacks in a wave share the same value.
+      const rest = attacks[0].restBeats != null ? attacks[0].restBeats : ATTACK_REST_BEATS;
       attacks = [];
-      nextAttackBeat = beatIndex + ATTACK_REST_BEATS;
+      nextAttackBeat = beatIndex + rest;
     }
   }
 
@@ -1206,6 +1379,7 @@
     if (phase !== PHASE.ACTIVE) return;
     for (const a of attacks) {
       if (a.type === 'pentaBeam') renderPentaBeam(a);
+      else if (a.type === 'tentacle') renderTentacleAttack(a);
     }
   }
 
@@ -1313,6 +1487,117 @@
     }
   }
 
+  // Scratch buffers for the horizontal tentacle ribbon (allocation-free path).
+  const TENT_SEGS = 22;
+  const tentPX = new Float32Array(TENT_SEGS + 1);
+  const tentPY = new Float32Array(TENT_SEGS + 1);
+  const tentNX = new Float32Array(TENT_SEGS + 1);
+  const tentNY = new Float32Array(TENT_SEGS + 1);
+  const tentHW = new Float32Array(TENT_SEGS + 1);
+
+  function renderTentacleAttack(a) {
+    // Clip to the frame opening so the limb's start and end tuck under the
+    // outer border instead of spilling onto the floor inside the playfield.
+    actx.save();
+    actx.beginPath();
+    actx.rect(a.clipX0, a.clipY0, a.clipX1 - a.clipX0, a.clipY1 - a.clipY0);
+    actx.clip();
+
+    if (a.state === 'telegraph' || a.state === 'armed') {
+      // Purple outline band snaking across the floor where the limb will land.
+      const reach = a.len * a.stretch;
+      const fx = a.rx + a.dirX * reach;
+      const fy = a.ry + a.dirY * reach;
+      const ox = a.nx * a.hw;
+      const oy = a.ny * a.hw;
+      actx.beginPath();
+      actx.moveTo(a.rx + ox, a.ry + oy);
+      actx.lineTo(fx + ox, fy + oy);
+      actx.lineTo(fx - ox, fy - oy);
+      actx.lineTo(a.rx - ox, a.ry - oy);
+      actx.closePath();
+      actx.fillStyle = 'rgba(58, 10, 80, 0.22)';
+      actx.fill();
+      actx.strokeStyle = 'rgba(120, 40, 170, 0.85)';
+      actx.lineWidth = 2;
+      actx.stroke();
+      // Energy creeping along the corridor edges.
+      actx.setLineDash([7, 9]);
+      actx.lineDashOffset = -clock * 0.04;
+      actx.strokeStyle = 'rgba(186, 96, 236, ' + (a.state === 'armed' ? 0.85 : 0.55).toFixed(3) + ')';
+      actx.lineWidth = 1.5;
+      actx.beginPath();
+      actx.moveTo(a.rx + ox, a.ry + oy); actx.lineTo(fx + ox, fy + oy);
+      actx.moveTo(a.rx - ox, a.ry - oy); actx.lineTo(fx - ox, fy - oy);
+      actx.stroke();
+      actx.setLineDash([]);
+      // Bright snaking tip while it is still extending.
+      if (a.state === 'telegraph') {
+        actx.shadowColor = 'rgba(190, 100, 240, 0.9)';
+        actx.shadowBlur = 14;
+        actx.fillStyle = 'rgba(214, 150, 255, 0.95)';
+        actx.beginPath(); actx.arc(fx, fy, 5, 0, Math.PI * 2); actx.fill();
+      }
+    } else if (a.state === 'fire' || a.state === 'done') {
+      // The limb lashes out of the wall, holds, then withdraws.
+      const extend = easeOutCubic(Math.min(1, a.fire / 0.35));
+      const fade = a.fire < 0.7 ? 1 : Math.max(0, 1 - (a.fire - 0.7) / 0.3);
+      drawTentacleRibbon(a, a.len * extend, fade);
+    }
+
+    actx.restore();
+  }
+
+  // A writhing limb: a tapering filled ribbon rooted at one wall and reaching
+  // `reach` px along its axis, with a purple rim and glowing centreline nodes.
+  function drawTentacleRibbon(a, reach, alpha) {
+    if (alpha <= 0 || reach <= 0) return;
+    const segs = TENT_SEGS;
+    for (let s = 0; s <= segs; s++) {
+      const u = s / segs;
+      const along = reach * u;
+      const wob = Math.sin(u * a.waves * Math.PI + clock * a.speed + a.phase) * a.amp * (0.35 + u * 0.65);
+      tentPX[s] = a.rx + a.dirX * along + a.nx * wob;
+      tentPY[s] = a.ry + a.dirY * along + a.ny * wob;
+      // Thick at the wall, tapering toward the writhing tip.
+      tentHW[s] = Math.max(1.5, a.hw * (0.55 + 0.45 * Math.pow(1 - u, 0.5)));
+    }
+    for (let i = 0; i <= segs; i++) {
+      const p = Math.max(0, i - 1);
+      const q = Math.min(segs, i + 1);
+      const dx = tentPX[q] - tentPX[p];
+      const dy = tentPY[q] - tentPY[p];
+      const tl = Math.hypot(dx, dy) || 1;
+      tentNX[i] = -dy / tl;
+      tentNY[i] = dx / tl;
+    }
+    actx.save();
+    actx.lineJoin = 'round';
+    actx.lineCap = 'round';
+    // Body ribbon.
+    actx.beginPath();
+    actx.moveTo(tentPX[0] + tentNX[0] * tentHW[0], tentPY[0] + tentNY[0] * tentHW[0]);
+    for (let i = 1; i <= segs; i++) actx.lineTo(tentPX[i] + tentNX[i] * tentHW[i], tentPY[i] + tentNY[i] * tentHW[i]);
+    for (let i = segs; i >= 0; i--) actx.lineTo(tentPX[i] - tentNX[i] * tentHW[i], tentPY[i] - tentNY[i] * tentHW[i]);
+    actx.closePath();
+    actx.shadowColor = 'rgba(150, 60, 230, ' + (0.75 * alpha).toFixed(3) + ')';
+    actx.shadowBlur = 22 * alpha;
+    actx.fillStyle = 'rgba(14, 5, 22, ' + (0.96 * alpha).toFixed(3) + ')';
+    actx.fill();
+    actx.shadowBlur = 0;
+    // Purple rim so the limb reads against the dark floor.
+    actx.strokeStyle = 'rgba(150, 60, 230, ' + (0.7 * alpha).toFixed(3) + ')';
+    actx.lineWidth = 2;
+    actx.stroke();
+    // Glowing suckers down the centreline.
+    for (let s = 2; s < segs; s += 2) {
+      const r = Math.max(1.5, tentHW[s] * 0.32);
+      actx.fillStyle = 'rgba(120, 40, 170, ' + (0.5 * alpha).toFixed(3) + ')';
+      actx.beginPath(); actx.arc(tentPX[s], tentPY[s], r, 0, Math.PI * 2); actx.fill();
+    }
+    actx.restore();
+  }
+
   function updateFpsCounter(time) {
     if (!fpsSampleStart) fpsSampleStart = time;
     fpsFrames++;
@@ -1401,7 +1686,8 @@
     beatIndex = 0;
     lastAnimBpm = -1;
     attacks = [];
-    patternIndex = 0;
+    movementIndex = 0;
+    movementWave = 0;
     nextAttackBeat = Infinity;
     if (bpmElement) bpmElement.textContent = 'BPM --';
     fpsSampleStart = 0;
