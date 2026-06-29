@@ -248,11 +248,28 @@
     return waves;
   })();
 
+  // ---- X-ray cross movement ----------------------------------------------
+  // An expanding purple "X" telegraphs from a point; once fully grown, a fast
+  // bloody ray slams down from the sky in that same cross. The first lands dead
+  // centre (on the pentagram); the next four strike the quadrants, clockwise
+  // from the top-left.
+  const X_ARM_WIDTH = 38;            // beam thickness in board space
+  const X_ARM_BEATS = 1;             // telegraph expansion (time to read/dodge)
+  const X_FIRE_BEATS = 0.35;         // the strike: super fast
+  const X_REST_BEATS = 0.5;
+  // Positions are fractions of the frame opening; armFrac scales each arm to it.
+  const X_PATTERN = [
+    { fx: 0.5,  fy: 0.5,  armFrac: 0.22 }, // dead centre of the pentagram
+    { fx: 0.25, fy: 0.25, armFrac: 0.22 }, // top-left quadrant
+    { fx: 0.75, fy: 0.25, armFrac: 0.22 }, // top-right
+    { fx: 0.75, fy: 0.75, armFrac: 0.22 }, // bottom-right
+    { fx: 0.25, fy: 0.75, armFrac: 0.22 }, // bottom-left
+  ];
+
   // The fight cycles through a list of movements; each runs a fixed number of
   // waves (one wave = everything that telegraphs and fires together), and when
-  // its waves are spent the next movement takes over. The pentagram barrage and
-  // the tentacle sweep simply alternate.
-  const MOVEMENT_SEQUENCE = ['pentagrams', 'tentacles'];
+  // its waves are spent the next movement takes over.
+  const MOVEMENT_SEQUENCE = ['pentagrams', 'tentacles', 'xrays'];
   let movementIndex = 0;             // which movement is currently running
   let movementWave = 0;             // wave reached within the current movement
   let attacks = [];
@@ -1237,9 +1254,10 @@
     const board = canvas && canvas.getBoundingClientRect();
     if (!board || !board.width) return;
     const movement = MOVEMENT_SEQUENCE[movementIndex % MOVEMENT_SEQUENCE.length];
-    const total = movement === 'tentacles'
-      ? spawnTentacleWave(movementWave, board)
-      : spawnPentagramWave(movementWave, board);
+    let total;
+    if (movement === 'tentacles') total = spawnTentacleWave(movementWave, board);
+    else if (movement === 'xrays') total = spawnXRayWave(movementWave, board);
+    else total = spawnPentagramWave(movementWave, board);
     if (!total) return;
     movementWave++;
     if (movementWave >= total) {
@@ -1316,6 +1334,36 @@
     });
   }
 
+  // One wave of the X-ray movement: a single expanding cross at a scripted spot.
+  function spawnXRayWave(waveIndex, board) {
+    const spec = X_PATTERN[waveIndex];
+    const sx = board.width / BOARD;
+    const sy = board.height / BOARD;
+    const openLo = BORDER;
+    const openHi = BOARD - BORDER;
+    const span = openHi - openLo;
+    const scale = (sx + sy) / 2;
+    attacks.push({
+      type: 'xRay',
+      state: 'telegraph',
+      cx: board.left + (openLo + spec.fx * span) * sx,
+      cy: board.top + (openLo + spec.fy * span) * sy,
+      armLen: span * spec.armFrac * scale,
+      armWidth: X_ARM_WIDTH * scale,
+      clipX0: board.left + openLo * sx,
+      clipX1: board.left + openHi * sx,
+      clipY0: board.top + openLo * sy,
+      clipY1: board.top + openHi * sy,
+      stretch: 0,
+      stretchBeats: X_ARM_BEATS,
+      readyBeat: 0,
+      fire: 0,
+      fireBeats: X_FIRE_BEATS,
+      restBeats: X_REST_BEATS,
+    });
+    return X_PATTERN.length;
+  }
+
   // One pentagram beam, pinned to a body part on the standing sprite and aimed
   // at its assigned node. Positions are captured in viewport space at spawn
   // time, so the beam stays anchored while she keeps floating.
@@ -1380,6 +1428,7 @@
     for (const a of attacks) {
       if (a.type === 'pentaBeam') renderPentaBeam(a);
       else if (a.type === 'tentacle') renderTentacleAttack(a);
+      else if (a.type === 'xRay') renderXRay(a);
     }
   }
 
@@ -1595,6 +1644,116 @@
       actx.fillStyle = 'rgba(120, 40, 170, ' + (0.5 * alpha).toFixed(3) + ')';
       actx.beginPath(); actx.arc(tentPX[s], tentPY[s], r, 0, Math.PI * 2); actx.fill();
     }
+    actx.restore();
+  }
+
+  // The four diagonal arms of an X, written into a 4-corner corridor each.
+  const X_ANGLES = [Math.PI / 4, Math.PI * 3 / 4, Math.PI * 5 / 4, Math.PI * 7 / 4];
+
+  function xArmCorridor(cx, cy, ang, reach, hw) {
+    const dx = Math.cos(ang);
+    const dy = Math.sin(ang);
+    const nx = -dy;
+    const ny = dx;
+    const ex = cx + dx * reach;
+    const ey = cy + dy * reach;
+    actx.beginPath();
+    actx.moveTo(cx + nx * hw, cy + ny * hw);
+    actx.lineTo(ex + nx * hw, ey + ny * hw);
+    actx.lineTo(ex - nx * hw, ey - ny * hw);
+    actx.lineTo(cx - nx * hw, cy - ny * hw);
+    actx.closePath();
+    return { ex, ey };
+  }
+
+  // A super-fast bloody column that drops from the top of the screen onto the
+  // strike point at the instant the cross fires. Drawn unclipped (it comes from
+  // the sky, above the box), so it runs before renderXRay applies its clip.
+  function renderXSkyRay(a) {
+    if (a.fire > 0.5) return;
+    const descend = easeOutCubic(Math.min(1, a.fire / 0.16)); // head reaches centre fast
+    const headY = a.cy * descend;                              // from screen top (0) down
+    const alpha = 1 - easeOutCubic(Math.min(1, a.fire / 0.5));
+    const hw = a.armWidth * 0.5;
+    actx.save();
+    // Streak fading up into the dark, brightest at the descending head.
+    const grad = actx.createLinearGradient(0, 0, 0, Math.max(1, headY));
+    grad.addColorStop(0, 'rgba(150, 8, 10, 0)');
+    grad.addColorStop(0.7, 'rgba(220, 24, 18, ' + (0.5 * alpha).toFixed(3) + ')');
+    grad.addColorStop(1, 'rgba(255, 90, 60, ' + (0.9 * alpha).toFixed(3) + ')');
+    actx.fillStyle = grad;
+    actx.fillRect(a.cx - hw, 0, hw * 2, headY);
+    // Hot inner core.
+    actx.fillStyle = 'rgba(255, 210, 200, ' + (0.55 * alpha).toFixed(3) + ')';
+    actx.fillRect(a.cx - hw * 0.32, 0, hw * 0.64, headY);
+    // Glowing impact head.
+    actx.shadowColor = 'rgba(255, 80, 60, ' + alpha.toFixed(3) + ')';
+    actx.shadowBlur = 26 * alpha;
+    actx.fillStyle = 'rgba(255, 220, 210, ' + alpha.toFixed(3) + ')';
+    actx.beginPath(); actx.arc(a.cx, headY, hw * 1.15, 0, Math.PI * 2); actx.fill();
+    actx.restore();
+  }
+
+  function renderXRay(a) {
+    // The sky ray slams down outside the playfield clip (it falls from above).
+    if (a.state === 'fire' || a.state === 'done') renderXSkyRay(a);
+
+    actx.save();
+    // Clip to the frame opening so arms tuck under the border like every attack.
+    actx.beginPath();
+    actx.rect(a.clipX0, a.clipY0, a.clipX1 - a.clipX0, a.clipY1 - a.clipY0);
+    actx.clip();
+
+    if (a.state === 'telegraph' || a.state === 'armed') {
+      // The purple X expands from its middle point outward.
+      const reach = a.armLen * a.stretch;
+      const hw = a.armWidth / 2;
+      for (const ang of X_ANGLES) {
+        const tip = xArmCorridor(a.cx, a.cy, ang, reach, hw);
+        actx.fillStyle = 'rgba(58, 10, 80, 0.22)';
+        actx.fill();
+        actx.strokeStyle = 'rgba(120, 40, 170, 0.85)';
+        actx.lineWidth = 2;
+        actx.stroke();
+        // Bright crawling tip while the arm is still growing.
+        if (a.state === 'telegraph') {
+          actx.shadowColor = 'rgba(190, 100, 240, 0.9)';
+          actx.shadowBlur = 14;
+          actx.fillStyle = 'rgba(214, 150, 255, 0.95)';
+          actx.beginPath(); actx.arc(tip.ex, tip.ey, 5, 0, Math.PI * 2); actx.fill();
+          actx.shadowBlur = 0;
+        }
+      }
+      // Glowing core at the middle, brightening as the cross arms.
+      const glow = a.state === 'armed' ? 1 : a.stretch;
+      actx.shadowColor = 'rgba(150, 60, 230, ' + (0.5 + glow * 0.5).toFixed(3) + ')';
+      actx.shadowBlur = 8 + glow * 16;
+      actx.fillStyle = 'rgba(168, 84, 232, ' + (0.6 + glow * 0.4).toFixed(3) + ')';
+      actx.beginPath(); actx.arc(a.cx, a.cy, 4 + glow * 3, 0, Math.PI * 2); actx.fill();
+    } else if (a.state === 'fire' || a.state === 'done') {
+      // A fast bloody ray slams down in the same cross, flaring then fading.
+      const life = 1 - easeOutCubic(a.fire);
+      const hw = a.armWidth / 2;
+      for (const ang of X_ANGLES) {
+        // Outer bloody glow.
+        xArmCorridor(a.cx, a.cy, ang, a.armLen, hw);
+        actx.shadowColor = 'rgba(230, 30, 22, ' + (0.85 * life).toFixed(3) + ')';
+        actx.shadowBlur = 26 * life;
+        actx.fillStyle = 'rgba(150, 8, 10, ' + (0.6 * life).toFixed(3) + ')';
+        actx.fill();
+        // Hot core.
+        xArmCorridor(a.cx, a.cy, ang, a.armLen, hw * 0.42);
+        actx.shadowBlur = 16 * life;
+        actx.fillStyle = 'rgba(255, 196, 180, ' + (0.92 * life).toFixed(3) + ')';
+        actx.fill();
+      }
+      // Impact bloom at the crossing point.
+      actx.shadowColor = 'rgba(255, 70, 50, ' + (0.9 * life).toFixed(3) + ')';
+      actx.shadowBlur = 30 * life;
+      actx.fillStyle = 'rgba(255, 210, 200, ' + (0.95 * life).toFixed(3) + ')';
+      actx.beginPath(); actx.arc(a.cx, a.cy, hw * (0.8 + (1 - life) * 1.6), 0, Math.PI * 2); actx.fill();
+    }
+
     actx.restore();
   }
 
