@@ -143,6 +143,7 @@
   // Attacks live in viewport space (the attack canvas) because the summoning
   // pentagrams sit outside the playfield, pinned to the cultist's body.
   const ATTACK_REST_BEATS = 1;       // beats of breathing room between attack waves
+  const ATTACK_HOLD_BEATS = 0.25;    // fully-telegraphed hold before a beam fires
   // Spawn points expressed as fractions of the standing sprite's bounding box
   // (x from its left, y from its top), so each pentagram tracks a body part.
   // Leg pentagrams sit well clear of her legs; head pentagrams sit twice as far
@@ -196,6 +197,7 @@
   const TENTACLE_COLS = 6;           // vertical sweeps (column attacks)
   const TENTACLE_BAND_H = 58;        // limb thickness in board space
   const TENTACLE_STRETCH_BEATS = 0.85;
+  const TENTACLE_HOLD_BEATS = 0.15;  // fully-telegraphed hold before the limb lashes
   const TENTACLE_FIRE_BEATS = 0.9;   // strike + withdraw; shorter = quicker clear
   const TENTACLE_REST_BEATS = 0.25;  // breathing room before the next limb rises
 
@@ -255,6 +257,7 @@
   // from the top-left.
   const X_ARM_WIDTH = 38;            // beam thickness in board space
   const X_ARM_BEATS = 1;             // telegraph expansion (time to read/dodge)
+  const X_HOLD_BEATS = 0.35;         // hangs fully expanded, then slams down
   const X_FIRE_BEATS = 0.35;         // the strike: super fast
   const X_REST_BEATS = 0.5;
   // Positions are fractions of the frame opening; armFrac scales each arm to it.
@@ -1327,7 +1330,8 @@
       phase: phaseSeed * 1.7,
       stretch: 0,
       stretchBeats: TENTACLE_STRETCH_BEATS,
-      readyBeat: 0,
+      holdBeats: TENTACLE_HOLD_BEATS,
+      holdTime: 0,
       fire: 0,
       fireBeats: TENTACLE_FIRE_BEATS,
       restBeats: TENTACLE_REST_BEATS,
@@ -1356,7 +1360,8 @@
       clipY1: board.top + openHi * sy,
       stretch: 0,
       stretchBeats: X_ARM_BEATS,
-      readyBeat: 0,
+      holdBeats: X_HOLD_BEATS,
+      holdTime: 0,
       fire: 0,
       fireBeats: X_FIRE_BEATS,
       restBeats: X_REST_BEATS,
@@ -1386,7 +1391,8 @@
       width: 57.5,           // 1.25x the original beam width
       stretch: 0,            // 0..1 telegraph growth
       stretchBeats: 0.75,    // shorter telegraph: less time to dodge
-      readyBeat: 0,
+      holdBeats: ATTACK_HOLD_BEATS,
+      holdTime: 0,
       fire: 0,               // 0..1 beam life
       fireBeats: 1,
       restBeats: ATTACK_REST_BEATS,
@@ -1401,11 +1407,15 @@
         if (a.stretch >= 1) {
           a.stretch = 1;
           a.state = 'armed';
-          a.readyBeat = beatIndex;
+          a.holdTime = 0;
         }
       } else if (a.state === 'armed') {
-        // The strike lands on the first beat after the telegraph finished.
-        if (beatIndex > a.readyBeat) { a.state = 'fire'; a.fire = 0; }
+        // Hold fully telegraphed for a fixed, tempo-relative beat fraction, then
+        // strike. This decouples the strike from beat boundaries, so the lead
+        // time (telegraph + hold) is identical every wave instead of swinging by
+        // up to a beat depending on where the telegraph happened to finish.
+        a.holdTime += dt;
+        if (a.holdTime >= beatMs * a.holdBeats) { a.state = 'fire'; a.fire = 0; }
       } else if (a.state === 'fire') {
         a.fire += dt / (beatMs * a.fireBeats);
         if (a.fire >= 1) { a.fire = 1; a.state = 'done'; }
