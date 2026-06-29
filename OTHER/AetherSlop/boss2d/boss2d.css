@@ -11,8 +11,12 @@
      boss. The cultist fills that upper space; her taller standing form rises
      up into the padding above the kneel baseline. */
   justify-content: flex-start;
-  padding-top: 140px;
-  gap: 26px;
+  /* The cultist sits a touch higher and the box rides lower, opening the gap
+     between them for her name + wrath gauge. Tune these two with stage-row's
+     margin-top below. padding-top must stay >= 120px or her standing form (which
+     overhangs 120px above its container) clips at the top of the screen. */
+  padding-top: 120px;
+  gap: 0;
   /* The black empty plane the fight floats in. */
   background:
     radial-gradient(circle at 50% 45%, #120203 0%, #060001 55%, #000000 100%);
@@ -103,12 +107,193 @@
   color: #f0d6ff;
 }
 
-/* Keep the actual fight UI above the background tentacles. */
+/* Keep the actual fight UI above the background tentacles. The box stays at
+   z-index 1 (below the attack canvas, so beams overlay the playfield); the
+   side/wrath bars sit at 5 (above it) so attacks never paint over them. The
+   stage row deliberately has no z-index, so its children stack in the overlay's
+   own context rather than being trapped beneath the attack canvas. */
 .aether-boss2d-cultist,
 .aether-boss2d-stage,
 .aether-boss2d-help {
   position: relative;
   z-index: 1;
+}
+
+.aether-boss2d-stage-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;           /* how far the box rides below the wrath gauge */
+}
+
+/* --- The cultist's name + wrath gauge, under her feet ------------------- */
+.aether-boss2d-wrath {
+  position: relative;
+  z-index: 5;
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.aether-boss2d-wrath-name {
+  color: #e8b0a8;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-shadow: 0 0 8px rgba(150, 6, 4, 0.8);
+}
+
+.aether-boss2d-wrath-track {
+  position: relative;
+  width: 300px;
+  height: 16px;
+  background: rgba(10, 0, 2, 0.85);
+  border: 1px solid #5a0c10;
+  overflow: hidden;
+}
+
+.aether-boss2d-wrath-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
+  background: linear-gradient(90deg, #7a0c0a, #d6201a);
+  box-shadow: 0 0 10px rgba(214, 32, 26, 0.7);
+}
+
+.aether-boss2d-wrath-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  color: #ffd9d2;
+  text-shadow: 0 0 3px #000;
+}
+
+/* --- Player HP (right) and VP (left) vertical bars --------------------- */
+.aether-boss2d-vbar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.aether-boss2d-vbar-label {
+  font-size: 9px;
+  color: #e8b0a8;
+  text-shadow: 0 0 4px #000;
+}
+
+.aether-boss2d-vbar-track {
+  position: relative;
+  width: 22px;
+  height: 500px;             /* matches the combat box */
+  background: rgba(10, 0, 2, 0.85);
+  border: 1px solid #5a0c10;
+  overflow: hidden;
+}
+
+.aether-boss2d-vbar-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0%;
+}
+
+.aether-boss2d-hp .aether-boss2d-vbar-fill {
+  background: linear-gradient(0deg, #7a0c0a, #e0342c);
+  box-shadow: 0 0 10px rgba(224, 52, 44, 0.6);
+}
+
+.aether-boss2d-vp .aether-boss2d-vbar-fill {
+  background: linear-gradient(0deg, #2a2c6a, #6a86e0);
+  box-shadow: 0 0 10px rgba(106, 134, 224, 0.6);
+}
+
+/* VP full: the bar pulses and a sideways "ATTACK READY" prompt appears. */
+.aether-boss2d-vp-ready {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 9px;
+  letter-spacing: 4px;
+  color: #ffffff;
+  text-shadow: 0 0 6px #1a2c8a, 0 0 3px #000;
+  pointer-events: none;
+}
+
+.aether-boss2d-vp.is-full .aether-boss2d-vp-ready {
+  display: flex;
+}
+
+.aether-boss2d-vp.is-full .aether-boss2d-vbar-track {
+  animation: aether-vp-pulse 0.6s ease-in-out infinite;
+}
+
+@keyframes aether-vp-pulse {
+  0%, 100% {
+    border-color: #5a0c10;
+    box-shadow: 0 0 6px 1px rgba(106, 134, 224, 0.45);
+  }
+  50% {
+    border-color: #9ab0ff;
+    box-shadow: 0 0 18px 5px rgba(150, 180, 255, 0.95);
+  }
+}
+
+/* --- Death screen ------------------------------------------------------- */
+.aether-boss2d-death {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  background: radial-gradient(circle at 50% 45%, rgba(60, 2, 3, 0.92) 0%, rgba(12, 0, 1, 0.97) 70%, #000 100%);
+  font-family: 'Press Start 2P', monospace;
+}
+
+.aether-boss2d-death.hidden {
+  display: none;
+}
+
+.aether-boss2d-death-title {
+  color: #e0342c;
+  font-size: 40px;
+  letter-spacing: 6px;
+  text-shadow: 0 0 18px rgba(214, 32, 26, 0.9), 0 0 4px #000;
+}
+
+.aether-boss2d-persist {
+  padding: 22px 54px;
+  cursor: pointer;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 22px;
+  letter-spacing: 4px;
+  color: #ffd9d2;
+  background: #3a0506;
+  border: 3px solid #b3201c;
+  text-shadow: 0 0 10px #ff3a2a;
+  box-shadow: 0 0 24px 4px rgba(150, 6, 4, 0.6), inset 0 0 18px rgba(0, 0, 0, 0.6);
+}
+
+.aether-boss2d-persist:hover {
+  background: #54080a;
+  border-color: #e0342c;
 }
 
 /* The boss looming in the room above the arena. Two layers (kneel + stand)

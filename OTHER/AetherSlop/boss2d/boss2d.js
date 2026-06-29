@@ -132,6 +132,7 @@
   const JITTER_BASE_MS = 900;        // her pixel-jitter loop at BASE_BPM
   let fightClock = 0;                // ms since the fight (standing form) began
   let bpm = BASE_BPM;
+  let bpmBonus = 0;                  // extra wrath from the hero's strikes (BPM)
   let beatMs = 60000 / BASE_BPM;     // duration of one beat at the current tempo
   let beatPhase = 0;                 // ms elapsed inside the current beat
   let beatIndex = 0;                 // beats elapsed since the fight began
@@ -290,6 +291,23 @@
   let movementWave = 0;             // wave reached within the current movement
   let attacks = [];
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
+
+  // ---- Combat: wrath, HP, VP ---------------------------------------------
+  // Wrath is the cultist's tempo gauge (= current BPM, 0..200). HP is the
+  // hero's health, VP the virtue points earned by braving an attack's shadow.
+  // Damage and VP both accrue per beat spent inside the relevant hitbox.
+  const WRATH_MAX = 200;
+  const HP_MAX = 500;                // testing cap
+  const VP_MAX = 1000;               // testing cap
+  const DAMAGE_PER_BEAT = 40;        // HP lost per beat per overlapping live skill
+  const VP_PER_BEAT = 200;           // VP gained per beat per overlapping shadow
+  const ATTACK_WRATH_GAIN = 10;      // wrath (BPM) the cultist gains when struck
+  let hp = HP_MAX;
+  let vp = 0;
+  let dead = false;
+  let wrathFill = null, wrathValue = null;
+  let hpFill = null, vpFill = null, vpBar = null;
+  let deathScreen = null;
 
   const easeInQuad = (t) => t * t;
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
@@ -522,11 +540,38 @@
           '<img class="aether-boss2d-cultist-stand" alt="" src="' + CULTIST_STAND_SRC + '" />' +
         '</div>' +
       '</div>' +
-      '<div class="aether-boss2d-stage">' +
-        '<canvas id="aether-boss2d-canvas" width="' + BOARD + '" height="' + BOARD + '"></canvas>' +
+      // The cultist's name + wrath gauge, slotted under her feet.
+      '<div class="aether-boss2d-wrath">' +
+        '<div class="aether-boss2d-wrath-name">THE SHADOW CULTIST</div>' +
+        '<div class="aether-boss2d-wrath-track">' +
+          '<div class="aether-boss2d-wrath-fill"></div>' +
+          '<span class="aether-boss2d-wrath-value">WRATH 0</span>' +
+        '</div>' +
+      '</div>' +
+      // The combat window flanked by the player's VP (left) and HP (right) bars.
+      '<div class="aether-boss2d-stage-row">' +
+        '<div class="aether-boss2d-vbar aether-boss2d-vp">' +
+          '<span class="aether-boss2d-vbar-label">VP</span>' +
+          '<div class="aether-boss2d-vbar-track">' +
+            '<div class="aether-boss2d-vbar-fill"></div>' +
+            '<span class="aether-boss2d-vp-ready">ATTACK READY</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="aether-boss2d-stage">' +
+          '<canvas id="aether-boss2d-canvas" width="' + BOARD + '" height="' + BOARD + '"></canvas>' +
+        '</div>' +
+        '<div class="aether-boss2d-vbar aether-boss2d-hp">' +
+          '<span class="aether-boss2d-vbar-label">HP</span>' +
+          '<div class="aether-boss2d-vbar-track"><div class="aether-boss2d-vbar-fill"></div></div>' +
+        '</div>' +
       '</div>' +
       '<div class="aether-boss2d-help">WASD / ARROWS MOVE' +
-        '<span class="aether-boss2d-status">ENTER SKIP INTRO</span>' +
+        '<span class="aether-boss2d-status">ENTER SKIP INTRO &nbsp; F / SPACE STRIKE</span>' +
+      '</div>' +
+      // Death screen: a full bloody curtain with the PERSIST restart button.
+      '<div class="aether-boss2d-death hidden">' +
+        '<div class="aether-boss2d-death-title">SLAIN</div>' +
+        '<button type="button" class="aether-boss2d-persist">PERSIST</button>' +
       '</div>';
     document.body.appendChild(overlay);
 
@@ -542,6 +587,14 @@
     cultistElement = document.getElementById('aether-boss2d-cultist');
     cultistStandWrap = overlay.querySelector('.aether-boss2d-cultist-stand-wrap');
     cultistStandImg = overlay.querySelector('.aether-boss2d-cultist-stand');
+    wrathFill = overlay.querySelector('.aether-boss2d-wrath-fill');
+    wrathValue = overlay.querySelector('.aether-boss2d-wrath-value');
+    vpBar = overlay.querySelector('.aether-boss2d-vp');
+    vpFill = overlay.querySelector('.aether-boss2d-vp .aether-boss2d-vbar-fill');
+    hpFill = overlay.querySelector('.aether-boss2d-hp .aether-boss2d-vbar-fill');
+    deathScreen = overlay.querySelector('.aether-boss2d-death');
+    const persistBtn = overlay.querySelector('.aether-boss2d-persist');
+    if (persistBtn) persistBtn.addEventListener('click', () => { restart(); persistBtn.blur(); });
 
     // Debug: one button per attack movement. Clicking aborts whatever is
     // running and restarts the fight on the chosen pattern.
@@ -1090,6 +1143,116 @@
     clampHero();
   }
 
+  // ---- Combat: hitboxes, damage, bars ------------------------------------
+  // Hitboxes live in viewport space (where the attacks are drawn). A swept band
+  // is a rectangle from a root, `len` long and `2*hw` wide along its direction.
+  function inBand(px, py, rx, ry, dirX, dirY, len, hw) {
+    const ax = px - rx;
+    const ay = py - ry;
+    const along = ax * dirX + ay * dirY;
+    if (along < 0 || along > len) return false;
+    return Math.abs(ax * -dirY + ay * dirX) <= hw;
+  }
+  function inCorridor(px, py, ox, oy, ang, len, hw) {
+    return inBand(px, py, ox, oy, Math.cos(ang), Math.sin(ang), len, hw);
+  }
+
+  // Whether the hero point sits inside attack `a`'s danger zone. The shape is
+  // shared between phases: while firing it uses the full struck region; while
+  // telegraphing it uses the shadow that has crept out so far (`a.stretch`).
+  function heroInAttack(a, vx, vy, firing) {
+    if (a.type === 'pentaBeam') {
+      const len = firing ? a.length : a.length * a.stretch;
+      return inCorridor(vx, vy, a.x, a.y, a.angle, len, a.width / 2);
+    }
+    if (a.type === 'tentacle') {
+      const len = firing ? a.len * easeOutCubic(Math.min(1, a.fire / 0.35)) : a.len * a.stretch;
+      return inBand(vx, vy, a.rx, a.ry, a.dirX, a.dirY, len, a.hw);
+    }
+    if (a.type === 'xRay') {
+      const len = firing ? a.armLen : a.armLen * a.stretch;
+      for (const ang of X_ANGLES) {
+        if (inCorridor(vx, vy, a.cx, a.cy, ang, len, a.armWidth / 2)) return true;
+      }
+      return false;
+    }
+    if (a.type === 'bloodSpiral') {
+      if (!firing) {
+        // Shadow is the closing reticle that irises onto the centre.
+        const glow = a.state === 'armed' ? 1 : a.stretch;
+        return Math.hypot(vx - a.cx, vy - a.cy) <= a.maxRadius * 0.5 * (1 - glow) + a.beamWidth * 0.65;
+      }
+      if (Math.hypot(vx - a.cx, vy - a.cy) <= a.beamWidth * 0.65) return true;
+      const tau = Math.max(0, Math.min(1, (a.fire - 0.08) / 0.92));
+      if (tau > 0) {
+        for (let k = 0; k < BLOOD_BEAMS; k++) {
+          const f = bloodBeamFoot(a, k, tau);
+          if (Math.hypot(vx - f.x, vy - f.y) <= a.beamWidth * 0.75) return true;
+        }
+      }
+      return false;
+    }
+    return false;
+  }
+
+  // Counts how many live skills and how many shadows the hero overlaps right now
+  // (overlaps stack, so two skills hurt twice as fast, two shadows earn twice).
+  function countOverlaps(vx, vy) {
+    let live = 0;
+    let shadow = 0;
+    for (const a of attacks) {
+      const firing = a.state === 'fire';
+      const shadowing = a.state === 'telegraph' || a.state === 'armed';
+      if (!firing && !shadowing) continue;
+      if (heroInAttack(a, vx, vy, firing)) {
+        if (firing) live++; else shadow++;
+      }
+    }
+    return { live, shadow };
+  }
+
+  function updateCombat(dt) {
+    if (!canvas || dead) return;
+    // The hero's centre, carried into the attack canvas's viewport space.
+    const board = canvas.getBoundingClientRect();
+    const vx = board.left + hero.x * board.width / BOARD;
+    const vy = board.top + hero.y * board.height / BOARD;
+    const beats = dt / beatMs;
+    const { live, shadow } = countOverlaps(vx, vy);
+    // Damage scales with overlaps (two attacks at once drain twice as fast).
+    if (live > 0) hp = Math.max(0, hp - DAMAGE_PER_BEAT * live * beats);
+    // VP is earned only in a shadow, never in the live skill itself.
+    if (shadow > 0) vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadow * beats);
+    if (hp <= 0) die();
+  }
+
+  // The hero spends a full VP meter to strike, stoking the cultist's wrath
+  // (her tempo) by a fixed amount. Bound to F / Space.
+  function playerAttack() {
+    if (!active || dead || phase !== PHASE.ACTIVE) return;
+    if (vp < VP_MAX) return;
+    vp = 0;
+    bpmBonus += ATTACK_WRATH_GAIN;
+  }
+
+  function die() {
+    if (dead) return;
+    dead = true;
+    keys.clear();
+    if (deathScreen) deathScreen.classList.remove('hidden');
+  }
+
+  // Pushes wrath / HP / VP to their bars. Wrath reads the live tempo once the
+  // fight begins (it snaps 0 -> BASE_BPM as she stands), and idles at 0 before.
+  function updateBars() {
+    const wrath = phase === PHASE.ACTIVE ? bpm : 0;
+    if (wrathFill) wrathFill.style.width = (Math.min(1, wrath / WRATH_MAX) * 100) + '%';
+    if (wrathValue) wrathValue.textContent = 'WRATH ' + wrath;
+    if (hpFill) hpFill.style.height = (Math.max(0, hp) / HP_MAX * 100) + '%';
+    if (vpFill) vpFill.style.height = (Math.max(0, vp) / VP_MAX * 100) + '%';
+    if (vpBar) vpBar.classList.toggle('is-full', vp >= VP_MAX);
+  }
+
   // ---- Phase machine -----------------------------------------------------
   function setPhase(next) {
     phase = next;
@@ -1107,6 +1270,7 @@
   function startFight() {
     fightClock = 0;
     bpm = BASE_BPM;
+    bpmBonus = 0;
     beatMs = 60000 / bpm;
     beatPhase = 0;
     beatIndex = 0;
@@ -1129,7 +1293,7 @@
 
   function updateTempo(dt) {
     fightClock += dt;
-    const targetBpm = BASE_BPM + Math.floor(fightClock / BPM_RAMP_MS);
+    const targetBpm = BASE_BPM + Math.floor(fightClock / BPM_RAMP_MS) + bpmBonus;
     if (targetBpm !== bpm) {
       bpm = targetBpm;
       beatMs = 60000 / bpm;
@@ -1237,6 +1401,7 @@
       updateTempo(dt);
       updateAttacks(dt);
       updateMovement(dt);
+      updateCombat(dt);
     }
   }
 
@@ -1951,7 +2116,7 @@
   }
 
   function frame(time) {
-    if (!active) return;
+    if (!active || dead) return;
     updateFpsCounter(time);
     const dt = Math.min(48, time - previousTime || 16);
     previousTime = time;
@@ -1963,6 +2128,9 @@
     renderBackground(time, false);
     renderScene();
     renderAttackLayer();
+    updateBars();
+    // Died this frame: leave the scene frozen beneath the death screen.
+    if (dead) return;
     animationFrame = requestAnimationFrame(frame);
   }
 
@@ -1979,7 +2147,13 @@
       debugBuffer = (debugBuffer + event.key).slice(-DEBUG_QUIT_SEQUENCE.length);
       if (debugBuffer === DEBUG_QUIT_SEQUENCE) { debugBuffer = ''; close(); return; }
     }
+    if (dead) return; // only the PERSIST button responds on the death screen
     if (event.code === 'Enter') { skipToActive(); event.preventDefault(); return; }
+    if (event.code === 'KeyF' || event.code === 'Space') {
+      playerAttack();
+      event.preventDefault();
+      return;
+    }
     if (MOVE_CODES.has(event.code)) {
       keys.add(event.code);
       event.preventDefault();
@@ -1995,12 +2169,9 @@
   }
 
   // ---- Lifecycle ---------------------------------------------------------
-  function open() {
-    if (active) return;
-    setSavedEndgameScene('boss2d');
-    if (!overlay) makeOverlay();
-    if (!borderCanvas) buildBorder();
-
+  // Reset everything back to the opening fall and (re)start the loop. Shared by
+  // the first open() and the PERSIST restart on the death screen.
+  function resetRun() {
     // Reset the scripted intro sequence.
     phase = PHASE.FALL;
     phaseTime = 0;
@@ -2023,6 +2194,7 @@
     // Tempo / attacks idle until she stands (PHASE.ACTIVE -> startFight()).
     fightClock = 0;
     bpm = BASE_BPM;
+    bpmBonus = 0;
     beatMs = 60000 / bpm;
     beatPhase = 0;
     beatIndex = 0;
@@ -2031,21 +2203,41 @@
     movementIndex = 0;
     movementWave = 0;
     nextAttackBeat = Infinity;
+    hp = HP_MAX;
+    vp = 0;
+    dead = false;
+    if (deathScreen) deathScreen.classList.add('hidden');
+    updateBars();
     if (bpmElement) bpmElement.textContent = 'BPM --';
     fpsSampleStart = 0;
     fpsFrames = 0;
     if (fpsElement) fpsElement.textContent = 'FPS --';
 
+    previousTime = performance.now();
+    cancelAnimationFrame(animationFrame);
+    renderBackground(previousTime, true);
+    renderScene();
+    animationFrame = requestAnimationFrame(frame);
+  }
+
+  function open() {
+    if (active) return;
+    setSavedEndgameScene('boss2d');
+    if (!overlay) makeOverlay();
+    if (!borderCanvas) buildBorder();
     overlay.classList.remove('hidden');
     document.body.classList.add('aether-boss2d-active');
     active = true;
     sizeBackground();
     sizeAttackCanvas();
-    previousTime = performance.now();
-    renderBackground(previousTime, true);
-    renderScene();
-    animationFrame = requestAnimationFrame(frame);
+    resetRun();
     dispatchState();
+  }
+
+  // PERSIST: from the death screen, run the whole fight again from the fall.
+  function restart() {
+    if (!active) return;
+    resetRun();
   }
 
   function close() {
