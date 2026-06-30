@@ -162,6 +162,18 @@
   width: 0%;
   background: linear-gradient(90deg, #7a0c0a, #d6201a);
   box-shadow: 0 0 10px rgba(214, 32, 26, 0.7);
+  transition: width 0.4s ease;   /* smooth growth, incl. the +wrath surge */
+}
+
+/* A strike flares the wrath gauge as the cultist's tempo jumps. */
+.aether-boss2d-wrath-track.is-surging {
+  animation: aether-wrath-surge 0.5s ease-out;
+}
+
+@keyframes aether-wrath-surge {
+  0%   { box-shadow: 0 0 6px rgba(214, 32, 26, 0.5); border-color: #5a0c10; }
+  40%  { box-shadow: 0 0 24px 7px rgba(255, 90, 50, 0.95); border-color: #ff6a4a; }
+  100% { box-shadow: 0 0 6px rgba(214, 32, 26, 0.5); border-color: #5a0c10; }
 }
 
 .aether-boss2d-wrath-value {
@@ -364,6 +376,21 @@
   60%  { transform: translate(-1px, 1px); }
   80%  { transform: translate(1px, 0); }
   100% { transform: translate(0, 0); }
+}
+
+/* Recoil + red flash when the angelic sword lands on the cultist. */
+.aether-boss2d-cultist.aether-hit {
+  animation: aether-cultist-hit 0.42s ease-in-out;
+}
+
+@keyframes aether-cultist-hit {
+  0%   { transform: translate(0, 0); filter: brightness(2.2) drop-shadow(0 0 18px rgba(255, 80, 60, 0.9)); }
+  15%  { transform: translate(-7px, 2px); }
+  30%  { transform: translate(7px, -2px); }
+  45%  { transform: translate(-6px, 1px); filter: brightness(1.4) drop-shadow(0 0 12px rgba(255, 80, 60, 0.6)); }
+  60%  { transform: translate(5px, -1px); }
+  75%  { transform: translate(-3px, 1px); }
+  100% { transform: translate(0, 0); filter: none; }
 }
 
 .aether-boss2d-stage {

@@ -302,10 +302,15 @@
   const DAMAGE_PER_BEAT = 40;        // HP lost per beat per overlapping live skill
   const VP_PER_BEAT = 200;           // VP gained per beat per overlapping shadow
   const ATTACK_WRATH_GAIN = 10;      // wrath (BPM) the cultist gains when struck
+  const ATTACK_HEAL_FRAC = 0.10;     // fraction of max HP the hero recovers on a strike
+  // The strike flourish: time crawls while an angelic sword is cast at the boss.
+  const STRIKE_DURATION = 1150;      // ms (real time) of the whole sequence
+  const STRIKE_SLOW = 0.05;          // gameplay speed at the deepest slow-mo
   let hp = HP_MAX;
   let vp = 0;
   let dead = false;
-  let wrathFill = null, wrathValue = null;
+  let strike = null;                 // active strike animation, or null
+  let wrathFill = null, wrathValue = null, wrathTrack = null;
   let hpFill = null, vpFill = null, vpBar = null;
   let deathScreen = null;
 
@@ -589,6 +594,7 @@
     cultistStandImg = overlay.querySelector('.aether-boss2d-cultist-stand');
     wrathFill = overlay.querySelector('.aether-boss2d-wrath-fill');
     wrathValue = overlay.querySelector('.aether-boss2d-wrath-value');
+    wrathTrack = overlay.querySelector('.aether-boss2d-wrath-track');
     vpBar = overlay.querySelector('.aether-boss2d-vp');
     vpFill = overlay.querySelector('.aether-boss2d-vp .aether-boss2d-vbar-fill');
     hpFill = overlay.querySelector('.aether-boss2d-hp .aether-boss2d-vbar-fill');
@@ -1157,42 +1163,57 @@
     return inBand(px, py, ox, oy, Math.cos(ang), Math.sin(ang), len, hw);
   }
 
-  // Whether the hero point sits inside attack `a`'s danger zone. The shape is
-  // shared between phases: while firing it uses the full struck region; while
-  // telegraphing it uses the shadow that has crept out so far (`a.stretch`).
-  function heroInAttack(a, vx, vy, firing) {
+  // Classifies the hero point against attack `a`: 'live' (taking the strike),
+  // 'shadow' (standing in its telegraph/upcoming path), or null. Telegraphing
+  // attacks share their strike shape grown by `a.stretch`; the blood spiral is
+  // special — while firing, its future-path trails count as shadow.
+  function heroAttackZone(a, vx, vy) {
+    const firing = a.state === 'fire';
+    const shadowing = a.state === 'telegraph' || a.state === 'armed';
+    if (!firing && !shadowing) return null;
+
     if (a.type === 'pentaBeam') {
       const len = firing ? a.length : a.length * a.stretch;
-      return inCorridor(vx, vy, a.x, a.y, a.angle, len, a.width / 2);
+      return inCorridor(vx, vy, a.x, a.y, a.angle, len, a.width / 2) ? (firing ? 'live' : 'shadow') : null;
     }
     if (a.type === 'tentacle') {
       const len = firing ? a.len * easeOutCubic(Math.min(1, a.fire / 0.35)) : a.len * a.stretch;
-      return inBand(vx, vy, a.rx, a.ry, a.dirX, a.dirY, len, a.hw);
+      return inBand(vx, vy, a.rx, a.ry, a.dirX, a.dirY, len, a.hw) ? (firing ? 'live' : 'shadow') : null;
     }
     if (a.type === 'xRay') {
       const len = firing ? a.armLen : a.armLen * a.stretch;
       for (const ang of X_ANGLES) {
-        if (inCorridor(vx, vy, a.cx, a.cy, ang, len, a.armWidth / 2)) return true;
+        if (inCorridor(vx, vy, a.cx, a.cy, ang, len, a.armWidth / 2)) return firing ? 'live' : 'shadow';
       }
-      return false;
+      return null;
     }
     if (a.type === 'bloodSpiral') {
       if (!firing) {
         // Shadow is the closing reticle that irises onto the centre.
         const glow = a.state === 'armed' ? 1 : a.stretch;
-        return Math.hypot(vx - a.cx, vy - a.cy) <= a.maxRadius * 0.5 * (1 - glow) + a.beamWidth * 0.65;
+        return Math.hypot(vx - a.cx, vy - a.cy) <= a.maxRadius * 0.5 * (1 - glow) + a.beamWidth * 0.65 ? 'shadow' : null;
       }
-      if (Math.hypot(vx - a.cx, vy - a.cy) <= a.beamWidth * 0.65) return true;
+      // Live: the static centre beam + each orbiting beam's foot.
+      if (Math.hypot(vx - a.cx, vy - a.cy) <= a.beamWidth * 0.65) return 'live';
       const tau = Math.max(0, Math.min(1, (a.fire - 0.08) / 0.92));
-      if (tau > 0) {
-        for (let k = 0; k < BLOOD_BEAMS; k++) {
-          const f = bloodBeamFoot(a, k, tau);
-          if (Math.hypot(vx - f.x, vy - f.y) <= a.beamWidth * 0.75) return true;
+      if (tau <= 0) return null;
+      for (let k = 0; k < BLOOD_BEAMS; k++) {
+        const f = bloodBeamFoot(a, k, tau);
+        if (Math.hypot(vx - f.x, vy - f.y) <= a.beamWidth * 0.75) return 'live';
+      }
+      // Shadow: the future-path each beam is about to sweep through (matches the
+      // 250 ms trail drawn for it).
+      const tauF = Math.min(1, tau + (250 / (beatMs * a.fireBeats)) / 0.92);
+      const steps = 8;
+      for (let k = 0; k < BLOOD_BEAMS; k++) {
+        for (let i = 1; i <= steps; i++) {
+          const f = bloodBeamFoot(a, k, tau + (tauF - tau) * (i / steps));
+          if (Math.hypot(vx - f.x, vy - f.y) <= a.beamWidth * 0.6) return 'shadow';
         }
       }
-      return false;
+      return null;
     }
-    return false;
+    return null;
   }
 
   // Counts how many live skills and how many shadows the hero overlaps right now
@@ -1201,12 +1222,9 @@
     let live = 0;
     let shadow = 0;
     for (const a of attacks) {
-      const firing = a.state === 'fire';
-      const shadowing = a.state === 'telegraph' || a.state === 'armed';
-      if (!firing && !shadowing) continue;
-      if (heroInAttack(a, vx, vy, firing)) {
-        if (firing) live++; else shadow++;
-      }
+      const zone = heroAttackZone(a, vx, vy);
+      if (zone === 'live') live++;
+      else if (zone === 'shadow') shadow++;
     }
     return { live, shadow };
   }
@@ -1226,13 +1244,159 @@
     if (hp <= 0) die();
   }
 
-  // The hero spends a full VP meter to strike, stoking the cultist's wrath
-  // (her tempo) by a fixed amount. Bound to F / Space.
+  // The hero spends a full VP meter to strike: heals a little, stokes the
+  // cultist's wrath (tempo), and launches the slow-mo angelic-sword flourish.
+  // Bound to F / Space.
   function playerAttack() {
-    if (!active || dead || phase !== PHASE.ACTIVE) return;
+    if (!active || dead || phase !== PHASE.ACTIVE || strike) return;
     if (vp < VP_MAX) return;
     vp = 0;
     bpmBonus += ATTACK_WRATH_GAIN;
+    hp = Math.min(HP_MAX, hp + HP_MAX * ATTACK_HEAL_FRAC);
+    surgeWrath();
+    // Capture the flight path: from the hero up to the cultist.
+    const board = canvas.getBoundingClientRect();
+    const sprite = cultistStandImg ? cultistStandImg.getBoundingClientRect() : null;
+    const fromX = board.left + hero.x * board.width / BOARD;
+    const fromY = board.top + hero.y * board.height / BOARD;
+    strike = {
+      t: 0,
+      impacted: false,
+      fromX,
+      fromY,
+      toX: sprite ? sprite.left + sprite.width / 2 : fromX,
+      toY: sprite ? sprite.top + sprite.height * 0.45 : board.top,
+    };
+  }
+
+  // Advances the strike flourish in REAL time (so the cinematic plays at full
+  // speed while gameplay crawls) and returns the gameplay time-scale to apply.
+  function updateStrike(dtRaw) {
+    if (!strike) return 1;
+    strike.t += dtRaw;
+    const p = strike.t / STRIKE_DURATION;
+    if (!strike.impacted && p >= 0.82) {
+      strike.impacted = true;
+      shakeCultist();
+    }
+    if (strike.t >= STRIKE_DURATION) { strike = null; return 1; }
+    // Slow-mo dips to STRIKE_SLOW in the middle, easing back to full at the ends.
+    return 1 - Math.sin(Math.min(1, p) * Math.PI) * (1 - STRIKE_SLOW);
+  }
+
+  function shakeCultist() {
+    if (!cultistElement) return;
+    cultistElement.classList.remove('aether-hit');
+    void cultistElement.offsetWidth;   // reflow so the animation restarts
+    cultistElement.classList.add('aether-hit');
+  }
+
+  function surgeWrath() {
+    if (!wrathTrack) return;
+    wrathTrack.classList.remove('is-surging');
+    void wrathTrack.offsetWidth;
+    wrathTrack.classList.add('is-surging');
+  }
+
+  // A stylised 2D angelic sword: glowing gold-white blade, winged crossguard.
+  // Drawn at (cx,cy), tip aimed along `angle`.
+  function drawAngelicSword(cx, cy, angle, scale, alpha) {
+    if (alpha <= 0 || scale <= 0) return;
+    actx.save();
+    actx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    actx.translate(cx, cy);
+    actx.rotate(angle);
+    actx.scale(scale, scale);
+    actx.lineJoin = 'round';
+    const L = 116;          // long, slender blade so it reads as a sword
+    const bw = 5.5;
+    // Blade: a long taper to a fine point, with a short straight ricasso.
+    actx.shadowColor = 'rgba(255, 240, 200, 0.95)';
+    actx.shadowBlur = 26;
+    const grad = actx.createLinearGradient(8, 0, L, 0);
+    grad.addColorStop(0, '#fff7df');
+    grad.addColorStop(1, '#ffe6a0');
+    actx.fillStyle = grad;
+    actx.beginPath();
+    actx.moveTo(L, 0);              // point
+    actx.lineTo(L - 14, -bw);
+    actx.lineTo(8, -bw);
+    actx.lineTo(8, bw);
+    actx.lineTo(L - 14, bw);
+    actx.closePath();
+    actx.fill();
+    actx.shadowBlur = 0;
+    actx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    actx.lineWidth = 1.2;
+    actx.beginPath(); actx.moveTo(10, 0); actx.lineTo(L - 8, 0); actx.stroke();
+    // Feathered wings sweeping back from the guard.
+    actx.shadowColor = 'rgba(255, 255, 255, 0.85)';
+    actx.shadowBlur = 14;
+    actx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    for (const s of [-1, 1]) {
+      actx.beginPath();
+      actx.moveTo(4, 0);
+      actx.quadraticCurveTo(-16, s * 9, -34, s * 24);
+      actx.quadraticCurveTo(-12, s * 7, 4, 0);
+      actx.fill();
+    }
+    // Golden crossguard, grip and pommel.
+    actx.shadowColor = 'rgba(255, 220, 150, 0.9)';
+    actx.shadowBlur = 12;
+    actx.fillStyle = '#f4d27a';
+    actx.fillRect(2, -16, 6, 32);
+    actx.shadowBlur = 0;
+    actx.fillStyle = '#caa24a';
+    actx.fillRect(-16, -2.5, 18, 5);
+    actx.fillStyle = '#f4d27a';
+    actx.beginPath(); actx.arc(-18, 0, 4.5, 0, Math.PI * 2); actx.fill();
+    actx.restore();
+  }
+
+  // The flourish itself, painted over the attack layer in viewport space.
+  function renderStrike() {
+    if (!strike || !actx) return;
+    const p = strike.t / STRIKE_DURATION;
+    const angle = Math.atan2(strike.toY - strike.fromY, strike.toX - strike.fromX);
+    // The sword materialises, hovers, then is cast fast at the boss.
+    const castStart = 0.55;
+    const castEnd = 0.82;
+    let sp = 0;
+    if (p >= castEnd) sp = 1;
+    else if (p > castStart) sp = easeInQuad((p - castStart) / (castEnd - castStart));
+    const x = strike.fromX + (strike.toX - strike.fromX) * sp;
+    const y = strike.fromY + (strike.toY - strike.fromY) * sp;
+    const appear = Math.min(1, p / 0.18);
+    const fade = p > 0.86 ? Math.max(0, 1 - (p - 0.86) / 0.14) : 1;
+    const scale = (0.7 + 0.6 * easeOutCubic(appear)) * (1 + sp * 0.25);
+    const alpha = appear * fade;
+    // Light trail behind the cast.
+    if (sp > 0 && sp < 1) {
+      actx.save();
+      actx.globalAlpha = 0.5 * alpha;
+      actx.lineCap = 'round';
+      actx.strokeStyle = 'rgba(255, 240, 200, 0.8)';
+      actx.lineWidth = 9 * scale;
+      actx.shadowColor = 'rgba(255, 240, 200, 0.9)';
+      actx.shadowBlur = 20;
+      actx.beginPath();
+      actx.moveTo(strike.fromX, strike.fromY);
+      actx.lineTo(x, y);
+      actx.stroke();
+      actx.restore();
+    }
+    // Holy flash where it lands on the cultist.
+    if (p >= 0.82) {
+      const fp = Math.min(1, (p - 0.82) / 0.12);
+      actx.save();
+      actx.globalAlpha = (1 - fp) * 0.9;
+      actx.shadowColor = 'rgba(255, 230, 180, 0.95)';
+      actx.shadowBlur = 40;
+      actx.fillStyle = 'rgba(255, 245, 220, 0.9)';
+      actx.beginPath(); actx.arc(strike.toX, strike.toY, 26 + fp * 46, 0, Math.PI * 2); actx.fill();
+      actx.restore();
+    }
+    drawAngelicSword(x, y, angle, scale, alpha);
   }
 
   function die() {
@@ -2118,8 +2282,11 @@
   function frame(time) {
     if (!active || dead) return;
     updateFpsCounter(time);
-    const dt = Math.min(48, time - previousTime || 16);
+    const dtRaw = Math.min(48, time - previousTime || 16);
     previousTime = time;
+    // The strike flourish advances in real time but slows everything else down.
+    const timeScale = updateStrike(dtRaw);
+    const dt = dtRaw * timeScale;
     clock += dt;
     phaseTime += dt;
     updateArena(dt);
@@ -2128,6 +2295,7 @@
     renderBackground(time, false);
     renderScene();
     renderAttackLayer();
+    renderStrike();
     updateBars();
     // Died this frame: leave the scene frozen beneath the death screen.
     if (dead) return;
@@ -2206,6 +2374,8 @@
     hp = HP_MAX;
     vp = 0;
     dead = false;
+    strike = null;
+    if (cultistElement) cultistElement.classList.remove('aether-hit');
     if (deathScreen) deathScreen.classList.add('hidden');
     updateBars();
     if (bpmElement) bpmElement.textContent = 'BPM --';
