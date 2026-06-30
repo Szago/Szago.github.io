@@ -107,6 +107,14 @@
   color: #f0d6ff;
 }
 
+/* Right-click-armed for a combo: waiting on a partner left-click. */
+.aether-boss2d-debug-btn.is-selected {
+  background: rgba(90, 20, 120, 0.95);
+  color: #fff;
+  border-color: #b56cf0;
+  box-shadow: 0 0 10px rgba(168, 84, 232, 0.8);
+}
+
 /* Keep the actual fight UI above the background tentacles. The box stays at
    z-index 1 (below the attack canvas, so beams overlay the playfield); the
    side/wrath bars sit at 5 (above it) so attacks never paint over them. The

@@ -287,8 +287,13 @@
   // waves (one wave = everything that telegraphs and fires together), and when
   // its waves are spent the next movement takes over.
   const MOVEMENT_SEQUENCE = ['pentagrams', 'tentacles', 'xrays', 'bloodspiral'];
-  let movementIndex = 0;             // which movement is currently running
-  let movementWave = 0;             // wave reached within the current movement
+  const COMBINE_WRATH = 120;         // at/above this wrath two patterns run at once
+  // One movement plays at a time until wrath hits COMBINE_WRATH, then two run
+  // concurrently and whichever finishes is replaced by another random pattern.
+  // `activeSet` holds the 1-2 movements currently spawning.
+  let activeSet = [];                // [{ name, wave, done }]
+  let singleQueue = [];              // upcoming single patterns (pre-combine)
+  let lastSingle = null;             // avoid back-to-back single repeats across reshuffles
   let attacks = [];
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
 
@@ -602,15 +607,35 @@
     const persistBtn = overlay.querySelector('.aether-boss2d-persist');
     if (persistBtn) persistBtn.addEventListener('click', () => { restart(); persistBtn.blur(); });
 
-    // Debug: one button per attack movement. Clicking aborts whatever is
-    // running and restarts the fight on the chosen pattern.
+    // Debug: one button per attack movement. Left-click plays that pattern
+    // solo. Right-click a button to arm it, then left-click another to play the
+    // two combined (as they will once wrath crosses COMBINE_WRATH).
     const debugPanel = document.getElementById('aether-boss2d-debug');
-    MOVEMENT_SEQUENCE.forEach((name, i) => {
+    let pairFirst = null;
+    let pairFirstBtn = null;
+    const clearPair = () => {
+      if (pairFirstBtn) pairFirstBtn.classList.remove('is-selected');
+      pairFirst = null;
+      pairFirstBtn = null;
+    };
+    MOVEMENT_SEQUENCE.forEach((name) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'aether-boss2d-debug-btn';
       btn.textContent = name.toUpperCase();
-      btn.addEventListener('click', () => { startMovement(i); btn.blur(); });
+      btn.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        clearPair();
+        pairFirst = name;
+        pairFirstBtn = btn;
+        btn.classList.add('is-selected');
+      });
+      btn.addEventListener('click', () => {
+        if (pairFirst && pairFirst !== name) startMovementSet([pairFirst, name]);
+        else startMovementSet([name]);
+        clearPair();
+        btn.blur();
+      });
       debugPanel.appendChild(btn);
     });
   }
@@ -1251,9 +1276,8 @@
     if (!active || dead || phase !== PHASE.ACTIVE || strike) return;
     if (vp < VP_MAX) return;
     vp = 0;
-    bpmBonus += ATTACK_WRATH_GAIN;
     hp = Math.min(HP_MAX, hp + HP_MAX * ATTACK_HEAL_FRAC);
-    surgeWrath();
+    // Wrath only flares once the blade actually lands (see updateStrike).
     // Capture the flight path: from the hero up to the cultist.
     const board = canvas.getBoundingClientRect();
     const sprite = cultistStandImg ? cultistStandImg.getBoundingClientRect() : null;
@@ -1278,6 +1302,8 @@
     if (!strike.impacted && p >= 0.82) {
       strike.impacted = true;
       shakeCultist();
+      bpmBonus += ATTACK_WRATH_GAIN; // wrath surges on impact, not on keypress
+      surgeWrath();
     }
     if (strike.t >= STRIKE_DURATION) { strike = null; return 1; }
     // Slow-mo dips to STRIKE_SLOW in the middle, easing back to full at the ends.
@@ -1440,8 +1466,11 @@
     beatIndex = 0;
     lastAnimBpm = -1;
     attacks = [];
-    movementIndex = 0;
-    movementWave = 0;
+    // The opening cycle always leads with the pentagram barrage; the rest is
+    // shuffled. Later cycles (and all combos) reshuffle fully.
+    singleQueue = ['pentagrams'].concat(shuffled(MOVEMENT_SEQUENCE.filter((n) => n !== 'pentagrams')));
+    activeSet = [];
+    lastSingle = null;
     nextAttackBeat = 2; // a couple of beats to read the room before the first strike
     applyTempoToAnimations();
     if (bpmElement) bpmElement.textContent = 'BPM ' + bpm;
@@ -1480,8 +1509,9 @@
   function onBeat(beat) {
     if (phase !== PHASE.ACTIVE) return;
     if (beat >= nextAttackBeat && attacks.length === 0) {
-      spawnWave();
-      nextAttackBeat = Infinity; // re-armed once the current wave resolves
+      // Arm the rearm only if a wave actually spawned (the stage might not be
+      // measurable yet); otherwise retry on the next beat.
+      if (spawnWave()) nextAttackBeat = Infinity;
     }
   }
 
@@ -1502,17 +1532,15 @@
     setPhase(PHASE.ACTIVE);
   }
 
-  // Debug: abort the running pattern and start the fight on `index` of
-  // MOVEMENT_SEQUENCE, spawning its first wave at once.
-  function startMovement(index) {
+  // Debug: abort whatever is running and start the given movement name(s) at
+  // once. Pass one name for a single pattern, two to play them combined.
+  function startMovementSet(names) {
     if (!active) return;
     if (phase !== PHASE.ACTIVE) skipToActive(); // ensures the fight has begun
     attacks = [];
     if (actx) actx.clearRect(0, 0, attackCanvas.width, attackCanvas.height);
-    movementIndex = index;
-    movementWave = 0;
-    spawnWave();
-    nextAttackBeat = Infinity; // re-armed once this wave resolves
+    activeSet = names.map((name) => ({ name, wave: 0, done: false }));
+    if (spawnWave()) nextAttackBeat = Infinity;
   }
 
   function updatePhase(dt) {
@@ -1592,25 +1620,81 @@
     };
   }
 
-  // Spawns the next wave of the current movement. Each spawn helper returns the
-  // movement's total wave count (or null if it couldn't measure the stage yet,
-  // in which case we leave the schedule untouched and retry on the next beat).
-  // When the current movement's waves are spent, the next movement takes over.
+  function shuffled(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      const t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  // Picks a fresh movement for a slot: random, but never the same as the other
+  // slot (and not the one that just finished), so the two are always different.
+  function pickMovement(avoidA, avoidB) {
+    const choices = MOVEMENT_SEQUENCE.filter((n) => n !== avoidA && n !== avoidB);
+    const pool = choices.length ? choices : MOVEMENT_SEQUENCE;
+    return pool[(Math.random() * pool.length) | 0];
+  }
+
+  // Refills an exhausted duo slot in place with a new random pattern.
+  function refillSlot(slot) {
+    const other = activeSet.find((s) => s !== slot);
+    slot.name = pickMovement(other ? other.name : null, slot.name);
+    slot.wave = 0;
+    slot.done = false;
+  }
+
+  // Makes activeSet match the current mode: one slot below COMBINE_WRATH (drawn
+  // from the no-repeat single queue), two distinct slots at/above it.
+  function ensureActiveSet(combining) {
+    if (combining) {
+      while (activeSet.length < 2) {
+        const taken = activeSet.length ? activeSet[0].name : null;
+        activeSet.push({ name: pickMovement(taken, null), wave: 0, done: false });
+      }
+    } else if (activeSet.length === 0) {
+      if (singleQueue.length === 0) {
+        singleQueue = shuffled(MOVEMENT_SEQUENCE);
+        if (lastSingle && singleQueue.length > 1 && singleQueue[0] === lastSingle) {
+          const t = singleQueue[0]; singleQueue[0] = singleQueue[1]; singleQueue[1] = t;
+        }
+      }
+      activeSet = [{ name: singleQueue.shift(), wave: 0, done: false }];
+      lastSingle = activeSet[0].name;
+    }
+  }
+
+  function spawnMovementWave(name, wave, board) {
+    if (name === 'tentacles') return spawnTentacleWave(wave, board);
+    if (name === 'xrays') return spawnXRayWave(wave, board);
+    if (name === 'bloodspiral') return spawnBloodSpiralWave(wave, board);
+    return spawnPentagramWave(wave, board);
+  }
+
+  // Spawns one wave from each active movement. Below COMBINE_WRATH a single
+  // pattern plays through and then the next is pulled; at/above it, two patterns
+  // run at once and whichever exhausts its waves is immediately replaced by a
+  // fresh random one, so two are always live. Returns whether anything spawned.
   function spawnWave() {
     const board = canvas && canvas.getBoundingClientRect();
-    if (!board || !board.width) return;
-    const movement = MOVEMENT_SEQUENCE[movementIndex % MOVEMENT_SEQUENCE.length];
-    let total;
-    if (movement === 'tentacles') total = spawnTentacleWave(movementWave, board);
-    else if (movement === 'xrays') total = spawnXRayWave(movementWave, board);
-    else if (movement === 'bloodspiral') total = spawnBloodSpiralWave(movementWave, board);
-    else total = spawnPentagramWave(movementWave, board);
-    if (!total) return;
-    movementWave++;
-    if (movementWave >= total) {
-      movementIndex++;
-      movementWave = 0;
+    if (!board || !board.width) return false;
+    const combining = bpm >= COMBINE_WRATH;
+    ensureActiveSet(combining);
+    for (const m of activeSet) {
+      if (m.done) {
+        if (combining) refillSlot(m); // swap the spent slot for a new pattern
+        else continue;                // single mode: wait for the slot to clear below
+      }
+      const total = spawnMovementWave(m.name, m.wave, board);
+      if (!total) continue; // stage not measurable yet; retry this movement next beat
+      m.wave++;
+      if (m.wave >= total) m.done = true;
     }
+    // Single mode only: once its lone pattern is spent, clear so the next pull
+    // happens on the following beat. (Duo mode never empties.)
+    if (!combining && activeSet.length && activeSet.every((m) => m.done)) activeSet = [];
+    return attacks.length > 0;
   }
 
   // One pentagram-barrage wave; every pentagram in it telegraphs and fires
@@ -2368,8 +2452,9 @@
     beatIndex = 0;
     lastAnimBpm = -1;
     attacks = [];
-    movementIndex = 0;
-    movementWave = 0;
+    activeSet = [];
+    singleQueue = [];
+    lastSingle = null;
     nextAttackBeat = Infinity;
     hp = HP_MAX;
     vp = 0;
