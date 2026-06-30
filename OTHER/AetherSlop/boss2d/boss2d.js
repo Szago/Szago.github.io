@@ -271,17 +271,24 @@
   ];
 
   // ---- Blood orbit movement ----------------------------------------------
-  // A dark-blood ray drops from the sky onto the centre, then splits into five
-  // sky-beams whose impact points orbit the centre like planets — the orbit
-  // widening as it turns clockwise until the beams sweep past the playfield
-  // edges. One sustained wave; the player circles to stay between them.
+  // A four-phase finale: (0) a ray drops on the centre and splits into five
+  // sky-beams that orbit clockwise outward to the edges; (1) the beams sweep
+  // counter-clockwise back inward to the centre; (2) five beams trace the
+  // playfield pentagram's arms; (3) a huge beam floods everything outside the
+  // pentagram, leaving only the seal safe.
   const BLOOD_BEAMS = 5;
-  const BLOOD_TURNS = 1.5;           // orbit revolutions over the attack
+  const BLOOD_TURNS = 1.5;           // orbit revolutions over a spiral phase
   const BLOOD_BEAM_WIDTH = 16;       // sky-column thickness in board space
-  const BLOOD_TELEGRAPH_BEATS = 1;   // purple warning at the centre
+  const BLOOD_TELEGRAPH_BEATS = 1;   // purple warning before a spiral
   const BLOOD_HOLD_BEATS = 0.25;
-  const BLOOD_FIRE_BEATS = 6;        // the full expanding sweep
+  const BLOOD_FIRE_BEATS = 6;        // one half of the out-and-back spiral
+  const BLOOD_LINE_FIRE_BEATS = 5;   // beams tracing the pentagram arms
+  const BLOOD_LINE_DROP = 0.12;      // fraction of that spent dropping onto the tips
+  const BLOOD_OUTSIDE_TELE_BEATS = 1.9; // the shadow closes in from the edges
+  const BLOOD_OUTSIDE_FIRE_BEATS = 1.0; // short but huge sky impact
   const BLOOD_REST_BEATS = 1;
+  const PENT_STAR_ORDER = [0, 2, 4, 1, 3]; // single-stroke five-pointed star
+  const PENT_INNER_RATIO = 0.382;    // inner/outer vertex radius of a pentagram
 
   // The fight cycles through a list of movements; each runs a fixed number of
   // waves (one wave = everything that telegraphs and fires together), and when
@@ -1214,20 +1221,20 @@
     }
     if (a.type === 'bloodSpiral') {
       if (!firing) {
-        // Shadow is the closing reticle that irises onto the centre.
+        // Shadow is the reticle irising in onto the centre.
         const glow = a.state === 'armed' ? 1 : a.stretch;
-        return Math.hypot(vx - a.cx, vy - a.cy) <= a.maxRadius * 0.5 * (1 - glow) + a.beamWidth * 0.65 ? 'shadow' : null;
+        const retR = a.maxRadius * 0.5 * (1 - glow);
+        return Math.hypot(vx - a.cx, vy - a.cy) <= retR + a.beamWidth * 0.65 ? 'shadow' : null;
       }
-      // Live: the static centre beam + each orbiting beam's foot.
+      // Live: the static centre beam + each beam's foot.
       if (Math.hypot(vx - a.cx, vy - a.cy) <= a.beamWidth * 0.65) return 'live';
-      const tau = Math.max(0, Math.min(1, (a.fire - 0.08) / 0.92));
+      const tau = bloodTau(a);
       if (tau <= 0) return null;
       for (let k = 0; k < BLOOD_BEAMS; k++) {
         const f = bloodBeamFoot(a, k, tau);
         if (Math.hypot(vx - f.x, vy - f.y) <= a.beamWidth * 0.75) return 'live';
       }
-      // Shadow: the future-path each beam is about to sweep through (matches the
-      // 250 ms trail drawn for it).
+      // Shadow: the future-path each beam is about to sweep (matches the trail).
       const tauF = Math.min(1, tau + (250 / (beatMs * a.fireBeats)) / 0.92);
       const steps = 8;
       for (let k = 0; k < BLOOD_BEAMS; k++) {
@@ -1237,6 +1244,33 @@
         }
       }
       return null;
+    }
+    if (a.type === 'pentLine') {
+      const t = firing ? pentLineT(a) : 0;
+      // Live: under a running beam foot.
+      if (firing) {
+        for (let k = 0; k < BLOOD_BEAMS; k++) {
+          const f = pentLinePoint(a, k, t);
+          if (Math.hypot(vx - f.x, vy - f.y) <= a.beamWidth * 0.7) return 'live';
+        }
+      }
+      // Shadow: standing on an arm where no beam currently is.
+      for (let i = 0; i < 5; i++) {
+        const v0 = a.starV[PENT_STAR_ORDER[i]];
+        const v1 = a.starV[PENT_STAR_ORDER[(i + 1) % 5]];
+        if (distToSeg(vx, vy, v0.x, v0.y, v1.x, v1.y) <= a.beamWidth * 0.5) return 'shadow';
+      }
+      return null;
+    }
+    if (a.type === 'outsidePent') {
+      // The seal (scaled while the shadow closes in) is the only safe pocket; the
+      // strike lands once it has shrunk to the real pentagram.
+      const glow = a.state === 'armed' ? 1 : a.stretch;
+      const scale = firing ? 1 : a.bigScale + (1 - a.bigScale) * glow;
+      const px = a.cx + (vx - a.cx) / scale;
+      const py = a.cy + (vy - a.cy) / scale;
+      if (pointInPoly(px, py, a.starPoly)) return null;
+      return firing ? 'live' : 'shadow';
     }
     return null;
   }
@@ -1797,34 +1831,58 @@
     return X_PATTERN.length;
   }
 
-  // The blood-spiral movement: a single sustained wave centred on the arena.
+  // The blood-spiral movement: a three-phase finale on the arena centre.
+  //   0 orbit out to the rim then smoothly back in (one wave)
+  //   1 beams drop onto the pentagram tips and trace its arms
+  //   2 a shadow closes in from the edges, then a huge sky beam floods
+  //     everything outside the pentagram seal
   function spawnBloodSpiralWave(waveIndex, board) {
     const sx = board.width / BOARD;
     const sy = board.height / BOARD;
     const openLo = BORDER;
     const openHi = BOARD - BORDER;
-    const clipX0 = board.left + openLo * sx;
-    const clipX1 = board.left + openHi * sx;
-    const clipY0 = board.top + openLo * sy;
-    const clipY1 = board.top + openHi * sy;
-    attacks.push({
-      type: 'bloodSpiral',
+    const clip = {
+      clipX0: board.left + openLo * sx,
+      clipX1: board.left + openHi * sx,
+      clipY0: board.top + openLo * sy,
+      clipY1: board.top + openHi * sy,
+    };
+    const base = {
       state: 'telegraph',
       cx: board.left + board.width / 2,
       cy: board.top + board.height / 2,
-      // Reach past the opening's farthest corner so the arms clear every edge.
-      maxRadius: Math.hypot((clipX1 - clipX0) / 2, (clipY1 - clipY0) / 2) * 1.05,
       beamWidth: BLOOD_BEAM_WIDTH * ((sx + sy) / 2),
-      clipX0, clipX1, clipY0, clipY1,
       stretch: 0,
-      stretchBeats: BLOOD_TELEGRAPH_BEATS,
       holdBeats: BLOOD_HOLD_BEATS,
       holdTime: 0,
       fire: 0,
-      fireBeats: BLOOD_FIRE_BEATS,
       restBeats: BLOOD_REST_BEATS,
-    });
-    return 1;
+      ...clip,
+    };
+    // Reach past the opening's farthest corner so the arms clear every edge.
+    const maxRadius = Math.hypot((clip.clipX1 - clip.clipX0) / 2, (clip.clipY1 - clip.clipY0) / 2) * 1.05;
+
+    if (waveIndex === 0) {
+      attacks.push({
+        ...base, type: 'bloodSpiral', maxRadius, spiralIntro: true,
+        stretchBeats: BLOOD_TELEGRAPH_BEATS, fireBeats: BLOOD_FIRE_BEATS * 2, // out + back
+      });
+    } else if (waveIndex === 1) {
+      attacks.push({
+        ...base, type: 'pentLine', starV: pentVerts(board),
+        stretchBeats: BLOOD_TELEGRAPH_BEATS, fireBeats: BLOOD_LINE_FIRE_BEATS,
+      });
+    } else {
+      // Scale that fits the pentagram out to the playfield corners; the telegraph
+      // shrinks it back to the real seal so the shadow closes in from the edges.
+      const pentRV = PENT_RADIUS * ((sx + sy) / 2);
+      attacks.push({
+        ...base, type: 'outsidePent', starPoly: pentStarPoly(board),
+        bigScale: maxRadius / pentRV,
+        stretchBeats: BLOOD_OUTSIDE_TELE_BEATS, fireBeats: BLOOD_OUTSIDE_FIRE_BEATS,
+      });
+    }
+    return 3;
   }
 
   // One pentagram beam, pinned to a body part on the standing sprite and aimed
@@ -1898,6 +1956,8 @@
       else if (a.type === 'tentacle') renderTentacleAttack(a);
       else if (a.type === 'xRay') renderXRay(a);
       else if (a.type === 'bloodSpiral') renderBloodSpiral(a);
+      else if (a.type === 'pentLine') renderPentLine(a);
+      else if (a.type === 'outsidePent') renderOutsidePent(a);
     }
   }
 
@@ -2173,19 +2233,89 @@
     drawSkyRay(a.cx, a.cy, a.armWidth * 0.5, descend, alpha);
   }
 
-  // Foot of orbiting beam k at orbit progress t: angle winds clockwise, radius
-  // widens with t. The orbit (and thus beam speed) rides a.fire, which advances
-  // in beats, so the whole attack scales with the tempo.
+  // Foot of orbiting beam k at progress t (0..1 over the WHOLE motion): the ring
+  // winds clockwise out to the rim over the first half, then unwinds
+  // counter-clockwise back to the centre over the second half — one smooth
+  // out-and-back, so the inward sweep flows straight out of the outward one.
   function bloodBeamFoot(a, k, t) {
-    const ang = Math.PI * 2 * BLOOD_TURNS * t + k * Math.PI * 2 / BLOOD_BEAMS;
-    const r = a.maxRadius * t;
+    const u = t <= 0.5 ? t * 2 : 1 - (t - 0.5) * 2; // 0 -> 1 -> 0 (radius + wind)
+    const ang = Math.PI * 2 * BLOOD_TURNS * u + k * Math.PI * 2 / BLOOD_BEAMS;
+    const r = a.maxRadius * u;
     return { x: a.cx + Math.cos(ang) * r, y: a.cy + Math.sin(ang) * r };
+  }
+
+  // Spiral progress 0..1; waits a beat for the intro ray to land and split.
+  function bloodTau(a) {
+    return Math.max(0, Math.min(1, (a.fire - 0.08) / 0.92));
+  }
+
+  // Pentagram-arm progress, after the beams have dropped onto the tips.
+  function pentLineT(a) {
+    return a.fire < BLOOD_LINE_DROP ? 0 : Math.min(1, (a.fire - BLOOD_LINE_DROP) / (1 - BLOOD_LINE_DROP));
+  }
+
+  // Point on the pentagram's single-stroke star path for beam k at progress t
+  // (each beam offset by 1/BEAMS so they spread across the five arms).
+  function pentLinePoint(a, k, t) {
+    let u = (t + k / BLOOD_BEAMS) % 1;
+    if (u < 0) u += 1;
+    const seg = Math.min(4, (u * 5) | 0);
+    const frac = u * 5 - seg;
+    const v0 = a.starV[PENT_STAR_ORDER[seg]];
+    const v1 = a.starV[PENT_STAR_ORDER[(seg + 1) % 5]];
+    return { x: v0.x + (v1.x - v0.x) * frac, y: v0.y + (v1.y - v0.y) * frac };
+  }
+
+  // The five pentagram tips, in viewport space.
+  function pentVerts(board) {
+    const sx = board.width / BOARD;
+    const sy = board.height / BOARD;
+    const v = [];
+    for (let k = 0; k < 5; k++) {
+      const ang = -Math.PI / 2 + k * Math.PI * 2 / 5;
+      v.push({
+        x: board.left + (ARENA_CX + Math.cos(ang) * PENT_RADIUS) * sx,
+        y: board.top + (ARENA_CY + Math.sin(ang) * PENT_RADIUS) * sy,
+      });
+    }
+    return v;
+  }
+
+  // The 10-vertex star outline (outer tips + inner crossings), viewport space.
+  function pentStarPoly(board) {
+    const sx = board.width / BOARD;
+    const sy = board.height / BOARD;
+    const innerR = PENT_RADIUS * PENT_INNER_RATIO;
+    const poly = [];
+    for (let k = 0; k < 5; k++) {
+      const ao = -Math.PI / 2 + k * Math.PI * 2 / 5;
+      const ai = ao + Math.PI / 5;
+      poly.push({ x: board.left + (ARENA_CX + Math.cos(ao) * PENT_RADIUS) * sx, y: board.top + (ARENA_CY + Math.sin(ao) * PENT_RADIUS) * sy });
+      poly.push({ x: board.left + (ARENA_CX + Math.cos(ai) * innerR) * sx, y: board.top + (ARENA_CY + Math.sin(ai) * innerR) * sy });
+    }
+    return poly;
+  }
+
+  function pointInPoly(px, py, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+      if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+    }
+    return inside;
+  }
+
+  function distToSeg(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const l2 = dx * dx + dy * dy || 1;
+    let t = ((px - ax) * dx + (py - ay) * dy) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
   }
 
   function renderBloodSpiral(a) {
     const firing = a.state === 'fire' || a.state === 'done';
-    // Orbit progress: starts once the initial ray has landed and split.
-    const tau = firing ? Math.max(0, Math.min(1, (a.fire - 0.08) / 0.92)) : 0;
+    const tau = firing ? bloodTau(a) : 0;
     // A quarter-second of orbit ahead of where the beams are now.
     const tauFuture = Math.max(0, Math.min(1, tau + (250 / (beatMs * a.fireBeats)) / 0.92));
     // Ease the whole attack out over its final stretch instead of cutting it.
@@ -2193,11 +2323,13 @@
 
     // --- Sky beams (unclipped: they fall from above the box) ---------------
     if (firing) {
-      // The centre beam lands (descend animation) and then stays — the static
-      // sixth beam at the eye of the orbit.
-      const introDescend = easeOutCubic(Math.min(1, a.fire / 0.05));
-      drawSkyRay(a.cx, a.cy, a.beamWidth * 0.9, introDescend, 0.92 * endFade);
-      // Five beams whose feet orbit the centre on an ever-widening ring.
+      // The outward spiral keeps a static centre beam (the eye of the orbit);
+      // the inward one has no centre — its beams converge there at the end.
+      if (a.spiralIntro) {
+        const introDescend = easeOutCubic(Math.min(1, a.fire / 0.05));
+        drawSkyRay(a.cx, a.cy, a.beamWidth * 0.9, introDescend, 0.92 * endFade);
+      }
+      // Five beams whose feet orbit the centre on a widening/narrowing ring.
       if (tau > 0) {
         for (let k = 0; k < BLOOD_BEAMS; k++) {
           const f = bloodBeamFoot(a, k, tau);
@@ -2213,12 +2345,13 @@
     actx.clip();
 
     if (!firing) {
-      // Purple reticle that CLOSES in onto the impact point, plus a bright core.
+      // Purple reticle irising in onto the centre where the ray will land.
       const glow = a.state === 'armed' ? 1 : a.stretch;
+      const retR = a.maxRadius * 0.5 * (1 - glow) + 3;
       actx.strokeStyle = 'rgba(120, 40, 170, 0.85)';
       actx.lineWidth = 2;
       actx.beginPath();
-      actx.arc(a.cx, a.cy, a.maxRadius * 0.5 * (1 - glow) + 3, 0, Math.PI * 2);
+      actx.arc(a.cx, a.cy, retR, 0, Math.PI * 2);
       actx.stroke();
       actx.shadowColor = 'rgba(150, 60, 230, ' + (0.5 + glow * 0.5).toFixed(3) + ')';
       actx.shadowBlur = 8 + glow * 16;
@@ -2284,9 +2417,160 @@
           actx.beginPath(); actx.arc(f.x, f.y, a.beamWidth * 0.7, 0, Math.PI * 2); actx.fill();
         }
       }
-      actx.beginPath(); actx.arc(a.cx, a.cy, a.beamWidth * 0.6, 0, Math.PI * 2); actx.fill();
+      // The static eye pool, only while the centre beam is present (outward).
+      if (a.spiralIntro) { actx.beginPath(); actx.arc(a.cx, a.cy, a.beamWidth * 0.6, 0, Math.PI * 2); actx.fill(); }
     }
 
+    actx.restore();
+  }
+
+  // Phase 2: five sky-beams drop onto the pentagram tips, then chase its arms.
+  function renderPentLine(a) {
+    const firing = a.state === 'fire' || a.state === 'done';
+    const t = firing ? pentLineT(a) : 0;
+    // The beams fall onto the tips over the first slice of the strike.
+    const descend = firing && a.fire < BLOOD_LINE_DROP ? easeOutCubic(a.fire / BLOOD_LINE_DROP) : 1;
+    const endFade = 1 - smoothstep((a.fire - 0.85) / 0.15);
+
+    if (firing) {
+      for (let k = 0; k < BLOOD_BEAMS; k++) {
+        const f = pentLinePoint(a, k, t);
+        drawSkyRay(f.x, f.y, a.beamWidth * 0.7, descend, 0.92 * endFade);
+      }
+    }
+
+    actx.save();
+    actx.beginPath();
+    actx.rect(a.clipX0, a.clipY0, a.clipX1 - a.clipX0, a.clipY1 - a.clipY0);
+    actx.clip();
+    actx.lineJoin = 'round';
+    const traceStar = () => {
+      actx.beginPath();
+      for (let i = 0; i <= 5; i++) {
+        const v = a.starV[PENT_STAR_ORDER[i % 5]];
+        if (i === 0) actx.moveTo(v.x, v.y); else actx.lineTo(v.x, v.y);
+      }
+    };
+
+    if (!firing) {
+      // Telegraph: the star path the beams will run, brightening as it arms.
+      const glow = a.state === 'armed' ? 1 : a.stretch;
+      traceStar();
+      actx.strokeStyle = 'rgba(58, 10, 80, 0.5)';
+      actx.lineWidth = a.beamWidth;
+      actx.stroke();
+      traceStar();
+      actx.strokeStyle = 'rgba(168, 84, 232, ' + (0.4 + glow * 0.5).toFixed(3) + ')';
+      actx.lineWidth = 2;
+      actx.stroke();
+    } else {
+      actx.globalAlpha = endFade;
+      // The dim arms (shadow) plus the dark-blood pools at each running foot.
+      traceStar();
+      actx.strokeStyle = 'rgba(28, 5, 42, 0.5)';
+      actx.lineWidth = a.beamWidth;
+      actx.stroke();
+      traceStar();
+      actx.strokeStyle = 'rgba(168, 84, 232, 0.35)';
+      actx.lineWidth = 1;
+      actx.stroke();
+      actx.shadowColor = 'rgba(160, 10, 12, 0.9)';
+      actx.shadowBlur = 18;
+      actx.fillStyle = 'rgba(90, 4, 8, 0.95)';
+      for (let k = 0; k < BLOOD_BEAMS; k++) {
+        const f = pentLinePoint(a, k, t);
+        actx.beginPath(); actx.arc(f.x, f.y, a.beamWidth * 0.7, 0, Math.PI * 2); actx.fill();
+      }
+    }
+    actx.restore();
+  }
+
+  // Phase 3: a shadow closes in from the edges; once it reaches the seal a huge
+  // sky beam floods everything outside the pentagram.
+  function renderOutsidePent(a) {
+    const firing = a.state === 'fire' || a.state === 'done';
+    const glow = a.state === 'armed' ? 1 : a.stretch;
+    // Telegraph holds a pentagram scaled out to the corners and shrinks it back
+    // to real size, so the danger shadow appears to close in from the edges.
+    const scale = firing ? 1 : a.bigScale + (1 - a.bigScale) * glow;
+
+    // Star outline at a given scale about the arena centre.
+    const sx = (s, i) => a.cx + (a.starPoly[i].x - a.cx) * s;
+    const sy = (s, i) => a.cy + (a.starPoly[i].y - a.cy) * s;
+    const traceStar = (s) => {
+      actx.beginPath();
+      actx.moveTo(sx(s, 0), sy(s, 0));
+      for (let i = 1; i < a.starPoly.length; i++) actx.lineTo(sx(s, i), sy(s, i));
+      actx.closePath();
+    };
+    // Opening rect + scaled star, for an even-odd "outside the seal" fill.
+    const traceOutside = (s) => {
+      actx.beginPath();
+      actx.rect(a.clipX0, a.clipY0, a.clipX1 - a.clipX0, a.clipY1 - a.clipY0);
+      actx.moveTo(sx(s, 0), sy(s, 0));
+      for (let i = 1; i < a.starPoly.length; i++) actx.lineTo(sx(s, i), sy(s, i));
+      actx.closePath();
+    };
+
+    // --- Huge sky beam (unclipped: it slams down over the whole arena, hero
+    //     and cultist included) ---------------------------------------------
+    if (firing) {
+      const life = 1 - smoothstep(a.fire / 0.55);
+      const descend = easeOutCubic(Math.min(1, a.fire / 0.1));
+      const W = a.clipX1 - a.clipX0;
+      const mid = (a.clipX0 + a.clipX1) / 2;
+      const halfW = W * 0.66;
+      const headY = a.clipY1 * descend;
+      actx.save();
+      const grad = actx.createLinearGradient(0, 0, 0, Math.max(1, headY));
+      grad.addColorStop(0, 'rgba(150, 8, 10, 0)');
+      grad.addColorStop(0.55, 'rgba(230, 30, 22, ' + (0.55 * life).toFixed(3) + ')');
+      grad.addColorStop(1, 'rgba(255, 150, 110, ' + (0.9 * life).toFixed(3) + ')');
+      actx.fillStyle = grad;
+      actx.fillRect(mid - halfW, 0, halfW * 2, headY);
+      // White-hot core column.
+      actx.fillStyle = 'rgba(255, 232, 222, ' + (0.55 * life).toFixed(3) + ')';
+      actx.fillRect(mid - halfW * 0.5, 0, halfW, headY);
+      actx.restore();
+    }
+
+    // --- Floor layer (clipped to the opening) -----------------------------
+    actx.save();
+    actx.beginPath();
+    actx.rect(a.clipX0, a.clipY0, a.clipX1 - a.clipX0, a.clipY1 - a.clipY0);
+    actx.clip();
+
+    if (!firing) {
+      traceOutside(scale);
+      actx.fillStyle = 'rgba(58, 10, 80, ' + (0.12 + glow * 0.22).toFixed(3) + ')';
+      actx.fill('evenodd');
+      traceStar(scale);
+      actx.strokeStyle = 'rgba(168, 84, 232, ' + (0.45 + glow * 0.45).toFixed(3) + ')';
+      actx.lineWidth = 2;
+      actx.stroke();
+      // Real seal outline, so the eventual safe pocket reads from the start.
+      traceStar(1);
+      actx.strokeStyle = 'rgba(120, 40, 170, 0.5)';
+      actx.lineWidth = 1.5;
+      actx.stroke();
+    } else {
+      const life = 1 - smoothstep(a.fire / 0.6);
+      // Blinding bloody flood everywhere outside the seal.
+      traceOutside(1);
+      actx.shadowColor = 'rgba(255, 60, 40, ' + (0.9 * life).toFixed(3) + ')';
+      actx.shadowBlur = 44 * life;
+      actx.fillStyle = 'rgba(200, 14, 12, ' + (0.85 * life).toFixed(3) + ')';
+      actx.fill('evenodd');
+      actx.shadowBlur = 0;
+      traceOutside(1);
+      actx.fillStyle = 'rgba(255, 214, 196, ' + (0.5 * life).toFixed(3) + ')';
+      actx.fill('evenodd');
+      // Bright seal rim.
+      traceStar(1);
+      actx.strokeStyle = 'rgba(255, 224, 196, ' + (0.7 * life).toFixed(3) + ')';
+      actx.lineWidth = 3;
+      actx.stroke();
+    }
     actx.restore();
   }
 
