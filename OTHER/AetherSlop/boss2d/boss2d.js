@@ -1263,14 +1263,14 @@
       return null;
     }
     if (a.type === 'outsidePent') {
-      // The seal (scaled while the shadow closes in) is the only safe pocket; the
-      // strike lands once it has shrunk to the real pentagram.
+      if (firing) {
+        // Once it lands, everything outside the real seal is struck.
+        return pointInPoly(vx, vy, a.starPoly) ? null : 'live';
+      }
+      // While telegraphing, standing beyond the ragged tide front earns VP.
       const glow = a.state === 'armed' ? 1 : a.stretch;
-      const scale = firing ? 1 : a.bigScale + (1 - a.bigScale) * glow;
-      const px = a.cx + (vx - a.cx) / scale;
-      const py = a.cy + (vy - a.cy) / scale;
-      if (pointInPoly(px, py, a.starPoly)) return null;
-      return firing ? 'live' : 'shadow';
+      const theta = Math.atan2(vy - a.cy, vx - a.cx);
+      return Math.hypot(vx - a.cx, vy - a.cy) >= bloodTideFront(a, theta, glow) ? 'shadow' : null;
     }
     return null;
   }
@@ -1873,12 +1873,11 @@
         stretchBeats: BLOOD_TELEGRAPH_BEATS, fireBeats: BLOOD_LINE_FIRE_BEATS,
       });
     } else {
-      // Scale that fits the pentagram out to the playfield corners; the telegraph
-      // shrinks it back to the real seal so the shadow closes in from the edges.
-      const pentRV = PENT_RADIUS * ((sx + sy) / 2);
+      // A jagged shadow tide rolls in from the edges (tideEdgeR) and halts on the
+      // pentagram's outline; `seed` gives each cast its own ragged front.
       attacks.push({
         ...base, type: 'outsidePent', starPoly: pentStarPoly(board),
-        bigScale: maxRadius / pentRV,
+        seed: Math.random() * 100, tideEdgeR: maxRadius,
         stretchBeats: BLOOD_OUTSIDE_TELE_BEATS, fireBeats: BLOOD_OUTSIDE_FIRE_BEATS,
       });
     }
@@ -2313,6 +2312,37 @@
     return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
   }
 
+  // Distance from the arena centre to the pentagram outline along `theta` (the
+  // star is star-shaped about its centre, so a ray hits it exactly once).
+  function starRadiusAt(a, theta) {
+    const dx = Math.cos(theta), dy = Math.sin(theta);
+    const poly = a.starPoly;
+    let best = a.tideEdgeR;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const ax = poly[j].x - a.cx, ay = poly[j].y - a.cy;
+      const ex = (poly[i].x - a.cx) - ax, ey = (poly[i].y - a.cy) - ay;
+      const det = ex * dy - dx * ey;
+      if (Math.abs(det) < 1e-9) continue;
+      const t = (ex * ay - ax * ey) / det;      // distance along the ray
+      const s = (dx * ay - dy * ax) / det;      // param along the segment
+      if (t >= 0 && s >= 0 && s <= 1 && t < best) best = t;
+    }
+    return best;
+  }
+
+  // Radius of the advancing shadow front at `theta`. It rolls in from tideEdgeR
+  // (g=0) to the pentagram outline (g=1), with a ragged, angle-dependent profile
+  // so it reads as a tide rather than a shrinking star.
+  function bloodTideFront(a, theta, g) {
+    const Rp = starRadiusAt(a, theta);
+    let n = 0.5 + 0.34 * Math.sin(theta * 9 + a.seed) + 0.16 * Math.sin(theta * 17 - a.seed * 2.3);
+    n = Math.max(0, Math.min(1, n));
+    // Per-angle progress: 0 at the rim (g=0), the pentagram (g=1), ragged in the
+    // middle so the front reads as a churning tide, not a shrinking star.
+    const gEff = Math.max(0, Math.min(1, g + (n - 0.5) * Math.sin(Math.PI * g) * 0.7));
+    return a.tideEdgeR + (Rp - a.tideEdgeR) * gEff;
+  }
+
   function renderBloodSpiral(a) {
     const firing = a.state === 'fire' || a.state === 'done';
     const tau = firing ? bloodTau(a) : 0;
@@ -2485,30 +2515,39 @@
     actx.restore();
   }
 
-  // Phase 3: a shadow closes in from the edges; once it reaches the seal a huge
-  // sky beam floods everything outside the pentagram.
+  // Phase 3: a jagged shadow tide rolls in from the edges and halts on the
+  // pentagram; once it lands a huge sky beam floods everything outside the seal.
   function renderOutsidePent(a) {
     const firing = a.state === 'fire' || a.state === 'done';
     const glow = a.state === 'armed' ? 1 : a.stretch;
-    // Telegraph holds a pentagram scaled out to the corners and shrinks it back
-    // to real size, so the danger shadow appears to close in from the edges.
-    const scale = firing ? 1 : a.bigScale + (1 - a.bigScale) * glow;
 
-    // Star outline at a given scale about the arena centre.
-    const sx = (s, i) => a.cx + (a.starPoly[i].x - a.cx) * s;
-    const sy = (s, i) => a.cy + (a.starPoly[i].y - a.cy) * s;
-    const traceStar = (s) => {
+    const traceStar = () => {
       actx.beginPath();
-      actx.moveTo(sx(s, 0), sy(s, 0));
-      for (let i = 1; i < a.starPoly.length; i++) actx.lineTo(sx(s, i), sy(s, i));
+      actx.moveTo(a.starPoly[0].x, a.starPoly[0].y);
+      for (let i = 1; i < a.starPoly.length; i++) actx.lineTo(a.starPoly[i].x, a.starPoly[i].y);
       actx.closePath();
     };
-    // Opening rect + scaled star, for an even-odd "outside the seal" fill.
-    const traceOutside = (s) => {
+    // Opening rect + real star, for an even-odd "outside the seal" fill.
+    const traceOutside = () => {
       actx.beginPath();
       actx.rect(a.clipX0, a.clipY0, a.clipX1 - a.clipX0, a.clipY1 - a.clipY0);
-      actx.moveTo(sx(s, 0), sy(s, 0));
-      for (let i = 1; i < a.starPoly.length; i++) actx.lineTo(sx(s, i), sy(s, i));
+      actx.moveTo(a.starPoly[0].x, a.starPoly[0].y);
+      for (let i = 1; i < a.starPoly.length; i++) actx.lineTo(a.starPoly[i].x, a.starPoly[i].y);
+      actx.closePath();
+    };
+    // Opening rect + the ragged tide front, even-odd, so shadow fills only the
+    // swept-in region between the edges and the jagged leading edge.
+    const traceTide = (g) => {
+      actx.beginPath();
+      actx.rect(a.clipX0, a.clipY0, a.clipX1 - a.clipX0, a.clipY1 - a.clipY0);
+      const N = 108;
+      for (let i = 0; i <= N; i++) {
+        const th = (i / N) * Math.PI * 2;
+        const r = bloodTideFront(a, th, g);
+        const x = a.cx + Math.cos(th) * r;
+        const y = a.cy + Math.sin(th) * r;
+        if (i === 0) actx.moveTo(x, y); else actx.lineTo(x, y);
+      }
       actx.closePath();
     };
 
@@ -2541,32 +2580,34 @@
     actx.clip();
 
     if (!firing) {
-      traceOutside(scale);
-      actx.fillStyle = 'rgba(58, 10, 80, ' + (0.12 + glow * 0.22).toFixed(3) + ')';
+      // The ragged shadow tide filling in from the edges.
+      traceTide(glow);
+      actx.fillStyle = 'rgba(22, 3, 30, ' + (0.42 + glow * 0.3).toFixed(3) + ')';
       actx.fill('evenodd');
-      traceStar(scale);
-      actx.strokeStyle = 'rgba(168, 84, 232, ' + (0.45 + glow * 0.45).toFixed(3) + ')';
-      actx.lineWidth = 2;
-      actx.stroke();
-      // Real seal outline, so the eventual safe pocket reads from the start.
-      traceStar(1);
-      actx.strokeStyle = 'rgba(120, 40, 170, 0.5)';
+      // Faint bruised edge on the leading front for definition.
+      traceTide(glow);
+      actx.strokeStyle = 'rgba(120, 40, 170, ' + (0.28 + glow * 0.3).toFixed(3) + ')';
       actx.lineWidth = 1.5;
+      actx.stroke();
+      // Real seal outline, so the safe pocket reads from the start.
+      traceStar();
+      actx.strokeStyle = 'rgba(168, 84, 232, ' + (0.4 + glow * 0.45).toFixed(3) + ')';
+      actx.lineWidth = 2;
       actx.stroke();
     } else {
       const life = 1 - smoothstep(a.fire / 0.6);
       // Blinding bloody flood everywhere outside the seal.
-      traceOutside(1);
+      traceOutside();
       actx.shadowColor = 'rgba(255, 60, 40, ' + (0.9 * life).toFixed(3) + ')';
       actx.shadowBlur = 44 * life;
       actx.fillStyle = 'rgba(200, 14, 12, ' + (0.85 * life).toFixed(3) + ')';
       actx.fill('evenodd');
       actx.shadowBlur = 0;
-      traceOutside(1);
+      traceOutside();
       actx.fillStyle = 'rgba(255, 214, 196, ' + (0.5 * life).toFixed(3) + ')';
       actx.fill('evenodd');
       // Bright seal rim.
-      traceStar(1);
+      traceStar();
       actx.strokeStyle = 'rgba(255, 224, 196, ' + (0.7 * life).toFixed(3) + ')';
       actx.lineWidth = 3;
       actx.stroke();
