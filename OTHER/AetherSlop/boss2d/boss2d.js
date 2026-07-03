@@ -79,6 +79,9 @@
 
   // Hero position is the centre of the sprite, in board space.
   const hero = { x: BOARD / 2, y: BOARD / 2 };
+  // Current input direction, used by predictive portal attacks. It clears as
+  // soon as the player releases movement so standing still means "aim at me".
+  const heroMove = { x: 0, y: 0 };
 
   // ---- Intro / combat sequencing ----------------------------------------
   // The fight opens with a scripted sequence: the hero falls into the arena,
@@ -290,10 +293,45 @@
   const PENT_STAR_ORDER = [0, 2, 4, 1, 3]; // single-stroke five-pointed star
   const PENT_INNER_RATIO = 0.382;    // inner/outer vertex radius of a pentagram
 
+  // ---- Checkerboard floor collapse ---------------------------------------
+  // Alternating floor tiles bloom from their centres, detonate, then the
+  // inverse parity immediately follows. The pair repeats three times.
+  const CHECKER_COLS = 8;
+  const CHECKER_ROWS = 8;
+  const CHECKER_CYCLES = 3;
+  const CHECKER_GROW_BEATS = 0.85;
+  const CHECKER_HOLD_BEATS = 0.08;
+  const CHECKER_FIRE_BEATS = 0.42;
+  const CHECKER_REST_BEATS = 0;
+
+  // ---- Small portal curved-beam barrage ----------------------------------
+  const PORTAL_BARRAGE_WAVES = 1;
+  const PORTAL_BARRAGE_COUNT = 18;
+  const PORTAL_AIM_LEAD = 70;        // px ahead of current movement direction
+  const PORTAL_CURVE_WIDTH = 32;
+  const PORTAL_CURVE_OVERSHOOT = 340;
+  const PORTAL_CURVE_DELAY_BEATS = 0.36;
+  const PORTAL_CURVE_TELE_BEATS = 1.5;
+  const PORTAL_CURVE_HOLD_BEATS = 0.12;
+  const PORTAL_CURVE_FIRE_BEATS = 1.2;
+  const PORTAL_CURVE_REST_BEATS = 0.2;
+
+  // ---- Twin portal bullet curtain ----------------------------------------
+  const SIDE_PORTAL_FIRE_BEATS = 10;
+  const SIDE_PORTAL_TELE_BEATS = 1;
+  const SIDE_PORTAL_HOLD_BEATS = 0.2;
+  const SIDE_PORTAL_REST_BEATS = 0.75;
+  const SIDE_PORTAL_BULLETS_PER_SIDE = 8;
+  const SIDE_PORTAL_BULLET_RADIUS = 10;
+  const SIDE_PORTAL_SHADOW_LEN = SIDE_PORTAL_BULLET_RADIUS * 4;
+
   // The fight cycles through a list of movements; each runs a fixed number of
   // waves (one wave = everything that telegraphs and fires together), and when
   // its waves are spent the next movement takes over.
-  const MOVEMENT_SEQUENCE = ['pentagrams', 'tentacles', 'xrays', 'bloodspiral'];
+  const MOVEMENT_SEQUENCE = [
+    'pentagrams', 'tentacles', 'xrays', 'bloodspiral',
+    'checkerboard', 'portalbarrage', 'sideportals',
+  ];
   const COMBINE_WRATH = 120;         // at/above this wrath two patterns run at once
   // One movement plays at a time until wrath hits COMBINE_WRATH, then two run
   // concurrently and whichever finishes is replaced by another random pattern.
@@ -1171,13 +1209,19 @@
     if (keys.has('KeyD') || keys.has('ArrowRight')) dx += 1;
     if (keys.has('KeyW') || keys.has('ArrowUp')) dy -= 1;
     if (keys.has('KeyS') || keys.has('ArrowDown')) dy += 1;
-    if (dx === 0 && dy === 0) return;
+    if (dx === 0 && dy === 0) {
+      heroMove.x = 0;
+      heroMove.y = 0;
+      return;
+    }
     // Normalise so diagonals aren't faster — true Undertale free movement.
     // Speed rides the tempo so the hero keeps pace as the fight accelerates.
     const len = Math.hypot(dx, dy);
+    heroMove.x = dx / len;
+    heroMove.y = dy / len;
     const speed = MOVE_SPEED * (bpm / BASE_BPM);
-    hero.x += (dx / len) * speed * dt;
-    hero.y += (dy / len) * speed * dt;
+    hero.x += heroMove.x * speed * dt;
+    hero.y += heroMove.y * speed * dt;
     clampHero();
   }
 
@@ -1271,6 +1315,18 @@
       const glow = a.state === 'armed' ? 1 : a.stretch;
       const theta = Math.atan2(vy - a.cy, vx - a.cx);
       return Math.hypot(vx - a.cx, vy - a.cy) >= bloodTideFront(a, theta, glow) ? 'shadow' : null;
+    }
+    if (a.type === 'checkerboard') {
+      return checkerboardZone(a, vx, vy, firing);
+    }
+    if (a.type === 'portalCurve') {
+      const until = firing ? 1 : a.stretch;
+      return nearQuadPath(vx, vy, a.x0, a.y0, a.cx, a.cy, a.x1, a.y1, a.width / 2, until)
+        ? (firing ? 'live' : 'shadow')
+        : null;
+    }
+    if (a.type === 'sidePortals') {
+      return sidePortalZone(a, vx, vy, firing);
     }
     return null;
   }
@@ -1703,6 +1759,9 @@
     if (name === 'tentacles') return spawnTentacleWave(wave, board);
     if (name === 'xrays') return spawnXRayWave(wave, board);
     if (name === 'bloodspiral') return spawnBloodSpiralWave(wave, board);
+    if (name === 'checkerboard') return spawnCheckerboardWave(wave, board);
+    if (name === 'portalbarrage') return spawnPortalBarrageWave(wave, board);
+    if (name === 'sideportals') return spawnSidePortalsWave(wave, board);
     return spawnPentagramWave(wave, board);
   }
 
@@ -1884,6 +1943,144 @@
     return 3;
   }
 
+  function openMetrics(board) {
+    const sx = board.width / BOARD;
+    const sy = board.height / BOARD;
+    const openLo = BORDER;
+    const openHi = BOARD - BORDER;
+    return {
+      sx, sy,
+      scale: (sx + sy) / 2,
+      x0: board.left + openLo * sx,
+      x1: board.left + openHi * sx,
+      y0: board.top + openLo * sy,
+      y1: board.top + openHi * sy,
+      w: (openHi - openLo) * sx,
+      h: (openHi - openLo) * sy,
+    };
+  }
+
+  function spawnCheckerboardWave(waveIndex, board) {
+    const m = openMetrics(board);
+    attacks.push({
+      type: 'checkerboard',
+      state: 'telegraph',
+      parity: waveIndex % 2,
+      cols: CHECKER_COLS,
+      rows: CHECKER_ROWS,
+      x0: m.x0, y0: m.y0, w: m.w, h: m.h,
+      tileW: m.w / CHECKER_COLS,
+      tileH: m.h / CHECKER_ROWS,
+      seed: 13.7 + waveIndex * 5.31 + Math.random() * 20,
+      stretch: 0,
+      stretchBeats: CHECKER_GROW_BEATS,
+      holdBeats: CHECKER_HOLD_BEATS,
+      holdTime: 0,
+      fire: 0,
+      fireBeats: CHECKER_FIRE_BEATS,
+      restBeats: CHECKER_REST_BEATS,
+    });
+    return CHECKER_CYCLES * 2;
+  }
+
+  function spawnPortalBarrageWave(waveIndex, board) {
+    const m = openMetrics(board);
+    const heroV = {
+      x: board.left + hero.x * m.sx,
+      y: board.top + hero.y * m.sy,
+    };
+    const moving = Math.hypot(heroMove.x, heroMove.y) > 0.001;
+    const target = {
+      x: Math.max(m.x0 + 18, Math.min(m.x1 - 18, heroV.x + (moving ? heroMove.x * PORTAL_AIM_LEAD * m.scale : 0))),
+      y: Math.max(m.y0 + 18, Math.min(m.y1 - 18, heroV.y + (moving ? heroMove.y * PORTAL_AIM_LEAD * m.scale : 0))),
+    };
+    const perim = 2 * (m.w + m.h);
+    const offset = ((waveIndex * 0.37) % 1) * perim;
+    const count = PORTAL_BARRAGE_COUNT;
+    for (let i = 0; i < count; i++) {
+      const p = (offset + perim * i / count) % perim;
+      const origin = pointAroundOpenRect(m, p, 34 * m.scale);
+      const dx = target.x - origin.x;
+      const dy = target.y - origin.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len;
+      const uy = dy / len;
+      const bend = (i % 2 ? -1 : 1) * (42 + ((i / 3) | 0) % 3 * 12) * m.scale;
+      const midX = (origin.x + target.x) / 2;
+      const midY = (origin.y + target.y) / 2;
+      attacks.push({
+        type: 'portalCurve',
+        state: i === 0 ? 'telegraph' : 'waiting',
+        waitTime: 0,
+        waitBeats: i * PORTAL_CURVE_DELAY_BEATS,
+        x0: origin.x, y0: origin.y,
+        cx: midX + (-dy / len) * bend,
+        cy: midY + (dx / len) * bend,
+        x1: target.x + ux * PORTAL_CURVE_OVERSHOOT * m.scale,
+        y1: target.y + uy * PORTAL_CURVE_OVERSHOOT * m.scale,
+        angle: Math.atan2(dy, dx),
+        radius: 12 * m.scale,
+        width: PORTAL_CURVE_WIDTH * m.scale,
+        stretch: 0,
+        stretchBeats: PORTAL_CURVE_TELE_BEATS,
+        holdBeats: PORTAL_CURVE_HOLD_BEATS,
+        holdTime: 0,
+        fire: 0,
+        fireBeats: PORTAL_CURVE_FIRE_BEATS,
+        restBeats: PORTAL_CURVE_REST_BEATS,
+      });
+    }
+    return PORTAL_BARRAGE_WAVES;
+  }
+
+  function spawnSidePortalsWave(waveIndex, board) {
+    if (waveIndex > 1) return 2;
+    const m = openMetrics(board);
+    const bullets = [];
+    const random = mulberry32(0x51d000 + ((fightClock | 0) & 0xffff));
+    const phase = waveIndex % 2;
+    const makeBullet = (side, i) => {
+      const left = side === 'left';
+      const topHalf = phase === 0 ? !left : left;
+      const laneTop = topHalf ? m.y0 : m.y0 + m.h * 0.5;
+      const laneH = m.h * 0.5;
+      const dir = left ? 1 : -1;
+      const gap = laneH / (SIDE_PORTAL_BULLETS_PER_SIDE + 1);
+      const laneIndex = i % 2 === 0 ? i / 2 : SIDE_PORTAL_BULLETS_PER_SIDE - 1 - ((i - 1) / 2);
+      bullets.push({
+        side,
+        x0: left ? m.x0 - 24 * m.scale : m.x1 + 24 * m.scale,
+        y0: laneTop + gap * (laneIndex + 1),
+        dir,
+        delay: i * ((SIDE_PORTAL_FIRE_BEATS - 2) / Math.max(1, SIDE_PORTAL_BULLETS_PER_SIDE - 1)) + random() * 0.04,
+        speed: (m.w + 80 * m.scale) / (6.2 + random() * 0.35),
+        amp: 0,
+        wave: 0,
+        phase: 0,
+      });
+    };
+    for (let i = 0; i < SIDE_PORTAL_BULLETS_PER_SIDE; i++) {
+      makeBullet('left', i);
+      makeBullet('right', i);
+    }
+    attacks.push({
+      type: 'sidePortals',
+      state: 'telegraph',
+      phase,
+      x0: m.x0, x1: m.x1, y0: m.y0, y1: m.y1, w: m.w, h: m.h,
+      scale: m.scale,
+      bullets,
+      stretch: 0,
+      stretchBeats: SIDE_PORTAL_TELE_BEATS,
+      holdBeats: SIDE_PORTAL_HOLD_BEATS,
+      holdTime: 0,
+      fire: 0,
+      fireBeats: SIDE_PORTAL_FIRE_BEATS,
+      restBeats: SIDE_PORTAL_REST_BEATS,
+    });
+    return 2;
+  }
+
   // One pentagram beam, pinned to a body part on the standing sprite and aimed
   // at its assigned node. Positions are captured in viewport space at spawn
   // time, so the beam stays anchored while she keeps floating.
@@ -1916,7 +2113,13 @@
 
   function updateAttacks(dt) {
     for (const a of attacks) {
-      if (a.state === 'telegraph') {
+      if (a.state === 'waiting') {
+        a.waitTime += dt;
+        if (a.waitTime >= beatMs * a.waitBeats) {
+          a.state = 'telegraph';
+          a.stretch = 0;
+        }
+      } else if (a.state === 'telegraph') {
         // The snake advances at the beat's pace, reaching the far edge in one beat.
         a.stretch += dt / (beatMs * a.stretchBeats);
         if (a.stretch >= 1) {
@@ -1957,6 +2160,9 @@
       else if (a.type === 'bloodSpiral') renderBloodSpiral(a);
       else if (a.type === 'pentLine') renderPentLine(a);
       else if (a.type === 'outsidePent') renderOutsidePent(a);
+      else if (a.type === 'checkerboard') renderCheckerboard(a);
+      else if (a.type === 'portalCurve') renderPortalCurve(a);
+      else if (a.type === 'sidePortals') renderSidePortals(a);
     }
   }
 
@@ -2175,6 +2381,285 @@
       const r = Math.max(1.5, tentHW[s] * 0.32);
       actx.fillStyle = 'rgba(120, 40, 170, ' + (0.5 * alpha).toFixed(3) + ')';
       actx.beginPath(); actx.arc(tentPX[s], tentPY[s], r, 0, Math.PI * 2); actx.fill();
+    }
+    actx.restore();
+  }
+
+  function pointAroundOpenRect(m, p, outward) {
+    const w = m.w;
+    const h = m.h;
+    if (p < w) return { x: m.x0 + p, y: m.y0 - outward };
+    p -= w;
+    if (p < h) return { x: m.x1 + outward, y: m.y0 + p };
+    p -= h;
+    if (p < w) return { x: m.x1 - p, y: m.y1 + outward };
+    p -= w;
+    return { x: m.x0 - outward, y: m.y1 - p };
+  }
+
+  function quadPoint(x0, y0, cx, cy, x1, y1, t) {
+    const u = 1 - t;
+    return {
+      x: u * u * x0 + 2 * u * t * cx + t * t * x1,
+      y: u * u * y0 + 2 * u * t * cy + t * t * y1,
+    };
+  }
+
+  function nearQuadPath(px, py, x0, y0, cx, cy, x1, y1, hw, until) {
+    const end = Math.max(0, Math.min(1, until == null ? 1 : until));
+    if (end <= 0) return false;
+    const steps = Math.max(3, Math.ceil(18 * end));
+    let prev = quadPoint(x0, y0, cx, cy, x1, y1, 0);
+    for (let i = 1; i <= steps; i++) {
+      const t = end * (i / steps);
+      const next = quadPoint(x0, y0, cx, cy, x1, y1, t);
+      if (distToSeg(px, py, prev.x, prev.y, next.x, next.y) <= hw) return true;
+      prev = next;
+    }
+    return false;
+  }
+
+  function checkerboardZone(a, vx, vy, firing) {
+    if (vx < a.x0 || vx > a.x0 + a.w || vy < a.y0 || vy > a.y0 + a.h) return null;
+    const col = Math.min(a.cols - 1, Math.max(0, Math.floor((vx - a.x0) / a.tileW)));
+    const row = Math.min(a.rows - 1, Math.max(0, Math.floor((vy - a.y0) / a.tileH)));
+    if (((col + row) & 1) !== a.parity) return null;
+    if (firing) return 'live';
+    const cx = a.x0 + (col + 0.5) * a.tileW;
+    const cy = a.y0 + (row + 0.5) * a.tileH;
+    const theta = Math.atan2(vy - cy, vx - cx);
+    return Math.hypot(vx - cx, vy - cy) <= checkerTileFront(a, col, row, theta) ? 'shadow' : null;
+  }
+
+  function checkerTileNoise(a, col, row, theta) {
+    const s = a.seed + col * 2.31 + row * 3.73;
+    return 0.5 +
+      0.28 * Math.sin(theta * 7 + s) +
+      0.16 * Math.sin(theta * 13 - s * 1.9) +
+      0.08 * Math.sin(theta * 19 + s * 0.7);
+  }
+
+  function checkerTileEdgeRadius(a, theta) {
+    const c = Math.abs(Math.cos(theta));
+    const s = Math.abs(Math.sin(theta));
+    const rx = c < 1e-4 ? Infinity : (a.tileW * 0.5) / c;
+    const ry = s < 1e-4 ? Infinity : (a.tileH * 0.5) / s;
+    return Math.min(rx, ry);
+  }
+
+  function checkerTileFront(a, col, row, theta) {
+    const g = a.state === 'armed' ? 1 : Math.max(0, Math.min(1, a.stretch));
+    const n = Math.max(0, Math.min(1, checkerTileNoise(a, col, row, theta)));
+    const gEff = Math.max(0, Math.min(1, g + (n - 0.5) * Math.sin(Math.PI * g) * 0.65));
+    return checkerTileEdgeRadius(a, theta) * gEff;
+  }
+
+  function sidePortalBulletPos(a, b, elapsedBeats) {
+    const age = elapsedBeats - b.delay;
+    if (age < 0) return null;
+    const x = b.x0 + b.dir * b.speed * age;
+    if (x < a.x0 - 46 * a.scale || x > a.x1 + 46 * a.scale) return null;
+    const travel = Math.abs(x - b.x0);
+    const y = b.y0 + Math.sin(travel * b.wave + b.phase) * b.amp;
+    return { x, y, age };
+  }
+
+  function sidePortalZone(a, vx, vy, firing) {
+    if (!firing) return null;
+    const elapsed = a.fire * a.fireBeats;
+    const r = SIDE_PORTAL_BULLET_RADIUS * a.scale;
+    let shadow = false;
+    for (const b of a.bullets) {
+      const p = sidePortalBulletPos(a, b, elapsed);
+      if (!p) continue;
+      if (Math.hypot(vx - p.x, vy - p.y) <= r) return 'live';
+      const q = sidePortalBulletPos(a, b, elapsed + SIDE_PORTAL_SHADOW_LEN / Math.max(1, b.speed));
+      if (q && distToSeg(vx, vy, p.x, p.y, q.x, q.y) <= r) shadow = true;
+    }
+    return shadow ? 'shadow' : null;
+  }
+
+  function strokeQuad(x0, y0, cx, cy, x1, y1, until) {
+    const end = Math.max(0, Math.min(1, until == null ? 1 : until));
+    const steps = Math.max(2, Math.ceil(24 * end));
+    actx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const p = quadPoint(x0, y0, cx, cy, x1, y1, end * (i / steps));
+      if (i === 0) actx.moveTo(p.x, p.y); else actx.lineTo(p.x, p.y);
+    }
+  }
+
+  function renderCheckerboard(a) {
+    const firing = a.state === 'fire' || a.state === 'done';
+    const glow = a.state === 'armed' ? 1 : Math.max(0, Math.min(1, a.stretch));
+    const life = firing ? 1 - smoothstep((a.fire - 0.2) / 0.8) : 1;
+    actx.save();
+    actx.beginPath();
+    actx.rect(a.x0, a.y0, a.w, a.h);
+    actx.clip();
+    for (let row = 0; row < a.rows; row++) {
+      for (let col = 0; col < a.cols; col++) {
+        if (((col + row) & 1) !== a.parity) continue;
+        const x = a.x0 + col * a.tileW;
+        const y = a.y0 + row * a.tileH;
+        const cx = x + a.tileW * 0.5;
+        const cy = y + a.tileH * 0.5;
+        if (firing) {
+          const burst = easeOutCubic(Math.min(1, a.fire / 0.34));
+          const smoke = 1 - smoothstep((a.fire - 0.35) / 0.65);
+          actx.fillStyle = 'rgba(58, 3, 8, ' + (0.4 * life).toFixed(3) + ')';
+          actx.fillRect(x, y, a.tileW, a.tileH);
+          const grad = actx.createRadialGradient(cx, cy, 2, cx, cy, Math.max(a.tileW, a.tileH) * (0.25 + burst * 0.75));
+          grad.addColorStop(0, 'rgba(255, 215, 170, ' + (0.9 * smoke).toFixed(3) + ')');
+          grad.addColorStop(0.22, 'rgba(225, 38, 22, ' + (0.86 * smoke).toFixed(3) + ')');
+          grad.addColorStop(0.7, 'rgba(96, 5, 8, ' + (0.7 * life).toFixed(3) + ')');
+          grad.addColorStop(1, 'rgba(30, 0, 3, 0)');
+          actx.fillStyle = grad;
+          actx.fillRect(x, y, a.tileW, a.tileH);
+          actx.strokeStyle = 'rgba(255, 104, 64, ' + (0.6 * smoke).toFixed(3) + ')';
+          actx.lineWidth = 1.5;
+          for (let k = 0; k < 5; k++) {
+            const th = -Math.PI / 2 + k * Math.PI * 2 / 5 + checkerTileNoise(a, col, row, k) * 0.7;
+            const r0 = Math.min(a.tileW, a.tileH) * 0.12;
+            const r1 = Math.min(a.tileW, a.tileH) * (0.28 + burst * (0.35 + 0.08 * k));
+            actx.beginPath();
+            actx.moveTo(cx + Math.cos(th) * r0, cy + Math.sin(th) * r0);
+            actx.lineTo(cx + Math.cos(th) * r1, cy + Math.sin(th) * r1);
+            actx.stroke();
+          }
+          for (let k = 0; k < 4; k++) {
+            const th = k * Math.PI * 0.5 + checkerTileNoise(a, col, row, k + 8) * 1.1;
+            const px = cx + Math.cos(th) * a.tileW * (0.18 + 0.22 * burst);
+            const py = cy + Math.sin(th) * a.tileH * (0.18 + 0.22 * burst);
+            const rr = Math.min(a.tileW, a.tileH) * (0.05 + 0.05 * checkerTileNoise(a, col, row, k + 20)) * smoke;
+            actx.fillStyle = 'rgba(120, 4, 8, ' + (0.82 * smoke).toFixed(3) + ')';
+            actx.beginPath(); actx.arc(px, py, rr, 0, Math.PI * 2); actx.fill();
+          }
+        } else {
+          const steps = 24;
+          actx.beginPath();
+          for (let k = 0; k <= steps; k++) {
+            const theta = k / steps * Math.PI * 2;
+            const r = checkerTileFront(a, col, row, theta);
+            const px = cx + Math.cos(theta) * r;
+            const py = cy + Math.sin(theta) * r;
+            if (k === 0) actx.moveTo(px, py); else actx.lineTo(px, py);
+          }
+          actx.closePath();
+          actx.fillStyle = 'rgba(40, 4, 58, 0.36)';
+          actx.fill();
+          actx.strokeStyle = 'rgba(168, 84, 232, ' + (0.35 + glow * 0.5).toFixed(3) + ')';
+          actx.lineWidth = 1.5;
+          actx.stroke();
+        }
+      }
+    }
+    if (!firing) {
+      actx.strokeStyle = 'rgba(120, 40, 170, 0.3)';
+      actx.lineWidth = 1;
+      for (let col = 1; col < a.cols; col++) {
+        const x = a.x0 + col * a.tileW;
+        actx.beginPath(); actx.moveTo(x, a.y0); actx.lineTo(x, a.y0 + a.h); actx.stroke();
+      }
+      for (let row = 1; row < a.rows; row++) {
+        const y = a.y0 + row * a.tileH;
+        actx.beginPath(); actx.moveTo(a.x0, y); actx.lineTo(a.x0 + a.w, y); actx.stroke();
+      }
+    }
+    actx.restore();
+  }
+
+  function renderPortalCurve(a) {
+    const firing = a.state === 'fire' || a.state === 'done';
+    if (a.state === 'waiting') {
+      const beatsWaited = a.waitTime / beatMs;
+      const appear = smoothstep((beatsWaited - a.waitBeats + 0.24) / 0.24);
+      if (appear > 0) drawAttackPentagram(a.x0, a.y0, a.radius * (0.45 + appear * 0.55), a.angle, appear, appear);
+      return;
+    }
+    const glow = firing ? 1 - smoothstep((a.fire - 0.18) / 0.82) : (a.state === 'armed' ? 1 : a.stretch);
+    actx.save();
+    actx.lineCap = 'round';
+    actx.lineJoin = 'round';
+    if (firing) {
+      strokeQuad(a.x0, a.y0, a.cx, a.cy, a.x1, a.y1, 1);
+      actx.shadowColor = 'rgba(170, 70, 235, ' + (0.85 * glow).toFixed(3) + ')';
+      actx.shadowBlur = 22 * glow;
+      actx.strokeStyle = 'rgba(94, 20, 150, ' + (0.7 * glow).toFixed(3) + ')';
+      actx.lineWidth = a.width;
+      actx.stroke();
+      strokeQuad(a.x0, a.y0, a.cx, a.cy, a.x1, a.y1, 1);
+      actx.strokeStyle = 'rgba(232, 190, 255, ' + (0.92 * glow).toFixed(3) + ')';
+      actx.lineWidth = a.width * 0.35;
+      actx.stroke();
+    } else {
+      strokeQuad(a.x0, a.y0, a.cx, a.cy, a.x1, a.y1, a.stretch);
+      actx.strokeStyle = 'rgba(58, 10, 80, 0.34)';
+      actx.lineWidth = a.width;
+      actx.stroke();
+      const tip = quadPoint(a.x0, a.y0, a.cx, a.cy, a.x1, a.y1, a.stretch);
+      actx.shadowColor = 'rgba(190, 100, 240, 0.9)';
+      actx.shadowBlur = 13;
+      actx.fillStyle = 'rgba(214, 150, 255, 0.9)';
+      actx.beginPath(); actx.arc(tip.x, tip.y, 4, 0, Math.PI * 2); actx.fill();
+    }
+    drawAttackPentagram(a.x0, a.y0, a.radius, a.angle, glow, Math.max(0.25, glow));
+    actx.restore();
+  }
+
+  function drawSidePortal(a, side, glow) {
+    const left = side === 'left';
+    const topHalf = a.phase === 0 ? !left : left;
+    const x = left ? a.x0 - 14 * a.scale : a.x1 + 14 * a.scale;
+    const y = topHalf ? a.y0 + a.h * 0.25 : a.y0 + a.h * 0.75;
+    const h = a.h * 0.46;
+    actx.save();
+    actx.translate(x, y);
+    actx.rotate(left ? 0 : Math.PI);
+    actx.shadowColor = 'rgba(160, 50, 220, ' + (0.45 + glow * 0.45).toFixed(3) + ')';
+    actx.shadowBlur = 18 + glow * 18;
+    actx.strokeStyle = 'rgba(168, 84, 232, ' + (0.6 + glow * 0.35).toFixed(3) + ')';
+    actx.lineWidth = 4 * a.scale;
+    actx.beginPath();
+    actx.ellipse(0, 0, 18 * a.scale, h / 2, 0, -Math.PI / 2, Math.PI / 2);
+    actx.stroke();
+    actx.strokeStyle = 'rgba(50, 8, 72, 0.8)';
+    actx.lineWidth = 9 * a.scale;
+    actx.beginPath();
+    actx.ellipse(0, 0, 24 * a.scale, h / 2 + 9 * a.scale, 0, -Math.PI / 2, Math.PI / 2);
+    actx.stroke();
+    actx.restore();
+  }
+
+  function renderSidePortals(a) {
+    const firing = a.state === 'fire' || a.state === 'done';
+    const glow = firing ? 1 : (a.state === 'armed' ? 1 : a.stretch);
+    drawSidePortal(a, 'left', glow);
+    drawSidePortal(a, 'right', glow);
+    actx.save();
+    actx.beginPath();
+    actx.rect(a.x0, a.y0, a.w, a.h);
+    actx.clip();
+    if (firing) {
+      const elapsed = a.fire * a.fireBeats;
+      const r = SIDE_PORTAL_BULLET_RADIUS * a.scale;
+      for (const b of a.bullets) {
+        const p = sidePortalBulletPos(a, b, elapsed);
+        if (!p) continue;
+        const q = sidePortalBulletPos(a, b, elapsed + SIDE_PORTAL_SHADOW_LEN / Math.max(1, b.speed));
+        if (q) {
+          actx.strokeStyle = 'rgba(58, 10, 88, 0.58)';
+          actx.lineWidth = r * 2;
+          actx.beginPath(); actx.moveTo(p.x, p.y); actx.lineTo(q.x, q.y); actx.stroke();
+        }
+        const fade = 1 - smoothstep((a.fire - 0.9) / 0.1);
+        actx.shadowColor = 'rgba(255, 70, 28, ' + (0.85 * fade).toFixed(3) + ')';
+        actx.shadowBlur = 12 * fade;
+        actx.fillStyle = 'rgba(210, 42, 18, ' + (0.95 * fade).toFixed(3) + ')';
+        actx.beginPath(); actx.arc(p.x, p.y, r, 0, Math.PI * 2); actx.fill();
+        actx.fillStyle = 'rgba(255, 210, 120, ' + (0.85 * fade).toFixed(3) + ')';
+        actx.beginPath(); actx.arc(p.x - b.dir * r * 0.2, p.y - r * 0.15, r * 0.42, 0, Math.PI * 2); actx.fill();
+      }
     }
     actx.restore();
   }
@@ -2765,6 +3250,8 @@
     resetArenaState();
     hero.x = ARENA_CX;
     hero.y = FALL_START_Y;
+    heroMove.x = 0;
+    heroMove.y = 0;
     keys.clear();
     debugBuffer = '';
     if (cultistElement) cultistElement.classList.remove('standing');
