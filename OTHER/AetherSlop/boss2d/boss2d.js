@@ -108,10 +108,16 @@
   const PHASE2_ATTACK_FADE = 420;  // ms for active attacks to dissolve away
   const PHASE2_ORB_LAUNCH = 1050;  // ms for the casting orb to leave her hand
   const PHASE2_PENT_FORM = 760;    // ms for the orb to unfold into a pentagram
-  const PHASE2_BEAM_LIFE = 460;    // ms for one darkness beam to strike and vanish
-  const PHASE2_TARGET_COUNT = 54;   // deterministic body impacts before the seal holds
-  const PHASE2_ENGULF_DURATION = 4300; // ms for shadow to crawl across her sprite
-  const PHASE2_BLACK_EXPAND = 6800; // ms for the opaque darkness to climb over the UI
+  // One shadow stream from the sky pentagram: the head snakes down (REACH),
+  // darkness pours along the connected stream (POUR), then the tail lets go
+  // and the whole stream is sucked into the impact (RELEASE).
+  const P2_BEAM_REACH = 300;
+  const P2_BEAM_POUR = 430;
+  const P2_BEAM_RELEASE = 280;
+  const P2_BEAM_TOTAL = P2_BEAM_REACH + P2_BEAM_POUR + P2_BEAM_RELEASE;
+  const P2_BLOT_GROW = 780;        // ms for one landed shadow blot to bloom out
+  const P2_FLOOD_MS = 1250;        // silhouette floods solid after the last body strike
+  const P2_COCOON_HITS = 20;       // cocoon-stage strikes needed to inflate the shadow orb
 
   const ARENA_CX = BOARD / 2;
   const ARENA_CY = BOARD / 2;
@@ -1596,38 +1602,95 @@
 
   function makeSecondPhaseRitual() {
     const random = mulberry32(0x5e2c0d);
-    const anchors = [
-      { fx: 0.66, fy: 0.08, w: 0.09, h: 0.09 }, // raised hand
-      { fx: 0.42, fy: 0.23, w: 0.10, h: 0.09 }, // hood / face
-      { fx: 0.45, fy: 0.38, w: 0.18, h: 0.12 }, // chest
-      { fx: 0.33, fy: 0.50, w: 0.16, h: 0.16 }, // bracing arm / robe
-      { fx: 0.55, fy: 0.58, w: 0.18, h: 0.16 }, // waist
-      { fx: 0.68, fy: 0.70, w: 0.22, h: 0.13 }, // legs / robe sweep
-      { fx: 0.29, fy: 0.76, w: 0.23, h: 0.13 }, // lower left robe
-      { fx: 0.80, fy: 0.82, w: 0.22, h: 0.11 }, // right robe tail
+    // The engulf sweep, in fractions of the fallen sprite's box. The waypoints
+    // trace her body in order so the darkness claims her piece by piece: the
+    // raised hand the orb left from, down that arm, over the hood and chest,
+    // along the bracing arm, then out across the hips and both robe tails.
+    const spine = [
+      { fx: 0.53, fy: 0.10, r: 26 },  // raised hand
+      { fx: 0.51, fy: 0.24, r: 30 },  // forearm
+      { fx: 0.44, fy: 0.34, r: 34 },  // shoulder
+      { fx: 0.32, fy: 0.24, r: 34 },  // hood
+      { fx: 0.35, fy: 0.46, r: 38 },  // chest
+      { fx: 0.42, fy: 0.57, r: 38 },  // belt
+      { fx: 0.26, fy: 0.62, r: 34 },  // bracing sleeve
+      { fx: 0.14, fy: 0.78, r: 30 },  // bracing hand
+      { fx: 0.52, fy: 0.64, r: 40 },  // hips
+      { fx: 0.60, fy: 0.76, r: 40 },  // thigh
+      { fx: 0.44, fy: 0.86, r: 36 },  // knees sinking into the robe pool
+      { fx: 0.72, fy: 0.80, r: 42 },  // robe sweep
+      { fx: 0.88, fy: 0.86, r: 38 },  // far robe tail
+      { fx: 0.28, fy: 0.87, r: 40 },  // left robe pool
     ];
+    // A jittered midpoint between consecutive waypoints keeps the crawl
+    // contiguous: every strike lands beside the last one.
     const targets = [];
-    for (let i = 0; i < PHASE2_TARGET_COUNT; i++) {
-      const a = anchors[i % anchors.length];
-      targets.push({
-        fx: Math.max(0.08, Math.min(0.94, a.fx + (random() - 0.5) * a.w)),
-        fy: Math.max(0.05, Math.min(0.93, a.fy + (random() - 0.5) * a.h)),
-        radius: 24 + random() * 30 + i * 0.55,
-        wobble: (random() - 0.5) * 90,
-        seed: random() * Math.PI * 2,
+    for (let i = 0; i < spine.length; i++) {
+      if (i > 0) {
+        const a = spine[i - 1];
+        const b = spine[i];
+        targets.push({
+          fx: (a.fx + b.fx) / 2 + (random() - 0.5) * 0.05,
+          fy: (a.fy + b.fy) / 2 + (random() - 0.5) * 0.04,
+          radius: (a.r + b.r) * 0.4,
+          seed: random() * Math.PI * 2,
+        });
+      }
+      targets.push({ fx: spine[i].fx, fy: spine[i].fy, radius: spine[i].r, seed: random() * Math.PI * 2 });
+    }
+    // Cocoon-stage strikes hammer the upward-facing arc the pentagram can
+    // actually reach, spread by the golden ratio so consecutive hits never
+    // land in the same spot.
+    const feedAngles = [];
+    for (let i = 0; i < P2_COCOON_HITS; i++) {
+      const f = (i * 0.618034) % 1;
+      feedAngles.push(-Math.PI / 2 + (f - 0.5) * (Math.PI - 0.7));
+    }
+    // Interior dressing of the cocoon: counter-rotating swirl bands and
+    // orbiting ember motes, seeded once so they are stable frame to frame.
+    const swirls = [];
+    for (let i = 0; i < 6; i++) {
+      swirls.push({
+        rf: 0.28 + i * 0.115 + random() * 0.05,
+        speed: (0.4 + random() * 0.8) * (i % 2 ? -1 : 1),
+        width: 7 + random() * 11,
+        alpha: 0.2 + random() * 0.16,
+        span: 1.6 + random() * 1.6,
+        ph: random() * Math.PI * 2,
+        red: random() < 0.4,
+      });
+    }
+    const motes = [];
+    for (let i = 0; i < 26; i++) {
+      motes.push({
+        a0: random() * Math.PI * 2,
+        rf: 0.25 + random() * 0.68,
+        sp: (0.00025 + random() * 0.0006) * (random() < 0.5 ? -1 : 1),
+        size: 1 + random() * 1.8,
+        ph: random() * Math.PI * 2,
       });
     }
     return {
+      rng: mulberry32(0x77a1b3),   // per-launch beam curvature
       targets,
       nextTarget: 0,
-      nextBeamAt: PHASE2_ORB_LAUNCH + PHASE2_PENT_FORM + 220,
+      nextBeamAt: PHASE2_ORB_LAUNCH + PHASE2_PENT_FORM + 260,
       beams: [],
       marks: [],
+      floodStart: 0,
+      floodP: 0,
+      pentFade: 1,
+      cocoon: {
+        hits: 0, feedAngles, nextAngle: 0,
+        p: 0, pulse: 0, spin: 0, alpha: 0,
+        ripples: [], swirls, motes,
+      },
       maskCanvas: null,
       maskCtx: null,
       maskW: 0,
       maskH: 0,
-      patches: null,
+      embers: null,
+      veins: null,
     };
   }
 
@@ -1730,8 +1793,8 @@
   function phaseTwoPentagramCenter(bounds) {
     const launch = Math.min(1, phaseTime / PHASE2_ORB_LAUNCH);
     const hand = {
-      x: bounds.left + bounds.width * 0.66,
-      y: bounds.top + bounds.height * 0.12,
+      x: bounds.left + bounds.width * 0.53,
+      y: bounds.top + bounds.height * 0.10,
     };
     const sky = {
       x: bounds.left + bounds.width * 0.50,
@@ -1748,25 +1811,62 @@
   }
 
   function updatePhaseTwoBeams(dt) {
-    if (!phase2Ritual) return;
-    for (const beam of phase2Ritual.beams) beam.age += dt;
-    const finished = phase2Ritual.beams.filter((beam) => !beam.hit && beam.age >= PHASE2_BEAM_LIFE);
-    for (const beam of finished) {
-      beam.hit = true;
-      phase2Ritual.marks.push({
-        fx: beam.target.fx,
-        fy: beam.target.fy,
-        radius: beam.target.radius,
-        seed: beam.target.seed,
-      });
+    const r = phase2Ritual;
+    if (!r) return;
+    const c = r.cocoon;
+    for (const beam of r.beams) {
+      beam.age += dt;
+      if (!beam.hit && beam.age >= P2_BEAM_REACH) {
+        beam.hit = true;
+        if (beam.kind === 'body') {
+          r.marks.push({
+            fx: beam.fx, fy: beam.fy, radius: beam.radius, seed: beam.seed,
+            prev: r.marks.length - 1, at: phaseTime,
+          });
+          if (r.marks.length === r.targets.length) r.floodStart = phaseTime;
+        } else {
+          // A feeding strike: the orb visibly swells and rings at the impact.
+          c.hits = Math.min(P2_COCOON_HITS, c.hits + 1);
+          c.pulse = Math.min(1.6, c.pulse + 0.55);
+          c.ripples.push({ angle: beam.angle, t: 0 });
+        }
+      }
     }
-    phase2Ritual.beams = phase2Ritual.beams.filter((beam) => beam.age < PHASE2_BEAM_LIFE + 90);
-    while (phase2Ritual.nextTarget < phase2Ritual.targets.length && phaseTime >= phase2Ritual.nextBeamAt) {
-      const target = phase2Ritual.targets[phase2Ritual.nextTarget++];
-      phase2Ritual.beams.push({ target, age: 0, hit: false });
-      const progress = phase2Ritual.nextTarget / phase2Ritual.targets.length;
-      phase2Ritual.nextBeamAt += 430 - easeOutCubic(progress) * 335;
+    r.beams = r.beams.filter((beam) => beam.age < P2_BEAM_TOTAL + 240);
+
+    // Launch the next stream: every body target in sweep order first, then the
+    // feeding strikes that inflate the cocoon — until the mass swallows the
+    // pentagram itself and there is nothing left to fire from.
+    while (phaseTime >= r.nextBeamAt && r.pentFade > 0.5) {
+      const curve = (18 + r.rng() * 96) * (r.rng() < 0.5 ? -1 : 1);
+      if (r.nextTarget < r.targets.length) {
+        const t = r.targets[r.nextTarget++];
+        r.beams.push({ kind: 'body', fx: t.fx, fy: t.fy, radius: t.radius, seed: t.seed, curve, age: 0, hit: false });
+        const progress = r.nextTarget / r.targets.length;
+        r.nextBeamAt += 360 - easeOutCubic(progress) * 210;
+      } else if (c.nextAngle < c.feedAngles.length) {
+        // Hold fire until the flood has fully claimed her silhouette.
+        if (!r.floodStart || phaseTime < r.floodStart + P2_FLOOD_MS * 0.85) {
+          r.nextBeamAt = phaseTime + 120;
+          break;
+        }
+        r.beams.push({ kind: 'cocoon', angle: c.feedAngles[c.nextAngle++], seed: r.rng() * Math.PI * 2, curve, age: 0, hit: false });
+        r.nextBeamAt += 400 - (c.nextAngle / c.feedAngles.length) * 170;
+      } else {
+        break;
+      }
     }
+
+    r.floodP = r.floodStart ? smoothstep((phaseTime - r.floodStart) / P2_FLOOD_MS) : 0;
+    c.spin += dt * 0.00042;
+    c.pulse = Math.max(0, c.pulse - dt / 640);
+    // Once the pentagram is swallowed the mass no longer needs feeding — it
+    // finishes swelling on its own momentum.
+    if (r.pentFade <= 0.5) c.hits = Math.min(P2_COCOON_HITS, c.hits + dt / 400);
+    c.p += (c.hits / P2_COCOON_HITS - c.p) * (1 - Math.exp(-dt / 850));
+    c.alpha = smoothstep((r.floodP - 0.7) / 0.3);
+    for (const rip of c.ripples) rip.t += dt / 900;
+    c.ripples = c.ripples.filter((rip) => rip.t < 1);
   }
 
   function updatePhase(dt) {
@@ -2429,54 +2529,178 @@
     if (formP >= 1) return;
     const vanish = 1 - smoothstep(formP);
     const pulse = 1 + Math.sin(clock * 0.024) * 0.18;
+    const launch = Math.min(1, phaseTime / PHASE2_ORB_LAUNCH);
+    const radius = (12 + 18 * formP) * pulse;
     actx.save();
+    // Wisps of shed shadow trailing along the flight path behind the orb.
+    for (let k = 1; k <= 6; k++) {
+      const lag = easeOutCubic(Math.max(0, launch - k * 0.05));
+      const tx = orb.hand.x + (orb.sky.x - orb.hand.x) * lag;
+      const ty = orb.hand.y + (orb.sky.y - orb.hand.y) * lag;
+      actx.globalAlpha = vanish * Math.max(0, 0.32 - k * 0.045);
+      actx.fillStyle = '#12030a';
+      actx.beginPath();
+      actx.arc(tx, ty, (9 - k) * pulse, 0, Math.PI * 2);
+      actx.fill();
+    }
     actx.globalAlpha = vanish;
     actx.shadowColor = 'rgba(255, 30, 20, 1)';
     actx.shadowBlur = 28;
     actx.fillStyle = '#ff2118';
     actx.beginPath();
-    actx.arc(orb.x, orb.y, (12 + 18 * formP) * pulse, 0, Math.PI * 2);
+    actx.arc(orb.x, orb.y, radius, 0, Math.PI * 2);
+    actx.fill();
+    // A blackened heart inside the red shell.
+    actx.shadowBlur = 0;
+    actx.fillStyle = '#180003';
+    actx.beginPath();
+    actx.arc(orb.x, orb.y, radius * 0.55, 0, Math.PI * 2);
     actx.fill();
     actx.strokeStyle = '#180003';
     actx.lineWidth = 2;
+    actx.beginPath();
+    actx.arc(orb.x, orb.y, radius, 0, Math.PI * 2);
     actx.stroke();
     actx.restore();
   }
 
-  function drawPhaseTwoBeam(pent, bounds, beam) {
-    if (beam.hit) return;
-    const target = phaseTwoBodyPoint(bounds, beam.target);
-    const p = Math.min(1, beam.age / PHASE2_BEAM_LIFE);
-    const headX = pent.x + (target.x - pent.x) * easeOutCubic(p);
-    const headY = pent.y + (target.y - pent.y) * easeOutCubic(p);
-    const tailP = Math.max(0, p - 0.38) / 0.62;
-    const tailX = pent.x + (target.x - pent.x) * tailP;
-    const tailY = pent.y + (target.y - pent.y) * tailP;
+  // One shadow stream from the sky pentagram: a curved, tapering ribbon of
+  // darkness sheathed in a red aura, with gobbets of shadow flowing down its
+  // length and a splat + shockwave ring where it lands.
+  function drawPhaseTwoBeam(pent, bounds, board, beam) {
+    const r = phase2Ritual;
+    let end;
+    if (beam.kind === 'body') {
+      end = phaseTwoBodyPoint(bounds, beam);
+    } else {
+      const geo = cocoonGeometry(bounds, board);
+      end = cocoonSurfacePoint(geo, r.cocoon, beam.angle);
+    }
+    const start = { x: pent.x, y: pent.y + 8 };
+    const headT = easeOutCubic(Math.min(1, beam.age / P2_BEAM_REACH));
+    const relAge = beam.age - P2_BEAM_REACH - P2_BEAM_POUR;
+    const tailT = relAge <= 0 ? 0 : smoothstep(relAge / P2_BEAM_RELEASE);
+    const fade = 1 - smoothstep((beam.age - P2_BEAM_TOTAL) / 240);
+    // The control point bows the stream sideways and breathes a little, and a
+    // travelling ripple keeps the ribbon alive along its whole length.
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const seg = Math.max(1, Math.hypot(dx, dy));
+    const nx = -dy / seg;
+    const ny = dx / seg;
+    const bow = beam.curve + Math.sin(clock * 0.007 + beam.seed * 7) * 9;
+    const cpx = (start.x + end.x) / 2 + nx * bow;
+    const cpy = (start.y + end.y) / 2 + ny * bow;
+    const at = (u) => {
+      const v = 1 - u;
+      const wave = Math.sin(u * 9 - clock * 0.02 + beam.seed) * 3 * Math.sin(u * Math.PI);
+      return {
+        x: v * v * start.x + 2 * v * u * cpx + u * u * end.x + nx * wave,
+        y: v * v * start.y + 2 * v * u * cpy + u * u * end.y + ny * wave,
+      };
+    };
     actx.save();
-    actx.lineCap = 'round';
-    actx.strokeStyle = '#c91412';
-    actx.lineWidth = 10;
-    actx.beginPath();
-    actx.moveTo(tailX, tailY);
-    actx.lineTo(headX, headY);
-    actx.stroke();
-    actx.strokeStyle = '#000';
-    actx.lineWidth = 8;
-    actx.beginPath();
-    actx.moveTo(tailX, tailY);
-    actx.lineTo(headX, headY);
-    actx.stroke();
+    if (tailT < 1) {
+      const steps = 16;
+      const pts = [];
+      for (let i = 0; i <= steps; i++) pts.push(at(tailT + (headT - tailT) * (i / steps)));
+      actx.lineCap = 'round';
+      actx.lineJoin = 'round';
+      // Soft red aura under the whole stream.
+      actx.strokeStyle = 'rgba(150, 20, 26, 0.30)';
+      actx.lineWidth = 16;
+      actx.shadowColor = 'rgba(255, 40, 30, 0.8)';
+      actx.shadowBlur = 16;
+      actx.beginPath();
+      for (let i = 0; i < pts.length; i++) {
+        if (i === 0) actx.moveTo(pts[i].x, pts[i].y); else actx.lineTo(pts[i].x, pts[i].y);
+      }
+      actx.stroke();
+      actx.shadowBlur = 0;
+      // Crimson sheath, then black core, both tapering toward the impact.
+      for (let pass = 0; pass < 2; pass++) {
+        actx.strokeStyle = pass === 0 ? 'rgba(88, 8, 16, 0.85)' : 'rgba(5, 1, 3, 0.95)';
+        for (let i = 0; i < steps; i++) {
+          const u = tailT + (headT - tailT) * (i / steps);
+          actx.lineWidth = pass === 0 ? 12 - u * 5 : 8 - u * 4;
+          actx.beginPath();
+          actx.moveTo(pts[i].x, pts[i].y);
+          actx.lineTo(pts[i + 1].x, pts[i + 1].y);
+          actx.stroke();
+        }
+      }
+      // Gobbets of shadow flowing down into the impact.
+      for (let k = 0; k < 4; k++) {
+        const u = (clock * 0.0011 + k * 0.27 + beam.seed * 0.13) % 1;
+        if (u < tailT || u > headT) continue;
+        const p = at(u);
+        actx.fillStyle = '#020103';
+        actx.strokeStyle = 'rgba(160, 18, 24, 0.7)';
+        actx.lineWidth = 1.5;
+        actx.beginPath();
+        actx.arc(p.x, p.y, 3.5 + Math.sin(clock * 0.02 + k * 2.4 + beam.seed) * 1.4, 0, Math.PI * 2);
+        actx.fill();
+        actx.stroke();
+      }
+      // The searching head while the stream is still reaching down.
+      if (headT < 1) {
+        const head = at(headT);
+        actx.shadowColor = 'rgba(255, 40, 30, 0.9)';
+        actx.shadowBlur = 14;
+        actx.fillStyle = '#0a0105';
+        actx.beginPath();
+        actx.arc(head.x, head.y, 7, 0, Math.PI * 2);
+        actx.fill();
+        actx.shadowBlur = 0;
+      }
+    }
+    // Impact: a pulsing splat of shadow, one expanding red shockwave ring and
+    // a few embers thrown off the moment the stream connects.
+    if (beam.hit) {
+      actx.globalAlpha = fade;
+      const ringT = Math.min(1, (beam.age - P2_BEAM_REACH) / 320);
+      if (ringT < 1) {
+        actx.strokeStyle = 'rgba(255, 60, 40, ' + (0.7 * (1 - ringT)).toFixed(3) + ')';
+        actx.lineWidth = 2;
+        actx.beginPath();
+        actx.arc(end.x, end.y, 10 + 26 * easeOutCubic(ringT), 0, Math.PI * 2);
+        actx.stroke();
+        actx.strokeStyle = 'rgba(230, 40, 28, ' + (0.8 * (1 - ringT)).toFixed(3) + ')';
+        actx.lineWidth = 1.5;
+        for (let k = 0; k < 4; k++) {
+          const a = beam.seed + k * (Math.PI / 2) + 0.4;
+          const d0 = 8 + 20 * easeOutCubic(ringT);
+          actx.beginPath();
+          actx.moveTo(end.x + Math.cos(a) * d0, end.y + Math.sin(a) * d0);
+          actx.lineTo(end.x + Math.cos(a) * (d0 + 7), end.y + Math.sin(a) * (d0 + 7));
+          actx.stroke();
+        }
+      }
+      actx.fillStyle = '#000';
+      actx.strokeStyle = 'rgba(140, 10, 16, 0.8)';
+      actx.lineWidth = 2;
+      actx.beginPath();
+      actx.arc(end.x, end.y, 9 + Math.sin(clock * 0.02 + beam.seed) * 2, 0, Math.PI * 2);
+      actx.fill();
+      actx.stroke();
+    }
     actx.restore();
   }
 
-  function drawPhaseTwoLocalPatch(targetCtx, x, y, radius, seed, yScale) {
-    const points = 10;
+  // One organic blot of shadow in mask space: a smoothly lobed blob that sags
+  // downward as it settles, like tar clinging to her body.
+  function drawShadowBlot(targetCtx, x, y, radius, seed, settle) {
+    const points = 14;
     targetCtx.beginPath();
-    for (let i = 0; i < points; i++) {
-      const a = i / points * Math.PI * 2 + seed;
-      const wob = 0.72 + 0.28 * Math.sin(seed * 3 + i * 2.17);
-      const px = x + Math.cos(a) * radius * wob;
-      const py = y + Math.sin(a) * radius * wob * yScale;
+    for (let i = 0; i <= points; i++) {
+      const a = i / points * Math.PI * 2;
+      let rr = radius * (0.78
+        + 0.16 * Math.sin(a * 3 + seed)
+        + 0.10 * Math.sin(a * 5 + seed * 2.7)
+        + 0.06 * Math.sin(a * 8 - seed));
+      rr *= 1 + Math.max(0, Math.sin(a)) * 0.35 * settle; // gravity droop
+      const px = x + Math.cos(a) * rr;
+      const py = y + Math.sin(a) * rr;
       if (i === 0) targetCtx.moveTo(px, py); else targetCtx.lineTo(px, py);
     }
     targetCtx.closePath();
@@ -2522,97 +2746,284 @@
         }
       }
     }
+    // Interior dressing, baked once: ember specks and thin veins that will
+    // smolder red inside the engulfed silhouette.
     const random = mulberry32(0x2f4c55);
-    const patches = [];
-    const sourceX = w * 0.66;
-    const sourceY = h * 0.12;
-    for (let attempts = 0; patches.length < 190 && attempts < 15000; attempts++) {
-      const x = (random() * w) | 0;
-      const y = (random() * h) | 0;
-      if (data[(y * w + x) * 4 + 3] < 40) continue;
-      const dx = (x - sourceX) / Math.max(1, w * 0.9);
-      const dy = (y - sourceY) / Math.max(1, h * 0.75);
-      const distance = Math.hypot(dx, dy);
-      patches.push({
-        x,
-        y,
-        radius: 18 + random() * 42,
-        yScale: 0.55 + random() * 0.35,
-        start: PHASE2_ORB_LAUNCH + PHASE2_PENT_FORM + 320 + distance * PHASE2_ENGULF_DURATION + random() * 420,
-        grow: 520 + random() * 780,
-        seed: random() * Math.PI * 2,
+    const opaquePoint = () => {
+      for (let tries = 0; tries < 400; tries++) {
+        const x = (random() * w) | 0;
+        const y = (random() * h) | 0;
+        if (data[(y * w + x) * 4 + 3] >= 40) return { x, y };
+      }
+      return { x: w / 2, y: h / 2 };
+    };
+    const embers = [];
+    for (let i = 0; i < 70; i++) {
+      const p = opaquePoint();
+      embers.push({
+        x: p.x, y: p.y,
+        r: 0.8 + random() * 1.7,
+        ph: random() * Math.PI * 2,
+        sp: 0.0015 + random() * 0.002,
       });
+    }
+    const veins = [];
+    for (let i = 0; i < 7; i++) {
+      const p = opaquePoint();
+      const pts = [{ x: p.x, y: p.y }];
+      let ang = random() * Math.PI * 2;
+      for (let s = 0; s < 4; s++) {
+        ang += (random() - 0.5) * 1.4;
+        const len = 14 + random() * 26;
+        pts.push({
+          x: pts[s].x + Math.cos(ang) * len,
+          y: pts[s].y + Math.sin(ang) * len * 0.7 + len * 0.3, // veins run downhill
+        });
+      }
+      veins.push({ pts, ph: random() * Math.PI * 2 });
     }
     phase2Ritual.maskCanvas = maskCanvas;
     phase2Ritual.maskCtx = maskCtx;
     phase2Ritual.maskW = w;
     phase2Ritual.maskH = h;
-    phase2Ritual.patches = patches;
+    phase2Ritual.embers = embers;
+    phase2Ritual.veins = veins;
     return true;
   }
 
   function renderPhaseTwoSpriteEngulf(bounds) {
     if (!ensurePhaseTwoEngulfMask(bounds)) return;
     const r = phase2Ritual;
+    if (!r.marks.length) return;
     const mctx = r.maskCtx;
     mctx.setTransform(1, 0, 0, 1, 0, 0);
     mctx.clearRect(0, 0, r.maskW, r.maskH);
+    // Every landed strike is a blot that blooms out, plus a sagging bridge
+    // back to the previous blot so the coverage crawls contiguously along her
+    // body. Once the last strike lands, the flood scales everything up until
+    // the whole silhouette is claimed.
+    const flood = 1 + r.floodP * 3.4;
     mctx.fillStyle = '#000';
-    for (const mark of r.marks) {
-      drawPhaseTwoLocalPatch(mctx, mark.fx * r.maskW, mark.fy * r.maskH, mark.radius, mark.seed, 0.68);
+    mctx.strokeStyle = '#000';
+    mctx.lineCap = 'round';
+    for (let i = 0; i < r.marks.length; i++) {
+      const m = r.marks[i];
+      const settle = smoothstep((phaseTime - m.at) / P2_BLOT_GROW);
+      const x = m.fx * r.maskW;
+      const y = m.fy * r.maskH;
+      drawShadowBlot(mctx, x, y, m.radius * (0.35 + 0.65 * settle) * flood, m.seed, settle);
+      if (m.prev >= 0) {
+        const pm = r.marks[m.prev];
+        const reach = smoothstep((phaseTime - m.at) / 420);
+        if (reach > 0) {
+          const px = pm.fx * r.maskW;
+          const py = pm.fy * r.maskH;
+          mctx.lineWidth = Math.min(m.radius, pm.radius) * 0.8 * reach * flood;
+          mctx.beginPath();
+          mctx.moveTo(px, py);
+          mctx.quadraticCurveTo((px + x) / 2, (py + y) / 2 + 9, px + (x - px) * reach, py + (y - py) * reach);
+          mctx.stroke();
+        }
+      }
     }
-    for (const patch of r.patches) {
-      const p = smoothstep((phaseTime - patch.start) / patch.grow);
-      if (p <= 0) continue;
-      drawPhaseTwoLocalPatch(mctx, patch.x, patch.y, patch.radius * p, patch.seed + p * 0.7, patch.yScale);
-    }
+    // Trim to her silhouette.
     mctx.globalCompositeOperation = 'destination-in';
     mctx.drawImage(cultistFallenImg, 0, 0, r.maskW, r.maskH);
+    // Hints of red smoldering inside the black.
+    mctx.globalCompositeOperation = 'source-atop';
+    mctx.lineWidth = 1.5;
+    for (const vein of r.veins) {
+      const a = 0.16 + 0.14 * Math.abs(Math.sin(clock * 0.0011 + vein.ph));
+      mctx.strokeStyle = 'rgba(120, 10, 16, ' + a.toFixed(3) + ')';
+      mctx.beginPath();
+      for (let i = 0; i < vein.pts.length; i++) {
+        const p = vein.pts[i];
+        if (i === 0) mctx.moveTo(p.x, p.y); else mctx.lineTo(p.x, p.y);
+      }
+      mctx.stroke();
+    }
+    for (const ember of r.embers) {
+      const a = 0.10 + 0.30 * Math.abs(Math.sin(clock * ember.sp + ember.ph));
+      mctx.fillStyle = 'rgba(200, 24, 22, ' + a.toFixed(3) + ')';
+      mctx.fillRect(ember.x - ember.r / 2, ember.y - ember.r / 2, ember.r, ember.r);
+    }
     mctx.globalCompositeOperation = 'source-over';
     actx.drawImage(r.maskCanvas, bounds.left, bounds.top, bounds.width, bounds.height);
   }
 
-  function renderPhaseTwoCocoon(bounds, board) {
-    const start = PHASE2_ORB_LAUNCH + PHASE2_PENT_FORM + PHASE2_ENGULF_DURATION * 0.48;
-    const p = smoothstep((phaseTime - start) / PHASE2_BLACK_EXPAND);
-    if (p <= 0) return;
+  // The cocoon's footprint: it starts hugging the engulfed sprite and swells
+  // into a huge orb reaching past the sky pentagram and down over half the
+  // playfield, driven by how much the beams have fed it (cocoon.p).
+  function cocoonGeometry(bounds, board) {
+    const c = phase2Ritual.cocoon;
     const cx = bounds.left + bounds.width * 0.50;
-    const cy = bounds.top + bounds.height * 0.50;
-    const targetBottom = board ? board.top + board.height * 0.52 : cy + bounds.height;
-    const targetTop = Math.min(0, bounds.top - bounds.height * 0.65);
-    const ry = Math.max(bounds.height * 0.42, cy - targetTop, targetBottom - cy) * p;
-    const rx = Math.max(bounds.width * 0.42, ry * 0.86);
-    const spin = clock * 0.0012;
-    actx.save();
-    actx.fillStyle = '#000';
+    // The mass sinks as it swells, claiming the playfield below first; only
+    // near the end of the feeding does it lunge up past the sky pentagram.
+    const cy0 = bounds.top + bounds.height * 0.55;
+    const cy = cy0 + bounds.height * 0.42 * c.p;
+    const rx0 = bounds.width * 0.54;
+    const ry0 = bounds.height * 0.62;
+    const bottom = board ? board.top + board.height * 0.54 : cy + bounds.height * 2;
+    const ryMax = Math.max(ry0, cy + 30, bottom - cy);
+    const rxMax = Math.max(rx0, ryMax * 0.94);
+    const swell = 1 + c.pulse * 0.045;
+    return {
+      cx, cy,
+      rx: (rx0 + (rxMax - rx0) * c.p) * swell,
+      ry: (ry0 + (ryMax - ry0) * c.p) * swell,
+    };
+  }
+
+  function angleGap(a, b) {
+    let d = a - b;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
+  // Churning surface: layered rotating lobes plus a local bulge for each
+  // feeding strike still rippling through the mass.
+  function cocoonSurfacePoint(geo, c, a) {
+    let w = 1
+      + 0.050 * Math.sin(a * 3 + c.spin * 2.1)
+      + 0.035 * Math.sin(a * 5 - c.spin * 3.4)
+      + 0.025 * Math.sin(a * 8 + c.spin * 1.3);
+    for (const rip of c.ripples) {
+      const d = angleGap(a, rip.angle);
+      w += Math.exp(-d * d * 8) * (1 - rip.t) * 0.07;
+    }
+    return { x: geo.cx + Math.cos(a) * geo.rx * w, y: geo.cy + Math.sin(a) * geo.ry * w };
+  }
+
+  function traceCocoonPath(geo, c) {
+    const steps = 72;
     actx.beginPath();
-    actx.ellipse(cx, cy, rx, ry, spin * 0.08, 0, Math.PI * 2);
+    for (let i = 0; i <= steps; i++) {
+      const p = cocoonSurfacePoint(geo, c, i / steps * Math.PI * 2);
+      if (i === 0) actx.moveTo(p.x, p.y); else actx.lineTo(p.x, p.y);
+    }
+    actx.closePath();
+  }
+
+  function renderPhaseTwoCocoon(bounds, board) {
+    const r = phase2Ritual;
+    const c = r.cocoon;
+    if (c.alpha <= 0) return;
+    const geo = cocoonGeometry(bounds, board);
+    const R = Math.max(geo.rx, geo.ry);
+    actx.save();
+    actx.globalAlpha = c.alpha;
+    // The world dims as the mass claims the screen.
+    actx.fillStyle = 'rgba(2, 0, 1, ' + (0.34 * c.p).toFixed(3) + ')';
+    actx.fillRect(0, 0, attackCanvas.width, attackCanvas.height);
+    // The mass itself: a black heart with faint red breathing at the rim.
+    traceCocoonPath(geo, c);
+    const grad = actx.createRadialGradient(geo.cx, geo.cy, R * 0.2, geo.cx, geo.cy, R);
+    grad.addColorStop(0, '#000000');
+    grad.addColorStop(0.72, '#000000');
+    grad.addColorStop(0.9, '#0d0104');
+    grad.addColorStop(1, '#1c0308');
+    actx.fillStyle = grad;
     actx.fill();
-    actx.strokeStyle = 'rgba(88, 4, 18, 0.58)';
-    actx.lineWidth = 1;
-    for (let i = 0; i < 4; i++) {
-      const a0 = spin + i * Math.PI * 0.5;
+    // Cheap layered rim glow instead of a shadow blur on this huge path.
+    actx.lineJoin = 'round';
+    actx.strokeStyle = 'rgba(200, 20, 24, 0.10)';
+    actx.lineWidth = 26;
+    actx.stroke();
+    actx.strokeStyle = 'rgba(220, 30, 26, 0.16)';
+    actx.lineWidth = 10;
+    actx.stroke();
+    // Everything inside stays inside.
+    traceCocoonPath(geo, c);
+    actx.clip();
+    // Counter-rotating swirl bands read as the mass churning.
+    for (const s of c.swirls) {
+      const a0 = c.spin * s.speed * 4 + s.ph;
+      actx.strokeStyle = s.red
+        ? 'rgba(130, 12, 18, ' + (s.alpha * 0.8).toFixed(3) + ')'
+        : 'rgba(70, 4, 10, ' + s.alpha.toFixed(3) + ')';
+      actx.lineWidth = s.width * (0.5 + c.p);
       actx.beginPath();
-      actx.ellipse(cx, cy, rx * (0.96 - i * 0.04), ry * (0.74 + i * 0.05), a0, -0.9, 1.2);
+      actx.ellipse(geo.cx, geo.cy, geo.rx * s.rf, geo.ry * s.rf * 0.82, 0, a0, a0 + s.span);
       actx.stroke();
     }
+    // Ember motes dragged around inside the dark.
+    for (const m of c.motes) {
+      const a = m.a0 + clock * m.sp;
+      const mx = geo.cx + Math.cos(a) * geo.rx * m.rf;
+      const my = geo.cy + Math.sin(a) * geo.ry * m.rf;
+      const al = 0.08 + 0.26 * Math.abs(Math.sin(clock * 0.0016 + m.ph));
+      actx.fillStyle = 'rgba(210, 30, 24, ' + al.toFixed(3) + ')';
+      actx.fillRect(mx - m.size / 2, my - m.size / 2, m.size, m.size);
+    }
+    // A muffled arc of red lightning deep in the mass, every so often.
+    const boltPeriod = 1300;
+    const boltT = (clock % boltPeriod) / boltPeriod;
+    if (boltT < 0.14) {
+      const boltRng = mulberry32((((clock / boltPeriod) | 0) * 2654435761) >>> 0);
+      const ba = boltRng() * Math.PI * 2;
+      actx.strokeStyle = 'rgba(255, 46, 32, ' + (0.38 * (1 - boltT / 0.14)).toFixed(3) + ')';
+      actx.lineWidth = 1.5;
+      actx.beginPath();
+      actx.moveTo(geo.cx, geo.cy);
+      for (let i = 1; i <= 5; i++) {
+        const f = i / 5;
+        const spread = (boltRng() - 0.5) * 0.5;
+        actx.lineTo(
+          geo.cx + Math.cos(ba + spread) * geo.rx * f * 0.9,
+          geo.cy + Math.sin(ba + spread) * geo.ry * f * 0.9
+        );
+      }
+      actx.stroke();
+    }
+    actx.restore();
+    // Surface shockwaves spreading out from fresh feeding strikes, then the
+    // rim line to keep the mass defined against the dark.
+    actx.save();
+    actx.globalAlpha = c.alpha;
+    actx.lineWidth = 2;
+    for (const rip of c.ripples) {
+      const span = 0.15 + rip.t * 0.55;
+      actx.strokeStyle = 'rgba(220, 40, 30, ' + ((1 - rip.t) * 0.5).toFixed(3) + ')';
+      actx.beginPath();
+      actx.ellipse(geo.cx, geo.cy, geo.rx * (1 + rip.t * 0.05), geo.ry * (1 + rip.t * 0.05), 0, rip.angle - span, rip.angle + span);
+      actx.stroke();
+    }
+    traceCocoonPath(geo, c);
+    actx.strokeStyle = 'rgba(150, 12, 20, 0.5)';
+    actx.stroke();
     actx.restore();
   }
 
   function renderSecondPhaseRitual() {
+    if (!phase2Ritual) return;
     const r = ritualBounds();
     const board = canvas && canvas.getBoundingClientRect();
     const orb = phaseTwoPentagramCenter(r);
     const formP = Math.min(1, Math.max(0, (phaseTime - PHASE2_ORB_LAUNCH) / PHASE2_PENT_FORM));
     const pentP = easeOutCubic(formP);
     const pent = { x: orb.sky.x, y: orb.sky.y };
+    // The pentagram holds until the mass has been fed nearly full — then it
+    // lunges up and the seal sinks into the dark.
+    const c = phase2Ritual.cocoon;
+    if (c.alpha > 0) {
+      const swallowed = c.hits >= P2_COCOON_HITS - 3;
+      phase2Ritual.pentFade += ((swallowed ? 0 : 1) - phase2Ritual.pentFade) * 0.08;
+      if (phase2Ritual.pentFade < 0.01) phase2Ritual.pentFade = 0;
+    }
     drawPhaseTwoOrb(orb, formP);
-    drawTiltedRitualPentagram(pent.x, pent.y, (52 + 94 * pentP) * (1 + Math.sin(clock * 0.01) * 0.03), pentP);
-
-    if (!phase2Ritual) return;
-    for (const beam of phase2Ritual.beams) drawPhaseTwoBeam(pent, r, beam);
-    renderPhaseTwoSpriteEngulf(r);
+    // Once the mass fully covers her sprite there is nothing of the engulf
+    // left to see — skip the whole mask pipeline.
+    if (c.alpha < 0.99) renderPhaseTwoSpriteEngulf(r);
     renderPhaseTwoCocoon(r, board);
+    if (phase2Ritual.pentFade > 0) {
+      drawTiltedRitualPentagram(
+        pent.x, pent.y,
+        (52 + 94 * pentP) * (1 + Math.sin(clock * 0.01) * 0.03),
+        pentP * phase2Ritual.pentFade
+      );
+    }
+    for (const beam of phase2Ritual.beams) drawPhaseTwoBeam(pent, r, board, beam);
   }
 
   // The summoning pentagram: a small dark-purple five-pointed star + ring, one
