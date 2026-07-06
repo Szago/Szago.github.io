@@ -335,12 +335,14 @@
   const COMBINE_WRATH = 120;         // at/above this wrath two patterns run at once
   // One movement plays at a time until wrath hits COMBINE_WRATH, then two run
   // concurrently and whichever finishes is replaced by another random pattern.
-  // `activeSet` holds the 1-2 movements currently spawning.
-  let activeSet = [];                // [{ name, wave, done }]
+  // `activeSet` holds the 1-2 movements currently spawning. Each slot has its
+  // own wave cooldown so combo partners do not block each other.
+  let activeSet = [];                // [{ id, name, wave, done, nextBeat }]
   let singleQueue = [];              // upcoming single patterns (pre-combine)
   let lastSingle = null;             // avoid back-to-back single repeats across reshuffles
   let attacks = [];
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
+  let nextSlotId = 1;
 
   // ---- Combat: wrath, HP, VP ---------------------------------------------
   // Wrath is the cultist's tempo gauge (= current BPM, 0..200). HP is the
@@ -1561,6 +1563,7 @@
     singleQueue = ['pentagrams'].concat(shuffled(MOVEMENT_SEQUENCE.filter((n) => n !== 'pentagrams')));
     activeSet = [];
     lastSingle = null;
+    nextSlotId = 1;
     nextAttackBeat = 2; // a couple of beats to read the room before the first strike
     applyTempoToAnimations();
     if (bpmElement) bpmElement.textContent = 'BPM ' + bpm;
@@ -1598,11 +1601,10 @@
   // scheduler lives here.
   function onBeat(beat) {
     if (phase !== PHASE.ACTIVE) return;
-    if (beat >= nextAttackBeat && attacks.length === 0) {
-      // Arm the rearm only if a wave actually spawned (the stage might not be
-      // measurable yet); otherwise retry on the next beat.
-      if (spawnWave()) nextAttackBeat = Infinity;
-    }
+    if (activeSet.length === 0 && beat < nextAttackBeat) return;
+    // Arm/rearm only if a wave actually spawned (the stage might not be
+    // measurable yet); otherwise retry on the next beat.
+    if (spawnWave(beat)) updateNextAttackBeat();
   }
 
   // Dev shortcut: skip the scripted intro and drop straight into the fight
@@ -1629,8 +1631,8 @@
     if (phase !== PHASE.ACTIVE) skipToActive(); // ensures the fight has begun
     attacks = [];
     if (actx) actx.clearRect(0, 0, attackCanvas.width, attackCanvas.height);
-    activeSet = names.map((name) => ({ name, wave: 0, done: false }));
-    if (spawnWave()) nextAttackBeat = Infinity;
+    activeSet = names.map((name) => makeMovementSlot(name, beatIndex));
+    if (spawnWave(beatIndex)) updateNextAttackBeat();
   }
 
   function updatePhase(dt) {
@@ -1727,21 +1729,38 @@
     return pool[(Math.random() * pool.length) | 0];
   }
 
+  function makeMovementSlot(name, nextBeat) {
+    return { id: nextSlotId++, name, wave: 0, done: false, nextBeat };
+  }
+
+  function slotHasAttacks(slot) {
+    return attacks.some((a) => a.slotId === slot.id);
+  }
+
+  function updateNextAttackBeat() {
+    let next = Infinity;
+    for (const slot of activeSet) {
+      if (!slotHasAttacks(slot)) next = Math.min(next, slot.nextBeat == null ? beatIndex : slot.nextBeat);
+    }
+    nextAttackBeat = next;
+  }
+
   // Refills an exhausted duo slot in place with a new random pattern.
-  function refillSlot(slot) {
+  function refillSlot(slot, nextBeat) {
     const other = activeSet.find((s) => s !== slot);
     slot.name = pickMovement(other ? other.name : null, slot.name);
     slot.wave = 0;
     slot.done = false;
+    slot.nextBeat = nextBeat;
   }
 
   // Makes activeSet match the current mode: one slot below COMBINE_WRATH (drawn
   // from the no-repeat single queue), two distinct slots at/above it.
-  function ensureActiveSet(combining) {
+  function ensureActiveSet(combining, beat) {
     if (combining) {
       while (activeSet.length < 2) {
         const taken = activeSet.length ? activeSet[0].name : null;
-        activeSet.push({ name: pickMovement(taken, null), wave: 0, done: false });
+        activeSet.push(makeMovementSlot(pickMovement(taken, null), beat));
       }
     } else if (activeSet.length === 0) {
       if (singleQueue.length === 0) {
@@ -1750,44 +1769,51 @@
           const t = singleQueue[0]; singleQueue[0] = singleQueue[1]; singleQueue[1] = t;
         }
       }
-      activeSet = [{ name: singleQueue.shift(), wave: 0, done: false }];
+      activeSet = [makeMovementSlot(singleQueue.shift(), beat)];
       lastSingle = activeSet[0].name;
     }
   }
 
-  function spawnMovementWave(name, wave, board) {
-    if (name === 'tentacles') return spawnTentacleWave(wave, board);
-    if (name === 'xrays') return spawnXRayWave(wave, board);
-    if (name === 'bloodspiral') return spawnBloodSpiralWave(wave, board);
-    if (name === 'checkerboard') return spawnCheckerboardWave(wave, board);
-    if (name === 'portalbarrage') return spawnPortalBarrageWave(wave, board);
-    if (name === 'sideportals') return spawnSidePortalsWave(wave, board);
-    return spawnPentagramWave(wave, board);
+  function spawnMovementWave(name, wave, board, slot) {
+    const attackStart = attacks.length;
+    let total;
+    if (name === 'tentacles') total = spawnTentacleWave(wave, board);
+    else if (name === 'xrays') total = spawnXRayWave(wave, board);
+    else if (name === 'bloodspiral') total = spawnBloodSpiralWave(wave, board);
+    else if (name === 'checkerboard') total = spawnCheckerboardWave(wave, board);
+    else if (name === 'portalbarrage') total = spawnPortalBarrageWave(wave, board);
+    else if (name === 'sideportals') total = spawnSidePortalsWave(wave, board);
+    else total = spawnPentagramWave(wave, board);
+    if (!total) return total;
+    for (let i = attackStart; i < attacks.length; i++) attacks[i].slotId = slot.id;
+    return total;
   }
 
   // Spawns one wave from each active movement. Below COMBINE_WRATH a single
   // pattern plays through and then the next is pulled; at/above it, two patterns
   // run at once and whichever exhausts its waves is immediately replaced by a
   // fresh random one, so two are always live. Returns whether anything spawned.
-  function spawnWave() {
+  function spawnWave(beat) {
     const board = canvas && canvas.getBoundingClientRect();
     if (!board || !board.width) return false;
     const combining = bpm >= COMBINE_WRATH;
-    ensureActiveSet(combining);
+    ensureActiveSet(combining, beat);
+    let spawned = false;
     for (const m of activeSet) {
+      if (slotHasAttacks(m)) continue;
+      if (beat < (m.nextBeat == null ? beat : m.nextBeat)) continue;
       if (m.done) {
-        if (combining) refillSlot(m); // swap the spent slot for a new pattern
+        if (combining) refillSlot(m, beat); // swap the spent slot for a new pattern
         else continue;                // single mode: wait for the slot to clear below
       }
-      const total = spawnMovementWave(m.name, m.wave, board);
+      const total = spawnMovementWave(m.name, m.wave, board, m);
       if (!total) continue; // stage not measurable yet; retry this movement next beat
       m.wave++;
       if (m.wave >= total) m.done = true;
+      m.nextBeat = Infinity;
+      spawned = true;
     }
-    // Single mode only: once its lone pattern is spent, clear so the next pull
-    // happens on the following beat. (Duo mode never empties.)
-    if (!combining && activeSet.length && activeSet.every((m) => m.done)) activeSet = [];
-    return attacks.length > 0;
+    return spawned;
   }
 
   // One pentagram-barrage wave; every pentagram in it telegraphs and fires
@@ -2139,12 +2165,32 @@
         if (a.fire >= 1) { a.fire = 1; a.state = 'done'; }
       }
     }
-    if (attacks.length && attacks.every((a) => a.state === 'done')) {
-      // Each movement carries its own breathing room (tentacles rest less than
-      // the pentagram barrage); all attacks in a wave share the same value.
-      const rest = attacks[0].restBeats != null ? attacks[0].restBeats : ATTACK_REST_BEATS;
-      attacks = [];
-      nextAttackBeat = beatIndex + rest;
+    const completedSlots = [];
+    for (const slot of activeSet) {
+      const owned = attacks.filter((a) => a.slotId === slot.id);
+      if (owned.length && owned.every((a) => a.state === 'done')) {
+        // Each movement carries its own breathing room (tentacles rest less than
+        // the pentagram barrage); all attacks in a wave share the same value.
+        const rest = owned[0].restBeats != null ? owned[0].restBeats : ATTACK_REST_BEATS;
+        completedSlots.push({ slot, nextBeat: beatIndex + rest });
+      }
+    }
+    if (completedSlots.length) {
+      const completedIds = new Set(completedSlots.map((entry) => entry.slot.id));
+      attacks = attacks.filter((a) => !completedIds.has(a.slotId));
+      const combining = bpm >= COMBINE_WRATH;
+      let singleNextBeat = null;
+      for (const { slot, nextBeat } of completedSlots) {
+        slot.nextBeat = nextBeat;
+        if (!combining && slot.done) singleNextBeat = nextBeat;
+      }
+      if (singleNextBeat != null) {
+        activeSet = activeSet.filter((slot) => !completedIds.has(slot.id));
+        if (activeSet.length) updateNextAttackBeat();
+        else nextAttackBeat = singleNextBeat;
+      } else {
+        updateNextAttackBeat();
+      }
     }
   }
 
@@ -3267,6 +3313,7 @@
     activeSet = [];
     singleQueue = [];
     lastSingle = null;
+    nextSlotId = 1;
     nextAttackBeat = Infinity;
     hp = HP_MAX;
     vp = 0;
