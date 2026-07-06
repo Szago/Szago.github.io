@@ -24,6 +24,7 @@
   })();
   const CULTIST_KNEEL_SRC = SCRIPT_DIR + 'spritesV2/shadow-cultist.png';
   const CULTIST_STAND_SRC = SCRIPT_DIR + 'spritesV2/shadow-cultist-standing-v2.png';
+  const CULTIST_FALLEN_SRC = SCRIPT_DIR + 'spritesV2/shadow-cultist-fallen-v2.png';
 
   // ---- Combat window geometry -------------------------------------------
   const BOARD = 500;            // the static 500x500 combat window (outer)
@@ -67,6 +68,7 @@
   let cultistElement = null;   // the boss container (kneel + stand layers)
   let cultistStandWrap = null; // standing layer wrapper (carries the float loop)
   let cultistStandImg = null;  // standing sprite img (carries the pixel jitter)
+  let cultistFallenImg = null; // fallen form used for the second-phase ritual
   let bpmElement = null;       // debug BPM readout, top-right
   let active = false;
   let animationFrame = 0;
@@ -88,7 +90,7 @@
   // tentacles writhe in from the dark on every edge but the north, then a
   // dark-red pentagram burns into the floor arm by arm. Only after that does
   // free movement (PHASE.ACTIVE) begin.
-  const PHASE = { FALL: 0, TENTACLES: 1, PENTAGRAM: 2, ACTIVE: 3 };
+  const PHASE = { FALL: 0, TENTACLES: 1, PENTAGRAM: 2, ACTIVE: 3, SECOND: 4 };
   const FALL_START_Y = -HERO_H;   // hero begins above the window
   const FALL_DURATION = 820;      // ms to drop to the centre
   const SETTLE_DURATION = 220;    // ms of squash/recover on landing
@@ -103,6 +105,13 @@
   const BG_FRAME_MS = 1000 / 30;  // slow writhing does not need a 60 Hz redraw
   const OUTER_WIDTH_MULT = 2;     // global art-direction scale for every depth plane
   const ENDGAME_SCENE_STORAGE_KEY = 'aetherEndgameScene';
+  const PHASE2_ATTACK_FADE = 420;  // ms for active attacks to dissolve away
+  const PHASE2_ORB_LAUNCH = 1050;  // ms for the casting orb to leave her hand
+  const PHASE2_PENT_FORM = 760;    // ms for the orb to unfold into a pentagram
+  const PHASE2_BEAM_LIFE = 460;    // ms for one darkness beam to strike and vanish
+  const PHASE2_TARGET_COUNT = 54;   // deterministic body impacts before the seal holds
+  const PHASE2_ENGULF_DURATION = 4300; // ms for shadow to crawl across her sprite
+  const PHASE2_BLACK_EXPAND = 6800; // ms for the opaque darkness to climb over the UI
 
   const ARENA_CX = BOARD / 2;
   const ARENA_CY = BOARD / 2;
@@ -341,6 +350,8 @@
   let singleQueue = [];              // upcoming single patterns (pre-combine)
   let lastSingle = null;             // avoid back-to-back single repeats across reshuffles
   let attacks = [];
+  let fadingAttacks = [];
+  let phase2Ritual = null;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
   let nextSlotId = 1;
 
@@ -596,6 +607,7 @@
         '<div class="aether-boss2d-cultist-stand-wrap">' +
           '<img class="aether-boss2d-cultist-stand" alt="" src="' + CULTIST_STAND_SRC + '" />' +
         '</div>' +
+        '<img class="aether-boss2d-cultist-fallen" alt="" src="' + CULTIST_FALLEN_SRC + '" />' +
       '</div>' +
       // The cultist's name + wrath gauge, slotted under her feet.
       '<div class="aether-boss2d-wrath">' +
@@ -644,6 +656,7 @@
     cultistElement = document.getElementById('aether-boss2d-cultist');
     cultistStandWrap = overlay.querySelector('.aether-boss2d-cultist-stand-wrap');
     cultistStandImg = overlay.querySelector('.aether-boss2d-cultist-stand');
+    cultistFallenImg = overlay.querySelector('.aether-boss2d-cultist-fallen');
     wrathFill = overlay.querySelector('.aether-boss2d-wrath-fill');
     wrathValue = overlay.querySelector('.aether-boss2d-wrath-value');
     wrathTrack = overlay.querySelector('.aether-boss2d-wrath-track');
@@ -681,10 +694,21 @@
         if (pairFirst && pairFirst !== name) startMovementSet([pairFirst, name]);
         else startMovementSet([name]);
         clearPair();
-        btn.blur();
+      btn.blur();
       });
       debugPanel.appendChild(btn);
     });
+    const phaseTwoBtn = document.createElement('button');
+    phaseTwoBtn.type = 'button';
+    phaseTwoBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    phaseTwoBtn.textContent = 'PHASE 2';
+    phaseTwoBtn.addEventListener('click', () => {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      bpm = WRATH_MAX;
+      startSecondPhase();
+      phaseTwoBtn.blur();
+    });
+    debugPanel.appendChild(phaseTwoBtn);
   }
 
   // ---- Rendering ---------------------------------------------------------
@@ -1527,7 +1551,7 @@
   // Pushes wrath / HP / VP to their bars. Wrath reads the live tempo once the
   // fight begins (it snaps 0 -> BASE_BPM as she stands), and idles at 0 before.
   function updateBars() {
-    const wrath = phase === PHASE.ACTIVE ? bpm : 0;
+    const wrath = (phase === PHASE.ACTIVE || phase === PHASE.SECOND) ? bpm : 0;
     if (wrathFill) wrathFill.style.width = (Math.min(1, wrath / WRATH_MAX) * 100) + '%';
     if (wrathValue) wrathValue.textContent = 'WRATH ' + wrath;
     if (hpFill) hpFill.style.height = (Math.max(0, hp) / HP_MAX * 100) + '%';
@@ -1543,9 +1567,68 @@
     // her kneeling form into her standing combat pose (crossfade + rise driven
     // by the `.standing` class), and the tempo clock starts ticking.
     if (next === PHASE.ACTIVE) {
-      if (cultistElement) cultistElement.classList.add('standing');
+      if (overlay) overlay.classList.remove('phase-two');
+      if (cultistElement) {
+        cultistElement.classList.remove('phase-two');
+        cultistElement.classList.add('standing');
+      }
       startFight();
     }
+  }
+
+  function startSecondPhase() {
+    if (phase === PHASE.SECOND) return;
+    fadingAttacks = attacks.map((a) => ({ ...a, fadeTime: 0, fadeDuration: PHASE2_ATTACK_FADE }));
+    attacks = [];
+    activeSet = [];
+    nextAttackBeat = Infinity;
+    strike = null;
+    bpm = WRATH_MAX;
+    phase2Ritual = makeSecondPhaseRitual();
+    if (bpmElement) bpmElement.textContent = 'BPM ' + bpm;
+    if (overlay) overlay.classList.add('phase-two');
+    if (cultistElement) {
+      cultistElement.classList.remove('aether-hit');
+      cultistElement.classList.add('phase-two');
+    }
+    setPhase(PHASE.SECOND);
+  }
+
+  function makeSecondPhaseRitual() {
+    const random = mulberry32(0x5e2c0d);
+    const anchors = [
+      { fx: 0.66, fy: 0.08, w: 0.09, h: 0.09 }, // raised hand
+      { fx: 0.42, fy: 0.23, w: 0.10, h: 0.09 }, // hood / face
+      { fx: 0.45, fy: 0.38, w: 0.18, h: 0.12 }, // chest
+      { fx: 0.33, fy: 0.50, w: 0.16, h: 0.16 }, // bracing arm / robe
+      { fx: 0.55, fy: 0.58, w: 0.18, h: 0.16 }, // waist
+      { fx: 0.68, fy: 0.70, w: 0.22, h: 0.13 }, // legs / robe sweep
+      { fx: 0.29, fy: 0.76, w: 0.23, h: 0.13 }, // lower left robe
+      { fx: 0.80, fy: 0.82, w: 0.22, h: 0.11 }, // right robe tail
+    ];
+    const targets = [];
+    for (let i = 0; i < PHASE2_TARGET_COUNT; i++) {
+      const a = anchors[i % anchors.length];
+      targets.push({
+        fx: Math.max(0.08, Math.min(0.94, a.fx + (random() - 0.5) * a.w)),
+        fy: Math.max(0.05, Math.min(0.93, a.fy + (random() - 0.5) * a.h)),
+        radius: 24 + random() * 30 + i * 0.55,
+        wobble: (random() - 0.5) * 90,
+        seed: random() * Math.PI * 2,
+      });
+    }
+    return {
+      targets,
+      nextTarget: 0,
+      nextBeamAt: PHASE2_ORB_LAUNCH + PHASE2_PENT_FORM + 220,
+      beams: [],
+      marks: [],
+      maskCanvas: null,
+      maskCtx: null,
+      maskW: 0,
+      maskH: 0,
+      patches: null,
+    };
   }
 
   // ---- Tempo / beat clock -----------------------------------------------
@@ -1558,6 +1641,8 @@
     beatIndex = 0;
     lastAnimBpm = -1;
     attacks = [];
+    fadingAttacks = [];
+    phase2Ritual = null;
     // The opening cycle always leads with the pentagram barrage; the rest is
     // shuffled. Later cycles (and all combos) reshuffle fully.
     singleQueue = ['pentagrams'].concat(shuffled(MOVEMENT_SEQUENCE.filter((n) => n !== 'pentagrams')));
@@ -1635,6 +1720,55 @@
     if (spawnWave(beatIndex)) updateNextAttackBeat();
   }
 
+  function updateSecondPhase(dt) {
+    for (const a of fadingAttacks) a.fadeTime += dt;
+    fadingAttacks = fadingAttacks.filter((a) => a.fadeTime < a.fadeDuration);
+    updateMovement(dt);
+    updatePhaseTwoBeams(dt);
+  }
+
+  function phaseTwoPentagramCenter(bounds) {
+    const launch = Math.min(1, phaseTime / PHASE2_ORB_LAUNCH);
+    const hand = {
+      x: bounds.left + bounds.width * 0.66,
+      y: bounds.top + bounds.height * 0.12,
+    };
+    const sky = {
+      x: bounds.left + bounds.width * 0.50,
+      y: Math.max(54, bounds.top - bounds.height * 0.42),
+    };
+    const p = easeOutCubic(launch);
+    return {
+      hand,
+      sky,
+      x: hand.x + (sky.x - hand.x) * p,
+      y: hand.y + (sky.y - hand.y) * p,
+      launched: launch >= 1,
+    };
+  }
+
+  function updatePhaseTwoBeams(dt) {
+    if (!phase2Ritual) return;
+    for (const beam of phase2Ritual.beams) beam.age += dt;
+    const finished = phase2Ritual.beams.filter((beam) => !beam.hit && beam.age >= PHASE2_BEAM_LIFE);
+    for (const beam of finished) {
+      beam.hit = true;
+      phase2Ritual.marks.push({
+        fx: beam.target.fx,
+        fy: beam.target.fy,
+        radius: beam.target.radius,
+        seed: beam.target.seed,
+      });
+    }
+    phase2Ritual.beams = phase2Ritual.beams.filter((beam) => beam.age < PHASE2_BEAM_LIFE + 90);
+    while (phase2Ritual.nextTarget < phase2Ritual.targets.length && phaseTime >= phase2Ritual.nextBeamAt) {
+      const target = phase2Ritual.targets[phase2Ritual.nextTarget++];
+      phase2Ritual.beams.push({ target, age: 0, hit: false });
+      const progress = phase2Ritual.nextTarget / phase2Ritual.targets.length;
+      phase2Ritual.nextBeamAt += 430 - easeOutCubic(progress) * 335;
+    }
+  }
+
   function updatePhase(dt) {
     if (phase === PHASE.FALL) {
       if (phaseTime <= FALL_DURATION) {
@@ -1683,9 +1817,15 @@
       }
     } else if (phase === PHASE.ACTIVE) {
       updateTempo(dt);
+      if (bpm >= WRATH_MAX) {
+        startSecondPhase();
+        return;
+      }
       updateAttacks(dt);
       updateMovement(dt);
       updateCombat(dt);
+    } else if (phase === PHASE.SECOND) {
+      updateSecondPhase(dt);
     }
   }
 
@@ -2198,18 +2338,281 @@
   function renderAttackLayer() {
     if (!actx) return;
     actx.clearRect(0, 0, attackCanvas.width, attackCanvas.height);
-    if (phase !== PHASE.ACTIVE) return;
-    for (const a of attacks) {
-      if (a.type === 'pentaBeam') renderPentaBeam(a);
-      else if (a.type === 'tentacle') renderTentacleAttack(a);
-      else if (a.type === 'xRay') renderXRay(a);
-      else if (a.type === 'bloodSpiral') renderBloodSpiral(a);
-      else if (a.type === 'pentLine') renderPentLine(a);
-      else if (a.type === 'outsidePent') renderOutsidePent(a);
-      else if (a.type === 'checkerboard') renderCheckerboard(a);
-      else if (a.type === 'portalCurve') renderPortalCurve(a);
-      else if (a.type === 'sidePortals') renderSidePortals(a);
+    for (const a of fadingAttacks) {
+      const fade = 1 - Math.min(1, a.fadeTime / a.fadeDuration);
+      actx.save();
+      actx.globalAlpha *= fade;
+      renderAttack(a);
+      actx.restore();
     }
+    if (phase === PHASE.ACTIVE) {
+      for (const a of attacks) renderAttack(a);
+    } else if (phase === PHASE.SECOND) {
+      renderSecondPhaseRitual();
+    }
+  }
+
+  function renderAttack(a) {
+    if (a.type === 'pentaBeam') renderPentaBeam(a);
+    else if (a.type === 'tentacle') renderTentacleAttack(a);
+    else if (a.type === 'xRay') renderXRay(a);
+    else if (a.type === 'bloodSpiral') renderBloodSpiral(a);
+    else if (a.type === 'pentLine') renderPentLine(a);
+    else if (a.type === 'outsidePent') renderOutsidePent(a);
+    else if (a.type === 'checkerboard') renderCheckerboard(a);
+    else if (a.type === 'portalCurve') renderPortalCurve(a);
+    else if (a.type === 'sidePortals') renderSidePortals(a);
+  }
+
+  function ritualBounds() {
+    const sprite = cultistFallenImg && cultistFallenImg.getBoundingClientRect();
+    if (sprite && sprite.width) return sprite;
+    return cultistElement ? cultistElement.getBoundingClientRect() : { left: window.innerWidth / 2 - 140, top: 120, width: 280, height: 220 };
+  }
+
+  function phaseTwoBodyPoint(bounds, target) {
+    return {
+      x: bounds.left + bounds.width * target.fx,
+      y: bounds.top + bounds.height * target.fy,
+    };
+  }
+
+  function drawTiltedRitualPentagram(cx, cy, radius, alpha) {
+    if (alpha <= 0 || radius <= 0) return;
+    const spin = clock * 0.0018;
+    const tilt = 0.34; // hard perspective angle toward the cultist
+    const project = (x, y) => ({
+      x: cx + x + y * 0.22,
+      y: cy + y * tilt,
+    });
+    const outer = [];
+    const inner = [];
+    for (let i = 0; i < 5; i++) {
+      let a = -Math.PI / 2 + spin + i * Math.PI * 2 / 5;
+      outer.push(project(Math.cos(a) * radius, Math.sin(a) * radius));
+      a += Math.PI / 5;
+      inner.push(project(Math.cos(a) * radius * 0.43, Math.sin(a) * radius * 0.43));
+    }
+    const order = [0, 2, 4, 1, 3, 0];
+    actx.save();
+    actx.globalAlpha = alpha;
+    actx.lineJoin = 'round';
+    actx.lineCap = 'round';
+    actx.shadowColor = 'rgba(255, 0, 0, 0.95)';
+    actx.shadowBlur = 18;
+    actx.strokeStyle = '#d61b18';
+    actx.lineWidth = 3;
+    actx.beginPath();
+    actx.ellipse(cx, cy, radius * 1.08, radius * tilt * 1.08, 0.22, 0, Math.PI * 2);
+    actx.stroke();
+    actx.strokeStyle = '#e31b17';
+    actx.lineWidth = 4;
+    actx.beginPath();
+    for (let i = 0; i < order.length; i++) {
+      const v = outer[order[i]];
+      if (i === 0) actx.moveTo(v.x, v.y); else actx.lineTo(v.x, v.y);
+    }
+    actx.stroke();
+    actx.lineWidth = 2;
+    actx.strokeStyle = '#ff5a47';
+    actx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const v = i % 2 === 0 ? outer[i / 2] : inner[(i - 1) / 2];
+      if (i === 0) actx.moveTo(v.x, v.y); else actx.lineTo(v.x, v.y);
+    }
+    actx.closePath();
+    actx.stroke();
+    actx.restore();
+  }
+
+  function drawPhaseTwoOrb(orb, formP) {
+    if (formP >= 1) return;
+    const vanish = 1 - smoothstep(formP);
+    const pulse = 1 + Math.sin(clock * 0.024) * 0.18;
+    actx.save();
+    actx.globalAlpha = vanish;
+    actx.shadowColor = 'rgba(255, 30, 20, 1)';
+    actx.shadowBlur = 28;
+    actx.fillStyle = '#ff2118';
+    actx.beginPath();
+    actx.arc(orb.x, orb.y, (12 + 18 * formP) * pulse, 0, Math.PI * 2);
+    actx.fill();
+    actx.strokeStyle = '#180003';
+    actx.lineWidth = 2;
+    actx.stroke();
+    actx.restore();
+  }
+
+  function drawPhaseTwoBeam(pent, bounds, beam) {
+    if (beam.hit) return;
+    const target = phaseTwoBodyPoint(bounds, beam.target);
+    const p = Math.min(1, beam.age / PHASE2_BEAM_LIFE);
+    const headX = pent.x + (target.x - pent.x) * easeOutCubic(p);
+    const headY = pent.y + (target.y - pent.y) * easeOutCubic(p);
+    const tailP = Math.max(0, p - 0.38) / 0.62;
+    const tailX = pent.x + (target.x - pent.x) * tailP;
+    const tailY = pent.y + (target.y - pent.y) * tailP;
+    actx.save();
+    actx.lineCap = 'round';
+    actx.strokeStyle = '#c91412';
+    actx.lineWidth = 10;
+    actx.beginPath();
+    actx.moveTo(tailX, tailY);
+    actx.lineTo(headX, headY);
+    actx.stroke();
+    actx.strokeStyle = '#000';
+    actx.lineWidth = 8;
+    actx.beginPath();
+    actx.moveTo(tailX, tailY);
+    actx.lineTo(headX, headY);
+    actx.stroke();
+    actx.restore();
+  }
+
+  function drawPhaseTwoLocalPatch(targetCtx, x, y, radius, seed, yScale) {
+    const points = 10;
+    targetCtx.beginPath();
+    for (let i = 0; i < points; i++) {
+      const a = i / points * Math.PI * 2 + seed;
+      const wob = 0.72 + 0.28 * Math.sin(seed * 3 + i * 2.17);
+      const px = x + Math.cos(a) * radius * wob;
+      const py = y + Math.sin(a) * radius * wob * yScale;
+      if (i === 0) targetCtx.moveTo(px, py); else targetCtx.lineTo(px, py);
+    }
+    targetCtx.closePath();
+    targetCtx.fill();
+  }
+
+  function ensurePhaseTwoEngulfMask(bounds) {
+    if (!phase2Ritual || !cultistFallenImg || !cultistFallenImg.complete) return false;
+    const w = Math.max(1, Math.round(bounds.width));
+    const h = Math.max(1, Math.round(bounds.height));
+    if (phase2Ritual.maskCanvas && phase2Ritual.maskW === w && phase2Ritual.maskH === h) return true;
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = w;
+    maskCanvas.height = h;
+    const maskCtx = maskCanvas.getContext('2d');
+    const sampleCanvas = document.createElement('canvas');
+    sampleCanvas.width = w;
+    sampleCanvas.height = h;
+    const sampleCtx = sampleCanvas.getContext('2d');
+    sampleCtx.drawImage(cultistFallenImg, 0, 0, w, h);
+    const data = sampleCtx.getImageData(0, 0, w, h).data;
+    const alphaAt = (x, y) => {
+      if (x < 0 || y < 0 || x >= w || y >= h) return 0;
+      return data[(y * w + x) * 4 + 3];
+    };
+    for (const target of phase2Ritual.targets) {
+      let tx = Math.max(0, Math.min(w - 1, Math.round(target.fx * w)));
+      let ty = Math.max(0, Math.min(h - 1, Math.round(target.fy * h)));
+      if (alphaAt(tx, ty) < 40) {
+        let found = null;
+        for (let radius = 4; radius <= 70 && !found; radius += 4) {
+          for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+            const x = Math.max(0, Math.min(w - 1, Math.round(tx + Math.cos(a) * radius)));
+            const y = Math.max(0, Math.min(h - 1, Math.round(ty + Math.sin(a) * radius)));
+            if (alphaAt(x, y) >= 40) { found = { x, y }; break; }
+          }
+        }
+        if (found) {
+          tx = found.x;
+          ty = found.y;
+          target.fx = tx / w;
+          target.fy = ty / h;
+        }
+      }
+    }
+    const random = mulberry32(0x2f4c55);
+    const patches = [];
+    const sourceX = w * 0.66;
+    const sourceY = h * 0.12;
+    for (let attempts = 0; patches.length < 190 && attempts < 15000; attempts++) {
+      const x = (random() * w) | 0;
+      const y = (random() * h) | 0;
+      if (data[(y * w + x) * 4 + 3] < 40) continue;
+      const dx = (x - sourceX) / Math.max(1, w * 0.9);
+      const dy = (y - sourceY) / Math.max(1, h * 0.75);
+      const distance = Math.hypot(dx, dy);
+      patches.push({
+        x,
+        y,
+        radius: 18 + random() * 42,
+        yScale: 0.55 + random() * 0.35,
+        start: PHASE2_ORB_LAUNCH + PHASE2_PENT_FORM + 320 + distance * PHASE2_ENGULF_DURATION + random() * 420,
+        grow: 520 + random() * 780,
+        seed: random() * Math.PI * 2,
+      });
+    }
+    phase2Ritual.maskCanvas = maskCanvas;
+    phase2Ritual.maskCtx = maskCtx;
+    phase2Ritual.maskW = w;
+    phase2Ritual.maskH = h;
+    phase2Ritual.patches = patches;
+    return true;
+  }
+
+  function renderPhaseTwoSpriteEngulf(bounds) {
+    if (!ensurePhaseTwoEngulfMask(bounds)) return;
+    const r = phase2Ritual;
+    const mctx = r.maskCtx;
+    mctx.setTransform(1, 0, 0, 1, 0, 0);
+    mctx.clearRect(0, 0, r.maskW, r.maskH);
+    mctx.fillStyle = '#000';
+    for (const mark of r.marks) {
+      drawPhaseTwoLocalPatch(mctx, mark.fx * r.maskW, mark.fy * r.maskH, mark.radius, mark.seed, 0.68);
+    }
+    for (const patch of r.patches) {
+      const p = smoothstep((phaseTime - patch.start) / patch.grow);
+      if (p <= 0) continue;
+      drawPhaseTwoLocalPatch(mctx, patch.x, patch.y, patch.radius * p, patch.seed + p * 0.7, patch.yScale);
+    }
+    mctx.globalCompositeOperation = 'destination-in';
+    mctx.drawImage(cultistFallenImg, 0, 0, r.maskW, r.maskH);
+    mctx.globalCompositeOperation = 'source-over';
+    actx.drawImage(r.maskCanvas, bounds.left, bounds.top, bounds.width, bounds.height);
+  }
+
+  function renderPhaseTwoCocoon(bounds, board) {
+    const start = PHASE2_ORB_LAUNCH + PHASE2_PENT_FORM + PHASE2_ENGULF_DURATION * 0.48;
+    const p = smoothstep((phaseTime - start) / PHASE2_BLACK_EXPAND);
+    if (p <= 0) return;
+    const cx = bounds.left + bounds.width * 0.50;
+    const cy = bounds.top + bounds.height * 0.50;
+    const targetBottom = board ? board.top + board.height * 0.52 : cy + bounds.height;
+    const targetTop = Math.min(0, bounds.top - bounds.height * 0.65);
+    const ry = Math.max(bounds.height * 0.42, cy - targetTop, targetBottom - cy) * p;
+    const rx = Math.max(bounds.width * 0.42, ry * 0.86);
+    const spin = clock * 0.0012;
+    actx.save();
+    actx.fillStyle = '#000';
+    actx.beginPath();
+    actx.ellipse(cx, cy, rx, ry, spin * 0.08, 0, Math.PI * 2);
+    actx.fill();
+    actx.strokeStyle = 'rgba(88, 4, 18, 0.58)';
+    actx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) {
+      const a0 = spin + i * Math.PI * 0.5;
+      actx.beginPath();
+      actx.ellipse(cx, cy, rx * (0.96 - i * 0.04), ry * (0.74 + i * 0.05), a0, -0.9, 1.2);
+      actx.stroke();
+    }
+    actx.restore();
+  }
+
+  function renderSecondPhaseRitual() {
+    const r = ritualBounds();
+    const board = canvas && canvas.getBoundingClientRect();
+    const orb = phaseTwoPentagramCenter(r);
+    const formP = Math.min(1, Math.max(0, (phaseTime - PHASE2_ORB_LAUNCH) / PHASE2_PENT_FORM));
+    const pentP = easeOutCubic(formP);
+    const pent = { x: orb.sky.x, y: orb.sky.y };
+    drawPhaseTwoOrb(orb, formP);
+    drawTiltedRitualPentagram(pent.x, pent.y, (52 + 94 * pentP) * (1 + Math.sin(clock * 0.01) * 0.03), pentP);
+
+    if (!phase2Ritual) return;
+    for (const beam of phase2Ritual.beams) drawPhaseTwoBeam(pent, r, beam);
+    renderPhaseTwoSpriteEngulf(r);
+    renderPhaseTwoCocoon(r, board);
   }
 
   // The summoning pentagram: a small dark-purple five-pointed star + ring, one
@@ -3231,7 +3634,7 @@
     phaseTime += dt;
     updateArena(dt);
     updatePhase(dt);
-    if (phase === PHASE.ACTIVE) clampHero();
+    if (phase === PHASE.ACTIVE || phase === PHASE.SECOND) clampHero();
     renderBackground(time, false);
     renderScene();
     renderAttackLayer();
@@ -3300,7 +3703,8 @@
     heroMove.y = 0;
     keys.clear();
     debugBuffer = '';
-    if (cultistElement) cultistElement.classList.remove('standing');
+    if (overlay) overlay.classList.remove('phase-two');
+    if (cultistElement) cultistElement.classList.remove('standing', 'phase-two');
     // Tempo / attacks idle until she stands (PHASE.ACTIVE -> startFight()).
     fightClock = 0;
     bpm = BASE_BPM;

@@ -48,6 +48,10 @@
   pointer-events: none;
 }
 
+#aether-boss2d-overlay.phase-two .aether-boss2d-attacks {
+  z-index: 8;
+}
+
 /* Temporary standalone performance readout for the boss scene. */
 .aether-boss2d-fps {
   position: absolute;
@@ -105,6 +109,17 @@
 .aether-boss2d-debug-btn:hover {
   background: rgba(40, 8, 56, 0.92);
   color: #f0d6ff;
+}
+
+.aether-boss2d-debug-btn-danger {
+  color: #ffd3cc;
+  background: rgba(54, 0, 4, 0.9);
+  border-color: #9a1514;
+}
+
+.aether-boss2d-debug-btn-danger:hover {
+  background: rgba(92, 4, 8, 0.95);
+  color: #fff0ee;
 }
 
 /* Right-click-armed for a combo: waiting on a partner left-click. */
@@ -327,7 +342,8 @@
 }
 
 .aether-boss2d-cultist-kneel,
-.aether-boss2d-cultist-stand-wrap {
+.aether-boss2d-cultist-stand-wrap,
+.aether-boss2d-cultist-fallen {
   position: absolute;
   left: 50%;
   bottom: 0;
@@ -359,6 +375,15 @@
   animation: aether-cultist-jitter 0.9s steps(1) infinite;
 }
 
+.aether-boss2d-cultist-fallen {
+  width: 430px;
+  height: auto;
+  opacity: 0;
+  transform: translateX(-50%) translateY(20px);
+  transition: opacity 0.34s ease, transform 0.45s ease;
+  filter: drop-shadow(0 0 24px rgba(160, 4, 8, 0.62));
+}
+
 /* --- Transition to the standing combat form ---------------------------- */
 .aether-boss2d-cultist.standing .aether-boss2d-cultist-kneel {
   opacity: 0;
@@ -369,6 +394,17 @@
   transform: translateX(-50%) translateY(0);
   /* The rise transition (0.7s) hands off to the gentle float loop. */
   animation: aether-cultist-float 4s ease-in-out 0.7s infinite;
+}
+
+.aether-boss2d-cultist.phase-two .aether-boss2d-cultist-kneel,
+.aether-boss2d-cultist.phase-two .aether-boss2d-cultist-stand-wrap {
+  opacity: 0;
+  animation: none;
+}
+
+.aether-boss2d-cultist.phase-two .aether-boss2d-cultist-fallen {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 @keyframes aether-cultist-float {
