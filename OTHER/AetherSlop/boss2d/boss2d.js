@@ -839,6 +839,178 @@
     }
   }
 
+  // ---- Second-phase backdrop: an ocean of souls beyond the arena ---------
+  // Replaces the outer tentacles once the ritual begins. The whole void
+  // becomes a marbled current: layered tiling smoke textures scroll left to
+  // right with a slow vertical undulation — a pale soul-mass streaming
+  // through gray murk — with a few brighter gusts riding the flow on top.
+  const SOUL_TEX_W = 512;
+  const SOUL_TEX_H = 256;
+  let soulTex = null;
+  let soulStrands = [];
+  const soulRng = mulberry32(0x6b21c9);
+
+  // A horizontally tileable smoke sheet. 'fog' is soft overlapping murk;
+  // 'wisp' is the brighter streaky matter that reads as the soul-mass.
+  function makeSoulTexture(seed, kind) {
+    const random = mulberry32(seed);
+    const c = document.createElement('canvas');
+    c.width = SOUL_TEX_W;
+    c.height = SOUL_TEX_H;
+    const g = c.getContext('2d');
+    if (kind === 'fog') {
+      // Pale smudges over darker marbling, all smeared along the flow.
+      for (let i = 0; i < 320; i++) {
+        const x = random() * SOUL_TEX_W;
+        const y = random() * SOUL_TEX_H;
+        const r = 10 + random() * 34;
+        const stretch = 2.2 + random() * 2.4;
+        const dark = random() < 0.3;
+        const tone = dark ? 6 + random() * 14 : 74 + random() * 96;
+        const a = dark ? 0.10 + random() * 0.12 : 0.04 + random() * 0.07;
+        const fill = g.createRadialGradient(0, 0, 0, 0, 0, r);
+        fill.addColorStop(0, 'rgba(' + (tone | 0) + ', ' + ((tone * 1.05) | 0) + ', ' + ((tone * 1.04) | 0) + ', ' + a.toFixed(3) + ')');
+        fill.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        for (const ox of [-SOUL_TEX_W, 0, SOUL_TEX_W]) {
+          g.save();
+          g.translate(x + ox, y);
+          g.scale(stretch, 1);
+          g.fillStyle = fill;
+          g.beginPath();
+          g.arc(0, 0, r, 0, Math.PI * 2);
+          g.fill();
+          g.restore();
+        }
+      }
+    } else {
+      // Bright wavy filaments, dense enough to merge into running matter.
+      g.lineCap = 'round';
+      for (let i = 0; i < 150; i++) {
+        const x0 = random() * SOUL_TEX_W;
+        const y0 = random() * SOUL_TEX_H;
+        const len = 30 + random() * 130;
+        const amp = 2 + random() * 7;
+        const k = 0.03 + random() * 0.06;
+        const ph = random() * Math.PI * 2;
+        const tone = 165 + random() * 75;
+        const a = 0.05 + random() * 0.15;
+        const width = 0.8 + random() * 2.4;
+        g.strokeStyle = 'rgba(' + (tone | 0) + ', ' + ((tone * 1.03) | 0) + ', ' + ((tone * 1.02) | 0) + ', ' + a.toFixed(3) + ')';
+        g.lineWidth = width;
+        for (const ox of [-SOUL_TEX_W, 0, SOUL_TEX_W]) {
+          g.beginPath();
+          for (let s = 0; s <= 12; s++) {
+            const u = s / 12;
+            const x = x0 + len * u + ox;
+            const y = y0 + Math.sin(x * k + ph) * amp * Math.sin(Math.PI * u);
+            if (s === 0) g.moveTo(x, y); else g.lineTo(x, y);
+          }
+          g.stroke();
+        }
+      }
+    }
+    return c;
+  }
+
+  // One scrolling layer of the current, drawn in undulating vertical slices
+  // so the sheet shears and rolls instead of sliding rigidly.
+  function drawSoulLayer(tex, scroll, yAmp, wobbleK, wobblePh, alpha, composite) {
+    const slices = 36;
+    const sliceW = bgWidth / slices;
+    const texSlice = SOUL_TEX_W / slices;
+    bgCtx.globalAlpha = alpha;
+    bgCtx.globalCompositeOperation = composite;
+    const off = (clock * scroll) % SOUL_TEX_W;
+    // No overlap on additive layers — a doubled column reads as a seam.
+    const overlap = composite === 'lighter' ? 0 : 0.6;
+    for (let i = 0; i < slices; i++) {
+      let sx = (i * texSlice - off) % SOUL_TEX_W;
+      if (sx < 0) sx += SOUL_TEX_W;
+      const y = Math.sin(i * wobbleK + clock * 0.0004 + wobblePh) * yAmp
+        + Math.sin(i * wobbleK * 2.7 - clock * 0.0007 + wobblePh * 1.7) * yAmp * 0.5;
+      const dx = i * sliceW;
+      const dw = sliceW + overlap;
+      if (sx + texSlice <= SOUL_TEX_W) {
+        bgCtx.drawImage(tex, sx, 0, texSlice, SOUL_TEX_H, dx, y, dw, bgHeight);
+      } else {
+        const first = SOUL_TEX_W - sx;
+        const frac = first / texSlice;
+        bgCtx.drawImage(tex, sx, 0, first, SOUL_TEX_H, dx, y, dw * frac, bgHeight);
+        bgCtx.drawImage(tex, 0, 0, texSlice - first, SOUL_TEX_H, dx + dw * frac, y, dw * (1 - frac), bgHeight);
+      }
+    }
+    bgCtx.globalAlpha = 1;
+    bgCtx.globalCompositeOperation = 'source-over';
+  }
+
+  function spawnSoulStrand() {
+    return {
+      born: clock,
+      dur: 2600 + soulRng() * 3200,
+      x: soulRng() * (bgWidth + 400) - 300,
+      y: soulRng() * bgHeight,
+      len: 80 + soulRng() * 190,
+      amp: 6 + soulRng() * 16,
+      k: 0.015 + soulRng() * 0.03,
+      ph: soulRng() * Math.PI * 2,
+      speed: 0.05 + soulRng() * 0.07,
+      width: 2 + soulRng() * 5,
+      tone: soulRng(),
+    };
+  }
+
+  function renderSoulOcean(alpha) {
+    if (!soulTex) {
+      soulTex = {
+        fogA: makeSoulTexture(0x9d2c81, 'fog'),
+        fogB: makeSoulTexture(0x37e4b5, 'fog'),
+        wisp: makeSoulTexture(0x71f30d, 'wisp'),
+      };
+    }
+    bgCtx.save();
+    // Gray murk floor across the whole void.
+    bgCtx.globalAlpha = alpha;
+    const grad = bgCtx.createLinearGradient(0, 0, 0, bgHeight);
+    grad.addColorStop(0, '#15181a');
+    grad.addColorStop(0.5, '#1b1f21');
+    grad.addColorStop(1, '#101314');
+    bgCtx.fillStyle = grad;
+    bgCtx.fillRect(0, 0, bgWidth, bgHeight);
+    // The current itself: murk, counter-murk, then the bright soul-mass.
+    drawSoulLayer(soulTex.fogA, 0.020, bgHeight * 0.011, 0.28, 0, 0.9 * alpha, 'source-over');
+    drawSoulLayer(soulTex.fogB, 0.042, bgHeight * 0.016, 0.38, 2.1, 0.65 * alpha, 'source-over');
+    drawSoulLayer(soulTex.wisp, 0.070, bgHeight * 0.019, 0.33, 4.2, 0.9 * alpha, 'lighter');
+
+    // A few brighter gusts riding the surface of the stream.
+    soulStrands = soulStrands.filter((s) => clock - s.born < s.dur);
+    if (soulStrands.length < 18) soulStrands.push(spawnSoulStrand());
+    bgCtx.lineCap = 'round';
+    for (const s of soulStrands) {
+      const life = (clock - s.born) / s.dur;
+      const env = Math.sin(Math.PI * Math.min(1, Math.max(0, life)));
+      const headX = s.x + (clock - s.born) * s.speed;
+      if (headX - s.len > bgWidth + 60) continue;
+      const a = alpha * env * (0.14 + s.tone * 0.20);
+      if (a <= 0.005) continue;
+      bgCtx.strokeStyle = 'rgba(212, 226, 222, ' + a.toFixed(3) + ')';
+      for (let i = 0; i < 10; i++) {
+        const u0 = i / 10;
+        const u1 = (i + 1) / 10;
+        const x0 = headX - s.len * u0;
+        const x1 = headX - s.len * u1;
+        const y0 = s.y + Math.sin(x0 * s.k + s.ph + clock * 0.0005) * s.amp;
+        const y1 = s.y + Math.sin(x1 * s.k + s.ph + clock * 0.0005) * s.amp;
+        // Fusiform: the gust swells in the middle, vanishes at the tips.
+        bgCtx.lineWidth = Math.max(0.6, s.width * Math.pow(Math.sin(Math.PI * (u0 + u1) / 2), 0.8));
+        bgCtx.beginPath();
+        bgCtx.moveTo(x0, y0);
+        bgCtx.lineTo(x1, y1);
+        bgCtx.stroke();
+      }
+    }
+    bgCtx.restore();
+  }
+
   // One long outer tentacle: a tapering filled ribbon (no shadow — that was
   // the frame-rate killer) with a dark rim and limb-local stains/scars.
   // Typed scratch buffers keep this hot path allocation-free.
@@ -1050,9 +1222,14 @@
     bgCtx.setTransform(1, 0, 0, 1, 0, 0);
     bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
     bgCtx.restore();
-    if (!outerTentacles.length) return;
-    const growth = easeOutCubic(Math.min(1, (clock - outerGrowStart) / OUTER_GROW));
-    for (const t of outerTentacles) drawOuterTentacle(t, growth);
+    // Second phase: the outer limbs retract into the dark and an ocean of
+    // souls streams through the void in their place.
+    const soulFade = phase === PHASE.SECOND ? smoothstep(phaseTime / 1600) : 0;
+    if (outerTentacles.length && soulFade < 1) {
+      const growth = easeOutCubic(Math.min(1, (clock - outerGrowStart) / OUTER_GROW)) * (1 - soulFade);
+      if (growth > 0.001) for (const t of outerTentacles) drawOuterTentacle(t, growth);
+    }
+    if (soulFade > 0) renderSoulOcean(soulFade);
   }
 
   // ---- The pentagram burning into the floor, arm by arm -----------------
