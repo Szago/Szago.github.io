@@ -117,7 +117,7 @@
   const P2_BEAM_TOTAL = P2_BEAM_REACH + P2_BEAM_POUR + P2_BEAM_RELEASE;
   const P2_BLOT_GROW = 780;        // ms for one landed shadow blot to bloom out
   const P2_FLOOD_MS = 1250;        // silhouette floods solid after the last body strike
-  const P2_COCOON_HITS = 20;       // cocoon-stage strikes needed to inflate the shadow orb
+  const P2_COCOON_HITS = 34;       // feeding strikes to grow the seed into the shadow orb
 
   const ARENA_CX = BOARD / 2;
   const ARENA_CY = BOARD / 2;
@@ -1674,6 +1674,7 @@
       rng: mulberry32(0x77a1b3),   // per-launch beam curvature
       targets,
       nextTarget: 0,
+      launchCount: 0,
       nextBeamAt: PHASE2_ORB_LAUNCH + PHASE2_PENT_FORM + 260,
       beams: [],
       marks: [],
@@ -1834,26 +1835,29 @@
     }
     r.beams = r.beams.filter((beam) => beam.age < P2_BEAM_TOTAL + 240);
 
-    // Launch the next stream: every body target in sweep order first, then the
-    // feeding strikes that inflate the cocoon — until the mass swallows the
-    // pentagram itself and there is nothing left to fire from.
+    // Launch the next stream. During the body sweep every third stream tithes
+    // to the seed of the cocoon at her centre, growing it slowly; once she is
+    // fully enveloped, every stream goes for the centre and the mass swells
+    // fast — until it swallows the pentagram and there is nothing left to
+    // fire from.
     while (phaseTime >= r.nextBeamAt && r.pentFade > 0.5) {
       const curve = (18 + r.rng() * 96) * (r.rng() < 0.5 ? -1 : 1);
-      if (r.nextTarget < r.targets.length) {
+      const bodyLeft = r.nextTarget < r.targets.length;
+      const feeding = (!bodyLeft || r.launchCount % 3 === 2) && c.nextAngle < c.feedAngles.length;
+      if (feeding) {
+        r.beams.push({ kind: 'cocoon', angle: c.feedAngles[c.nextAngle++], seed: r.rng() * Math.PI * 2, curve, age: 0, hit: false });
+      } else if (bodyLeft) {
         const t = r.targets[r.nextTarget++];
         r.beams.push({ kind: 'body', fx: t.fx, fy: t.fy, radius: t.radius, seed: t.seed, curve, age: 0, hit: false });
-        const progress = r.nextTarget / r.targets.length;
-        r.nextBeamAt += 360 - easeOutCubic(progress) * 210;
-      } else if (c.nextAngle < c.feedAngles.length) {
-        // Hold fire until the flood has fully claimed her silhouette.
-        if (!r.floodStart || phaseTime < r.floodStart + P2_FLOOD_MS * 0.85) {
-          r.nextBeamAt = phaseTime + 120;
-          break;
-        }
-        r.beams.push({ kind: 'cocoon', angle: c.feedAngles[c.nextAngle++], seed: r.rng() * Math.PI * 2, curve, age: 0, hit: false });
-        r.nextBeamAt += 400 - (c.nextAngle / c.feedAngles.length) * 170;
       } else {
         break;
+      }
+      r.launchCount++;
+      if (bodyLeft) {
+        const progress = r.nextTarget / r.targets.length;
+        r.nextBeamAt += 300 - easeOutCubic(progress) * 170;
+      } else {
+        r.nextBeamAt += 340 - (c.nextAngle / c.feedAngles.length) * 160;
       }
     }
 
@@ -1864,7 +1868,9 @@
     // finishes swelling on its own momentum.
     if (r.pentFade <= 0.5) c.hits = Math.min(P2_COCOON_HITS, c.hits + dt / 400);
     c.p += (c.hits / P2_COCOON_HITS - c.p) * (1 - Math.exp(-dt / 850));
-    c.alpha = smoothstep((r.floodP - 0.7) / 0.3);
+    // The seed fades in with its first few feedings — barely visible at
+    // first, purely a product of what the streams have poured into it.
+    c.alpha = smoothstep(c.p / 0.06);
     for (const rip of c.ripples) rip.t += dt / 900;
     c.ripples = c.ripples.filter((rip) => rip.t < 1);
   }
@@ -2861,16 +2867,17 @@
     // near the end of the feeding does it lunge up past the sky pentagram.
     const cy0 = bounds.top + bounds.height * 0.55;
     const cy = cy0 + bounds.height * 0.42 * c.p;
-    const rx0 = bounds.width * 0.54;
-    const ry0 = bounds.height * 0.62;
     const bottom = board ? board.top + board.height * 0.54 : cy + bounds.height * 2;
-    const ryMax = Math.max(ry0, cy + 30, bottom - cy);
-    const rxMax = Math.max(rx0, ryMax * 0.94);
+    const ryMax = Math.max(bounds.height * 0.62, cy + 30, bottom - cy);
+    const rxMax = Math.max(bounds.width * 0.54, ryMax * 0.94);
+    // A single feed-driven curve from a near-invisible seed to the full orb;
+    // the early power keeps it tiny through the first few feedings.
+    const g = 0.02 + 0.98 * Math.pow(c.p, 1.6);
     const swell = 1 + c.pulse * 0.045;
     return {
       cx, cy,
-      rx: (rx0 + (rxMax - rx0) * c.p) * swell,
-      ry: (ry0 + (ryMax - ry0) * c.p) * swell,
+      rx: rxMax * g * swell,
+      ry: ryMax * g * swell,
     };
   }
 
@@ -3014,7 +3021,7 @@
     drawPhaseTwoOrb(orb, formP);
     // Once the mass fully covers her sprite there is nothing of the engulf
     // left to see — skip the whole mask pipeline.
-    if (c.alpha < 0.99) renderPhaseTwoSpriteEngulf(r);
+    if (c.p < 0.85) renderPhaseTwoSpriteEngulf(r);
     renderPhaseTwoCocoon(r, board);
     if (phase2Ritual.pentFade > 0) {
       drawTiltedRitualPentagram(
