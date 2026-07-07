@@ -445,6 +445,14 @@
     0 0 0 2px #000,
     0 0 28px 6px rgba(120, 6, 4, 0.45),
     0 14px 40px rgba(0, 0, 0, 0.7);
+  transition: box-shadow 1.65s ease;
+}
+
+#aether-boss2d-overlay.phase-two .aether-boss2d-stage {
+  box-shadow:
+    0 0 0 2px #111,
+    0 0 28px 6px rgba(190, 188, 174, 0.38),
+    0 14px 40px rgba(0, 0, 0, 0.72);
 }
 
 #aether-boss2d-canvas {

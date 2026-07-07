@@ -65,6 +65,8 @@
   let attackCanvas = null; // full-viewport layer for pentagrams + beams
   let actx = null;
   let borderCanvas = null; // pre-rendered static bloody frame
+  let calcifiedBorderCanvas = null; // pre-rendered phase-two bone-gray frame
+  let cobbledFloorCanvas = null; // pre-rendered phase-two stone floor
   let cultistElement = null;   // the boss container (kneel + stand layers)
   let cultistStandWrap = null; // standing layer wrapper (carries the float loop)
   let cultistStandImg = null;  // standing sprite img (carries the pixel jitter)
@@ -106,6 +108,7 @@
   const OUTER_WIDTH_MULT = 2;     // global art-direction scale for every depth plane
   const ENDGAME_SCENE_STORAGE_KEY = 'aetherEndgameScene';
   const PHASE2_ATTACK_FADE = 420;  // ms for active attacks to dissolve away
+  const PHASE2_ARENA_TRANSITION = 1650; // ms for the arena to calcify before the ritual casts
   const PHASE2_ORB_LAUNCH = 1050;  // ms for the casting orb to leave her hand
   const PHASE2_PENT_FORM = 760;    // ms for the orb to unfold into a pentagram
   // One shadow stream from the sky pentagram: the head snakes down (REACH),
@@ -386,6 +389,10 @@
   const easeInQuad = (t) => t * t;
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
   const smoothstep = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
+  const phaseTwoArenaProgress = () => phase === PHASE.SECOND
+    ? smoothstep(phaseTime / PHASE2_ARENA_TRANSITION)
+    : 0;
+  const phaseTwoRitualTime = () => Math.max(0, phaseTime - PHASE2_ARENA_TRANSITION);
 
   function setSavedEndgameScene(sceneName) {
     try {
@@ -590,6 +597,181 @@
     bctx.strokeStyle = 'rgba(170, 24, 18, 0.5)';
     bctx.lineWidth = 1;
     bctx.strokeRect(BORDER - 0.5, BORDER - 0.5, BOARD - BORDER * 2 + 1, BOARD - BORDER * 2 + 1);
+  }
+
+  function buildCalcifiedBorder() {
+    calcifiedBorderCanvas = document.createElement('canvas');
+    calcifiedBorderCanvas.width = BOARD;
+    calcifiedBorderCanvas.height = BOARD;
+    const bctx = calcifiedBorderCanvas.getContext('2d');
+    const random = mulberry32(0xc41c1f);
+
+    bctx.fillStyle = '#9f9d91';
+    bctx.fillRect(0, 0, BOARD, BOARD);
+    bctx.clearRect(BORDER, BORDER, BOARD - BORDER * 2, BOARD - BORDER * 2);
+
+    const inBand = (x, y) =>
+      x < BORDER || y < BORDER || x >= BOARD - BORDER || y >= BOARD - BORDER;
+
+    const flecks = [
+      { color: 'rgba(42, 42, 39, 0.42)', count: 2600, size: () => 1 + (random() * 2 | 0) },
+      { color: 'rgba(218, 216, 202, 0.36)', count: 1200, size: () => 1 },
+      { color: 'rgba(112, 110, 103, 0.55)', count: 1100, size: () => 1 + (random() * 2 | 0) },
+      { color: 'rgba(24, 24, 22, 0.28)', count: 520, size: () => 2 + (random() * 4 | 0) },
+    ];
+    for (const fleck of flecks) {
+      bctx.fillStyle = fleck.color;
+      for (let i = 0; i < fleck.count; i++) {
+        const x = random() * BOARD | 0;
+        const y = random() * BOARD | 0;
+        if (!inBand(x, y)) continue;
+        const s = fleck.size();
+        bctx.fillRect(x, y, s, s);
+      }
+    }
+
+    // Dry calcified seams crossing the frame, especially around the inner lip.
+    bctx.lineCap = 'square';
+    for (let i = 0; i < 92; i++) {
+      const edge = random();
+      let x = random() * BOARD;
+      let y = random() * BOARD;
+      if (edge < 0.25) y = BORDER * (0.3 + random() * 0.6);
+      else if (edge < 0.5) y = BOARD - BORDER * (0.3 + random() * 0.6);
+      else if (edge < 0.75) x = BORDER * (0.3 + random() * 0.6);
+      else x = BOARD - BORDER * (0.3 + random() * 0.6);
+      const len = 10 + random() * 38;
+      const angle = (edge < 0.5 ? 0 : Math.PI / 2) + (random() - 0.5) * 0.75;
+      bctx.strokeStyle = random() < 0.62 ? 'rgba(36, 36, 33, 0.52)' : 'rgba(224, 222, 206, 0.28)';
+      bctx.lineWidth = random() < 0.72 ? 1 : 2;
+      bctx.beginPath();
+      bctx.moveTo(x, y);
+      bctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+      bctx.stroke();
+    }
+
+    // Longer branching cracks so the border reads as brittle calcified matter.
+    for (let i = 0; i < 20; i++) {
+      const edge = random();
+      let x, y;
+      if (edge < 0.25) { x = random() * BOARD; y = random() * BORDER; }
+      else if (edge < 0.5) { x = random() * BOARD; y = BOARD - random() * BORDER; }
+      else if (edge < 0.75) { x = random() * BORDER; y = random() * BOARD; }
+      else { x = BOARD - random() * BORDER; y = random() * BOARD; }
+      let angle = (edge < 0.5 ? Math.PI / 2 : 0) + (random() - 0.5) * 1.1;
+      bctx.strokeStyle = 'rgba(25, 25, 23, 0.62)';
+      bctx.lineWidth = random() < 0.7 ? 1 : 2;
+      bctx.beginPath();
+      bctx.moveTo(x, y);
+      const steps = 3 + (random() * 4 | 0);
+      for (let k = 0; k < steps; k++) {
+        const len = 8 + random() * 22;
+        x += Math.cos(angle) * len;
+        y += Math.sin(angle) * len;
+        bctx.lineTo(x, y);
+        if (random() < 0.34) {
+          const branch = angle + (random() < 0.5 ? -1 : 1) * (0.55 + random() * 0.45);
+          bctx.moveTo(x, y);
+          bctx.lineTo(x + Math.cos(branch) * (5 + random() * 12), y + Math.sin(branch) * (5 + random() * 12));
+          bctx.moveTo(x, y);
+        }
+        angle += (random() - 0.5) * 0.8;
+      }
+      bctx.stroke();
+    }
+
+    bctx.strokeStyle = 'rgba(22, 22, 20, 0.7)';
+    bctx.lineWidth = 2;
+    bctx.strokeRect(1, 1, BOARD - 2, BOARD - 2);
+    bctx.strokeStyle = 'rgba(218, 216, 202, 0.64)';
+    bctx.lineWidth = 1;
+    bctx.strokeRect(BORDER - 0.5, BORDER - 0.5, BOARD - BORDER * 2 + 1, BOARD - BORDER * 2 + 1);
+  }
+
+  function buildCobbledFloor() {
+    cobbledFloorCanvas = document.createElement('canvas');
+    cobbledFloorCanvas.width = BOARD;
+    cobbledFloorCanvas.height = BOARD;
+    const fctx = cobbledFloorCanvas.getContext('2d');
+    const random = mulberry32(0xc0bb1e);
+
+    fctx.fillStyle = '#171818';
+    fctx.fillRect(0, 0, BOARD, BOARD);
+
+    // Crunchy square-pixel stone grain: no rounded stones, just rough value
+    // blocks and broken mortar hints.
+    for (let y = 0; y < BOARD; y += 4) {
+      for (let x = 0; x < BOARD; x += 4) {
+        const n = random();
+        const tone = n < 0.12 ? 12 : n < 0.42 ? 20 : n < 0.78 ? 28 : 40;
+        fctx.fillStyle = 'rgba(' + tone + ', ' + (tone + 1) + ', ' + (tone + 1) + ', 0.62)';
+        fctx.fillRect(x, y, 4, 4);
+      }
+    }
+
+    fctx.strokeStyle = 'rgba(6, 6, 6, 0.42)';
+    fctx.lineWidth = 1;
+    for (let y = 18; y < BOARD; y += 28 + (random() * 12 | 0)) {
+      fctx.beginPath();
+      for (let x = 0; x <= BOARD; x += 12) {
+        const yy = y + ((random() - 0.5) * 4 | 0);
+        if (x === 0) fctx.moveTo(x, yy); else fctx.lineTo(x, yy);
+      }
+      fctx.stroke();
+    }
+    for (let x = 20; x < BOARD; x += 30 + (random() * 14 | 0)) {
+      fctx.beginPath();
+      for (let y = 0; y <= BOARD; y += 12) {
+        const xx = x + ((random() - 0.5) * 4 | 0);
+        if (y === 0) fctx.moveTo(xx, y); else fctx.lineTo(xx, y);
+      }
+      fctx.stroke();
+    }
+
+    const chips = [
+      { color: 'rgba(64, 65, 62, 0.34)', count: 620, max: 10 },
+      { color: 'rgba(4, 4, 4, 0.33)', count: 520, max: 8 },
+      { color: 'rgba(108, 108, 100, 0.16)', count: 240, max: 7 },
+    ];
+    for (const chip of chips) {
+      fctx.fillStyle = chip.color;
+      for (let i = 0; i < chip.count; i++) {
+        const x = (random() * BOARD) | 0;
+        const y = (random() * BOARD) | 0;
+        const w = 1 + (random() * chip.max | 0);
+        const h = 1 + (random() * 4 | 0);
+        fctx.fillRect(x, y, w, h);
+      }
+    }
+
+    fctx.strokeStyle = 'rgba(3, 3, 3, 0.5)';
+    fctx.lineWidth = 1;
+    for (let i = 0; i < 36; i++) {
+      let x = random() * BOARD;
+      let y = random() * BOARD;
+      let angle = random() * Math.PI * 2;
+      fctx.beginPath();
+      fctx.moveTo(x, y);
+      const steps = 2 + (random() * 5 | 0);
+      for (let k = 0; k < steps; k++) {
+        x += Math.cos(angle) * (5 + random() * 18);
+        y += Math.sin(angle) * (5 + random() * 18);
+        fctx.lineTo(x, y);
+        angle += (random() - 0.5) * 0.9;
+      }
+      fctx.stroke();
+    }
+
+    fctx.fillStyle = 'rgba(255, 255, 240, 0.045)';
+    for (let i = 0; i < 2200; i++) {
+      fctx.fillRect(random() * BOARD | 0, random() * BOARD | 0, 1, 1);
+    }
+
+    const vignette = fctx.createRadialGradient(ARENA_CX, ARENA_CY, 120, ARENA_CX, ARENA_CY, 360);
+    vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    vignette.addColorStop(1, 'rgba(0, 0, 0, 0.44)');
+    fctx.fillStyle = vignette;
+    fctx.fillRect(0, 0, BOARD, BOARD);
   }
 
   // ---- DOM / overlay -----------------------------------------------------
@@ -817,9 +999,14 @@
     }
   }
 
-  // Inner tentacles: the original row-of-circles look (kept as-is).
-  function renderTentacles(growth) {
+  // Inner tentacles: the original row-of-circles look, with phase-two retreat.
+  function renderTentacles(growth, fade, retreat) {
     const segs = 14;
+    const alpha = fade == null ? 1 : Math.max(0, Math.min(1, fade));
+    const calcify = retreat == null ? 0 : Math.max(0, Math.min(1, retreat));
+    if (growth <= 0.001 || alpha <= 0.001) return;
+    ctx.save();
+    ctx.globalAlpha *= alpha;
     for (const t of tentacles) {
       const perp = { x: -t.dir.y, y: t.dir.x };
       const reach = t.length * growth;
@@ -830,13 +1017,33 @@
           + t.sway * along;
         const x = t.base.x + t.dir.x * along + perp.x * wobble;
         const y = t.base.y + t.dir.y * along + perp.y * wobble;
-        const w = Math.max(0.6, t.width * (1 - u * 0.92) * growth);
-        ctx.fillStyle = (s & 1) ? '#0a0308' : '#14040b';
+        const w = Math.max(0.6, t.width * (1 - u * 0.92) * growth * (1 - calcify * 0.45));
+        if (calcify > 0) {
+          const tone = 18 + calcify * 78 + (s & 1 ? 0 : 16);
+          ctx.fillStyle = 'rgba(' + (tone | 0) + ', ' + (tone | 0) + ', ' + ((tone - 3) | 0) + ', 0.92)';
+        } else {
+          ctx.fillStyle = (s & 1) ? '#0a0308' : '#14040b';
+        }
         ctx.beginPath();
         ctx.arc(x, y, w, 0, Math.PI * 2);
         ctx.fill();
       }
+      if (calcify > 0.08) {
+        const tipU = 0.75 + calcify * 0.2;
+        const along = reach * tipU;
+        const wobble = Math.sin(tipU * t.waves * Math.PI + clock * t.speed + t.phase) * t.amp * tipU
+          + t.sway * along;
+        const x = t.base.x + t.dir.x * along + perp.x * wobble;
+        const y = t.base.y + t.dir.y * along + perp.y * wobble;
+        ctx.strokeStyle = 'rgba(210, 210, 196, ' + (0.34 * calcify).toFixed(3) + ')';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x - perp.x * t.width * 0.8, y - perp.y * t.width * 0.8);
+        ctx.lineTo(x + perp.x * t.width * 0.8, y + perp.y * t.width * 0.8);
+        ctx.stroke();
+      }
     }
+    ctx.restore();
   }
 
   // ---- Second-phase backdrop: an ocean of souls beyond the arena ---------
@@ -1236,7 +1443,7 @@
     bgCtx.restore();
     // Second phase: the outer limbs retract into the dark and an ocean of
     // souls streams through the void in their place.
-    const soulFade = phase === PHASE.SECOND ? smoothstep(phaseTime / 1600) : 0;
+    const soulFade = phase === PHASE.SECOND ? smoothstep(phaseTime / PHASE2_ARENA_TRANSITION) : 0;
     if (outerTentacles.length && soulFade < 1) {
       const growth = easeOutCubic(Math.min(1, (clock - outerGrowStart) / OUTER_GROW)) * (1 - soulFade);
       if (growth > 0.001) for (const t of outerTentacles) drawOuterTentacle(t, growth);
@@ -1332,22 +1539,47 @@
   }
 
   function renderArenaBorder() {
+    const calcify = phaseTwoArenaProgress();
     const isDefaultFrame = arena.shape === 'rect' && arena.x === ARENA_DEFAULT.x &&
       arena.y === ARENA_DEFAULT.y && arena.width === ARENA_DEFAULT.width &&
       arena.height === ARENA_DEFAULT.height && arena.rotation === 0;
     if (isDefaultFrame) {
-      ctx.drawImage(borderCanvas, 0, 0);
+      if (calcify <= 0.001) {
+        ctx.drawImage(borderCanvas, 0, 0);
+      } else if (calcify >= 0.999) {
+        ctx.drawImage(calcifiedBorderCanvas, 0, 0);
+      } else {
+        ctx.save();
+        ctx.globalAlpha = 1 - calcify * 0.85;
+        ctx.drawImage(borderCanvas, 0, 0);
+        ctx.globalAlpha = calcify;
+        ctx.drawImage(calcifiedBorderCanvas, 0, 0);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = Math.sin(calcify * Math.PI) * 0.22;
+        ctx.strokeStyle = '#efedda';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(BORDER - 0.5, BORDER - 0.5, BOARD - BORDER * 2 + 1, BOARD - BORDER * 2 + 1);
+        ctx.restore();
+      }
       return;
     }
     // Moving/resized/non-rectangular shapes use a constant-thickness procedural
     // frame so the visible wall continues to match collision geometry.
     ctx.save();
     arenaPath(ctx, BORDER / 2);
-    ctx.strokeStyle = '#260304';
+    ctx.strokeStyle = calcify > 0 ? 'rgba(174, 172, 160, ' + calcify.toFixed(3) + ')' : '#260304';
     ctx.lineWidth = BORDER;
     ctx.stroke();
+    if (calcify < 1) {
+      arenaPath(ctx, BORDER / 2);
+      ctx.strokeStyle = 'rgba(38, 3, 4, ' + (1 - calcify).toFixed(3) + ')';
+      ctx.lineWidth = BORDER;
+      ctx.stroke();
+    }
     arenaPath(ctx, BORDER - 1);
-    ctx.strokeStyle = 'rgba(150, 18, 14, 0.55)';
+    ctx.strokeStyle = calcify > 0.001
+      ? 'rgba(238, 236, 220, ' + (0.72 * calcify).toFixed(3) + ')'
+      : 'rgba(150, 18, 14, 0.55)';
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.restore();
@@ -1355,13 +1587,32 @@
 
   function renderScene() {
     ctx.clearRect(0, 0, BOARD, BOARD);
+    const calcify = phaseTwoArenaProgress();
     ctx.save();
     arenaPath(ctx, 0);
     ctx.clip();
 
-    // The black empty plane inside the current arena geometry.
+    // The empty plane inside the current arena geometry, slowly paving over
+    // into darker cobbled stone as the second phase takes possession.
     ctx.fillStyle = '#040406';
     ctx.fillRect(0, 0, BOARD, BOARD);
+    if (calcify > 0.001) {
+      ctx.save();
+      ctx.globalAlpha = calcify;
+      ctx.drawImage(cobbledFloorCanvas, 0, 0);
+      const edgeWake = Math.sin(calcify * Math.PI);
+      if (edgeWake > 0.001) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = edgeWake * 0.12;
+        ctx.strokeStyle = '#d4d2c2';
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 5; i++) {
+          const inset = BORDER + PAD + i * 18 + calcify * 22;
+          ctx.strokeRect(inset, inset, BOARD - inset * 2, BOARD - inset * 2);
+        }
+      }
+      ctx.restore();
+    }
 
     // Floor effects and edge creatures are attached to the arena transform.
     ctx.save();
@@ -1372,10 +1623,17 @@
 
     // Tentacles reach in from the dark edges once they have spawned.
     if (tentacles.length) {
-      const growth = phase === PHASE.TENTACLES
-        ? easeOutCubic(Math.min(1, phaseTime / TENTACLE_GROW))
-        : 1;
-      renderTentacles(growth);
+      let growth = 1;
+      let fade = 1;
+      let retreat = 0;
+      if (phase === PHASE.TENTACLES) {
+        growth = easeOutCubic(Math.min(1, phaseTime / TENTACLE_GROW));
+      } else if (phase === PHASE.SECOND) {
+        retreat = calcify;
+        growth = 1 - easeInQuad(calcify);
+        fade = 1 - smoothstep((calcify - 0.72) / 0.28);
+      }
+      renderTentacles(growth, fade, retreat);
     }
 
     // Fall shadow + landing impact ring.
@@ -1864,7 +2122,7 @@
       targets,
       nextTarget: 0,
       launchCount: 0,
-      nextBeamAt: PHASE2_ORB_LAUNCH + PHASE2_PENT_FORM + 260,
+      nextBeamAt: PHASE2_ARENA_TRANSITION + PHASE2_ORB_LAUNCH + PHASE2_PENT_FORM + 260,
       beams: [],
       marks: [],
       floodStart: 0,
@@ -1977,11 +2235,13 @@
     for (const a of fadingAttacks) a.fadeTime += dt;
     fadingAttacks = fadingAttacks.filter((a) => a.fadeTime < a.fadeDuration);
     updateMovement(dt);
+    if (phaseTime < PHASE2_ARENA_TRANSITION) return;
     updatePhaseTwoBeams(dt);
   }
 
   function phaseTwoPentagramCenter(bounds) {
-    const launch = Math.min(1, phaseTime / PHASE2_ORB_LAUNCH);
+    const ritualTime = phaseTwoRitualTime();
+    const launch = Math.min(1, ritualTime / PHASE2_ORB_LAUNCH);
     const hand = {
       x: bounds.left + bounds.width * 0.53,
       y: bounds.top + bounds.height * 0.10,
@@ -2724,7 +2984,7 @@
     if (formP >= 1) return;
     const vanish = 1 - smoothstep(formP);
     const pulse = 1 + Math.sin(clock * 0.024) * 0.18;
-    const launch = Math.min(1, phaseTime / PHASE2_ORB_LAUNCH);
+    const launch = Math.min(1, phaseTwoRitualTime() / PHASE2_ORB_LAUNCH);
     const radius = (12 + 18 * formP) * pulse;
     actx.save();
     // Wisps of shed shadow trailing along the flight path behind the orb.
@@ -3196,7 +3456,8 @@
     const r = ritualBounds();
     const board = canvas && canvas.getBoundingClientRect();
     const orb = phaseTwoPentagramCenter(r);
-    const formP = Math.min(1, Math.max(0, (phaseTime - PHASE2_ORB_LAUNCH) / PHASE2_PENT_FORM));
+    const ritualTime = phaseTwoRitualTime();
+    const formP = Math.min(1, Math.max(0, (ritualTime - PHASE2_ORB_LAUNCH) / PHASE2_PENT_FORM));
     const pentP = easeOutCubic(formP);
     const pent = { x: orb.sky.x, y: orb.sky.y };
     // The pentagram holds until the mass has been fed nearly full — then it
@@ -4350,6 +4611,8 @@
     setSavedEndgameScene('boss2d');
     if (!overlay) makeOverlay();
     if (!borderCanvas) buildBorder();
+    if (!calcifiedBorderCanvas) buildCalcifiedBorder();
+    if (!cobbledFloorCanvas) buildCobbledFloor();
     overlay.classList.remove('hidden');
     document.body.classList.add('aether-boss2d-active');
     active = true;
