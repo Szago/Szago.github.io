@@ -913,22 +913,34 @@
   }
 
   // One scrolling layer of the current, drawn in undulating vertical slices
-  // so the sheet shears and rolls instead of sliding rigidly.
-  function drawSoulLayer(tex, scroll, yAmp, wobbleK, wobblePh, alpha, composite) {
+  // so the sheet shears and rolls instead of sliding rigidly. The slice grid
+  // itself drifts left/right over time (seamDrift/seamPh) and each slice
+  // breathes in opacity, so the vertical shear-seams never sit still and read
+  // as a static texture cut.
+  function drawSoulLayer(tex, scroll, yAmp, wobbleK, wobblePh, alpha, composite, seamDrift, seamPh) {
     const slices = 36;
     const sliceW = bgWidth / slices;
     const texSlice = SOUL_TEX_W / slices;
-    bgCtx.globalAlpha = alpha;
     bgCtx.globalCompositeOperation = composite;
+    // Content scroll (the texture flowing left→right) is independent of the
+    // grid drift (where the shear-seams fall).
     const off = (clock * scroll) % SOUL_TEX_W;
+    const gridShift = Math.sin(clock * seamDrift + seamPh) * sliceW * 1.7
+      + Math.sin(clock * seamDrift * 0.41 + seamPh * 2.3) * sliceW * 1.0;
     // No overlap on additive layers — a doubled column reads as a seam.
     const overlap = composite === 'lighter' ? 0 : 0.6;
-    for (let i = 0; i < slices; i++) {
-      let sx = (i * texSlice - off) % SOUL_TEX_W;
+    // Cover one extra slice each side so the shifted grid never leaves a gap.
+    for (let i = -1; i <= slices; i++) {
+      const dx = i * sliceW - gridShift;
+      if (dx >= bgWidth || dx + sliceW <= 0) continue;
+      // Source follows destination so the texture image stays put on screen;
+      // only the seam positions move with the grid.
+      let sx = ((dx / bgWidth) * SOUL_TEX_W - off) % SOUL_TEX_W;
       if (sx < 0) sx += SOUL_TEX_W;
       const y = Math.sin(i * wobbleK + clock * 0.0004 + wobblePh) * yAmp
         + Math.sin(i * wobbleK * 2.7 - clock * 0.0007 + wobblePh * 1.7) * yAmp * 0.5;
-      const dx = i * sliceW;
+      // Each slice fades in and out on its own beat.
+      bgCtx.globalAlpha = alpha * (0.7 + 0.3 * Math.sin(clock * 0.0012 + i * 1.27 + seamPh));
       const dw = sliceW + overlap;
       if (sx + texSlice <= SOUL_TEX_W) {
         bgCtx.drawImage(tex, sx, 0, texSlice, SOUL_TEX_H, dx, y, dw, bgHeight);
@@ -977,9 +989,9 @@
     bgCtx.fillStyle = grad;
     bgCtx.fillRect(0, 0, bgWidth, bgHeight);
     // The current itself: murk, counter-murk, then the bright soul-mass.
-    drawSoulLayer(soulTex.fogA, 0.020, bgHeight * 0.011, 0.28, 0, 0.9 * alpha, 'source-over');
-    drawSoulLayer(soulTex.fogB, 0.042, bgHeight * 0.016, 0.38, 2.1, 0.65 * alpha, 'source-over');
-    drawSoulLayer(soulTex.wisp, 0.070, bgHeight * 0.019, 0.33, 4.2, 0.9 * alpha, 'lighter');
+    drawSoulLayer(soulTex.fogA, 0.020, bgHeight * 0.011, 0.28, 0, 0.9 * alpha, 'source-over', 0.00026, 0.0);
+    drawSoulLayer(soulTex.fogB, 0.042, bgHeight * 0.016, 0.38, 2.1, 0.65 * alpha, 'source-over', 0.00035, 1.7);
+    drawSoulLayer(soulTex.wisp, 0.070, bgHeight * 0.019, 0.33, 4.2, 0.9 * alpha, 'lighter', 0.00044, 3.3);
 
     // A few brighter gusts riding the surface of the stream.
     soulStrands = soulStrands.filter((s) => clock - s.born < s.dur);
