@@ -897,6 +897,17 @@
       phaseTwoBtn.blur();
     });
     debugPanel.appendChild(phaseTwoBtn);
+
+    const primePhaseTwoBtn = document.createElement('button');
+    primePhaseTwoBtn.type = 'button';
+    primePhaseTwoBtn.className = 'aether-boss2d-debug-btn';
+    primePhaseTwoBtn.textContent = 'PRIME P2';
+    primePhaseTwoBtn.addEventListener('click', () => {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      primePhaseTwoCombat();
+      primePhaseTwoBtn.blur();
+    });
+    debugPanel.appendChild(primePhaseTwoBtn);
   }
 
   // ---- Rendering ---------------------------------------------------------
@@ -2218,6 +2229,22 @@
     hero.x = ARENA_CX;
     hero.y = ARENA_CY;
     setPhase(PHASE.ACTIVE);
+  }
+
+  // Debug primer: enter normal combat one strike away from the phase-two
+  // transition, without skipping the actual strike -> wrath-fill flow.
+  function primePhaseTwoCombat() {
+    if (!active || phase !== PHASE.ACTIVE) return;
+    fightClock = 0;
+    bpmBonus = WRATH_MAX - BASE_BPM - ATTACK_WRATH_GAIN;
+    bpm = WRATH_MAX - ATTACK_WRATH_GAIN;
+    beatMs = 60000 / bpm;
+    beatPhase = 0;
+    lastAnimBpm = -1;
+    vp = VP_MAX;
+    applyTempoToAnimations();
+    updateBars();
+    if (bpmElement) bpmElement.textContent = 'BPM ' + bpm;
   }
 
   // Debug: abort whatever is running and start the given movement name(s) at
