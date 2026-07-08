@@ -104,7 +104,11 @@
 
     function targetInsideTopY(boardRect) {
       const size = state.avatar.baseSize || state.avatar.size;
-      return boardRect.top + size * 0.5 + 10;
+      return boardRect.top + size * 0.34;
+    }
+
+    function viewportSafeY(size) {
+      return Math.max(28, size * 0.22);
     }
 
     function spawnEcho() {
@@ -188,7 +192,7 @@
         const floatP = smoothstep((state.elapsed - slamEnd) / AVATAR_FLOAT_IN_MS);
         const impactY = Number.isFinite(state.slamY) ? state.slamY : targetImpactY(boardRect);
         const perchY = targetInsideTopY(boardRect);
-        const minY = boardRect.top + a.size * 0.5 + 6;
+        const minY = viewportSafeY(a.size);
         a.x = boardRect.left + boardRect.width / 2 + Math.sin(t * 1.65) * 18 + Math.sin(t * 0.61) * 9;
         a.y = impactY + (perchY - impactY) * floatP
           + (Math.sin(t * 2.1) * 12 + Math.cos(t * 0.72) * 7) * floatP;
