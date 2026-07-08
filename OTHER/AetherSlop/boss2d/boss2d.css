@@ -503,13 +503,16 @@
 }
 
 #aether-boss2d-overlay.avatar-phase-two .aether-boss2d-stage-row {
+  position: fixed;
+  left: var(--phase2-row-left, 0px);
+  top: var(--phase2-row-top, 0px);
   margin-top: 0;
 }
 
 #aether-boss2d-overlay.avatar-phase-two .aether-boss2d-wrath {
   position: fixed;
   left: 50%;
-  top: 14px;
+  top: var(--phase2-wrath-top, 14px);
   transform: translateX(-50%);
   margin-top: 0;
 }

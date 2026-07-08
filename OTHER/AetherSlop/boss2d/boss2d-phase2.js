@@ -15,6 +15,8 @@
   const SETTLE_MS = 520;
   const ECHO_INTERVAL = 200;
   const ECHO_LIFE = 720;
+  const AVATAR_CONTACT_Y = 0.33;
+  const AVATAR_FLOAT_IN_MS = 2600;
 
   const clamp01 = (t) => Math.max(0, Math.min(1, t));
   const smoothstep = (t) => {
@@ -39,6 +41,7 @@
       elapsed: 0,
       startedSlam: false,
       collapse: null,
+      slamY: null,
       echoes: [],
       echoClock: 0,
       avatar: {
@@ -54,6 +57,7 @@
       state.elapsed = 0;
       state.startedSlam = false;
       state.collapse = null;
+      state.slamY = null;
       state.echoes = [];
       state.echoClock = 0;
       state.layoutProgress = 0;
@@ -79,15 +83,25 @@
 
     function avatarSize() {
       const basis = Math.min(window.innerWidth, window.innerHeight);
-      return Math.max(430, Math.min(740, basis * 0.68));
+      return Math.max(215, Math.min(370, basis * 0.34));
     }
 
     function targetHover(boardRect) {
       const size = state.avatar.baseSize || state.avatar.size;
       return {
         x: boardRect.left + boardRect.width / 2,
-        y: Math.max(84, boardRect.top - size * 0.22),
+        y: Math.max(56, boardRect.top - size * 0.62),
       };
+    }
+
+    function targetImpactY(boardRect) {
+      const size = state.avatar.baseSize || state.avatar.size;
+      return boardRect.top - size * AVATAR_CONTACT_Y;
+    }
+
+    function targetInsideTopY(boardRect) {
+      const size = state.avatar.baseSize || state.avatar.size;
+      return boardRect.top + size * 0.5 + 10;
     }
 
     function spawnEcho() {
@@ -145,18 +159,20 @@
         if (p < hitAt) {
           const q = easeInQuad(p / hitAt);
           a.x = hover.x;
-          a.y = hover.y + (boardRect.top + boardRect.height * 0.08 - hover.y) * q;
+          a.y = hover.y + (targetImpactY(boardRect) - hover.y) * q;
           a.squash = q * 0.12;
         } else {
           if (!state.startedSlam) {
             state.startedSlam = true;
+            state.slamY = targetImpactY(boardRect);
             state.impact = 1;
             if (callbacks && callbacks.onSlam) callbacks.onSlam();
           }
           const q = easeOutBack((p - hitAt) / (1 - hitAt));
+          const impactY = Number.isFinite(state.slamY) ? state.slamY : targetImpactY(boardRect);
           state.layoutProgress = clamp01(q);
           a.x = boardRect.left + boardRect.width / 2 + Math.sin(q * Math.PI * 3) * 12 * (1 - q);
-          a.y = boardRect.top + Math.max(42, boardRect.height * 0.07) - 36 * Math.sin(q * Math.PI) * (1 - q * 0.25);
+          a.y = impactY - 36 * Math.sin(q * Math.PI) * (1 - q * 0.25);
           a.squash = Math.max(0, (1 - q) * 0.20);
         }
         a.alpha = 1;
@@ -164,8 +180,14 @@
       } else {
         state.layoutProgress = 1;
         const t = (state.elapsed - slamEnd) / 1000;
+        const floatP = smoothstep((state.elapsed - slamEnd) / AVATAR_FLOAT_IN_MS);
+        const impactY = Number.isFinite(state.slamY) ? state.slamY : targetImpactY(boardRect);
+        const perchY = targetInsideTopY(boardRect);
+        const minY = boardRect.top + a.size * 0.5 + 6;
         a.x = boardRect.left + boardRect.width / 2 + Math.sin(t * 1.65) * 18 + Math.sin(t * 0.61) * 9;
-        a.y = boardRect.top + Math.max(54, boardRect.height * 0.075) + Math.sin(t * 2.1) * 12 + Math.cos(t * 0.72) * 7;
+        a.y = impactY + (perchY - impactY) * floatP
+          + (Math.sin(t * 2.1) * 12 + Math.cos(t * 0.72) * 7) * floatP;
+        a.y = Math.max(minY, a.y);
         a.squash = Math.max(0, Math.sin(Math.min(1, (state.elapsed - slamEnd) / SETTLE_MS) * Math.PI) * 0.08);
         a.alpha = 1;
         a.visible = true;
@@ -243,7 +265,7 @@
         ctx.strokeStyle = '#f5f3e8';
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.ellipse(a.x, a.y + a.size * 0.33, a.size * (0.28 + p * 0.65), a.size * (0.045 + p * 0.07), 0, 0, Math.PI * 2);
+        ctx.ellipse(a.x, a.y + a.size * AVATAR_CONTACT_Y, a.size * (0.28 + p * 0.65), a.size * (0.045 + p * 0.07), 0, 0, Math.PI * 2);
         ctx.stroke();
         ctx.globalCompositeOperation = 'source-over';
       }

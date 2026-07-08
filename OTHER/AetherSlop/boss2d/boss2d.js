@@ -416,6 +416,7 @@
     overlay.style.removeProperty('--phase2-vbar-h');
     overlay.style.removeProperty('--phase2-row-left');
     overlay.style.removeProperty('--phase2-row-top');
+    overlay.style.removeProperty('--phase2-wrath-top');
     phase2LayoutAnchor = null;
     if (canvas && (canvas.width !== BOARD || canvas.height !== BOARD)) {
       canvas.width = BOARD;
@@ -427,14 +428,29 @@
   function updatePhaseTwoLayout(progress) {
     if (!overlay || !canvas) return;
     const p = smoothstep(progress);
-    const anchor = phase2LayoutAnchor || { left: canvas.getBoundingClientRect().left - 38, top: canvas.getBoundingClientRect().top };
-    const targetW = Math.max(500, window.innerWidth - anchor.left - 104);
-    const targetH = Math.max(500, window.innerHeight - anchor.top - 28);
+    const board = canvas.getBoundingClientRect();
+    const anchor = phase2LayoutAnchor || {
+      left: board.left - 38,
+      top: board.top,
+      stageTop: board.top,
+      centerX: board.left + board.width / 2,
+    };
+    const centerX = Number.isFinite(anchor.centerX) ? anchor.centerX : anchor.left + 38 + BOARD / 2;
+    const targetW = Math.max(500, Math.max(BOARD / 2, Math.min(centerX - 52, window.innerWidth - centerX - 52)) * 2);
+    const targetH = Math.max(500, BOARD + Math.max(0, (Number.isFinite(anchor.stageTop) ? anchor.stageTop : anchor.top) - 72));
     const w = 500 + (targetW - 500) * p;
     const h = 500 + (targetH - 500) * p;
     const pixelW = Math.max(1, Math.round(w / 16) * 16);
     const pixelH = Math.max(1, Math.round(h / 16) * 16);
+    const heightDelta = pixelH - BOARD;
+    const rowLeft = anchor.left - (pixelW - BOARD) / 2;
+    const rowTop = anchor.top - heightDelta;
+    const stageTop = (Number.isFinite(anchor.stageTop) ? anchor.stageTop : anchor.top) - heightDelta;
+    const wrathTop = Math.max(14, stageTop - 48);
     const localHero = worldToArena(hero.x, hero.y);
+    overlay.style.setProperty('--phase2-row-left', rowLeft.toFixed(1) + 'px');
+    overlay.style.setProperty('--phase2-row-top', rowTop.toFixed(1) + 'px');
+    overlay.style.setProperty('--phase2-wrath-top', wrathTop.toFixed(1) + 'px');
     overlay.style.setProperty('--phase2-stage-w', pixelW + 'px');
     overlay.style.setProperty('--phase2-stage-h', pixelH + 'px');
     overlay.style.setProperty('--phase2-vbar-h', pixelH + 'px');
@@ -2255,10 +2271,11 @@
       const row = overlay.querySelector('.aether-boss2d-stage-row');
       const rowRect = row ? row.getBoundingClientRect() : null;
       phase2LayoutAnchor = rowRect
-        ? { left: rowRect.left, top: rowRect.top }
-        : { left: board.left - 38, top: board.top };
+        ? { left: rowRect.left, top: rowRect.top, stageTop: board.top, centerX: board.left + board.width / 2 }
+        : { left: board.left - 38, top: board.top, stageTop: board.top, centerX: board.left + board.width / 2 };
       overlay.style.setProperty('--phase2-row-left', phase2LayoutAnchor.left.toFixed(1) + 'px');
       overlay.style.setProperty('--phase2-row-top', phase2LayoutAnchor.top.toFixed(1) + 'px');
+      overlay.style.setProperty('--phase2-wrath-top', Math.max(14, phase2LayoutAnchor.stageTop - 48).toFixed(1) + 'px');
       overlay.classList.add('avatar-phase-two');
     }
     if (cultistElement) cultistElement.classList.add('avatar-phase-two');
