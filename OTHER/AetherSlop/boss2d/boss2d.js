@@ -396,6 +396,13 @@
   const easeInQuad = (t) => t * t;
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
   const smoothstep = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
+  const clamp01 = (t) => Math.max(0, Math.min(1, t));
+  const shockwaveArenaProgress = (t) => {
+    t = clamp01(t);
+    if (t < 0.16) return easeOutCubic(t / 0.16) * 0.58;
+    if (t < 0.38) return 0.58 + easeOutCubic((t - 0.16) / 0.22) * 0.26;
+    return 0.84 + smoothstep((t - 0.38) / 0.62) * 0.16;
+  };
   const phaseTwoArenaProgress = () => phase === PHASE.SECOND
     ? smoothstep(phaseTime / PHASE2_ARENA_TRANSITION)
     : 0;
@@ -427,7 +434,7 @@
 
   function updatePhaseTwoLayout(progress) {
     if (!overlay || !canvas) return;
-    const p = smoothstep(progress);
+    const p = shockwaveArenaProgress(progress);
     const board = canvas.getBoundingClientRect();
     const anchor = phase2LayoutAnchor || {
       left: board.left - 38,
@@ -2499,7 +2506,11 @@
       if (phase2Avatar) {
         phase2Avatar.update(dt, canvas.getBoundingClientRect(), {
           onSlam: () => {
-            if (overlay) overlay.classList.add('avatar-slammed');
+            if (overlay) {
+              overlay.classList.remove('avatar-slammed');
+              void overlay.offsetWidth;
+              overlay.classList.add('avatar-slammed');
+            }
           },
         });
         updatePhaseTwoLayout(phase2Avatar.layoutProgress);

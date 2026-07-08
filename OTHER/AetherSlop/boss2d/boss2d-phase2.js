@@ -17,6 +17,7 @@
   const ECHO_LIFE = 720;
   const AVATAR_CONTACT_Y = 0.33;
   const AVATAR_FLOAT_IN_MS = 2600;
+  const IMPACT_FLASH_MS = 150;
 
   const clamp01 = (t) => Math.max(0, Math.min(1, t));
   const smoothstep = (t) => {
@@ -50,6 +51,7 @@
       },
       layoutProgress: 0,
       impact: 0,
+      impactAge: Infinity,
     };
 
     function reset() {
@@ -62,6 +64,7 @@
       state.echoClock = 0;
       state.layoutProgress = 0;
       state.impact = 0;
+      state.impactAge = Infinity;
       Object.assign(state.avatar, {
         x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0,
         size: 250, baseSize: 250, alpha: 0, squash: 0, visible: false,
@@ -119,6 +122,7 @@
       if (!state.active) return state;
       state.elapsed += dt;
       state.impact = Math.max(0, state.impact - dt / 520);
+      state.impactAge += dt;
 
       const a = state.avatar;
       a.prevX = a.x;
@@ -166,6 +170,7 @@
             state.startedSlam = true;
             state.slamY = targetImpactY(boardRect);
             state.impact = 1;
+            state.impactAge = 0;
             if (callbacks && callbacks.onSlam) callbacks.onSlam();
           }
           const q = easeOutBack((p - hitAt) / (1 - hitAt));
@@ -260,13 +265,54 @@
       }
       if (state.impact > 0) {
         const p = 1 - state.impact;
-        ctx.globalAlpha = 0.85 * state.impact;
+        const cx = a.x;
+        const cy = a.y + a.size * AVATAR_CONTACT_Y;
+        const flash = 1 - smoothstep(state.impactAge / IMPACT_FLASH_MS);
+        if (flash > 0) {
+          ctx.globalAlpha = 0.34 * flash;
+          ctx.globalCompositeOperation = 'screen';
+          ctx.fillStyle = '#fffdf0';
+          ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+          ctx.globalAlpha = 0.92 * flash;
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(cx - a.size * 0.42, cy - a.size * 0.08, a.size * 0.84, a.size * 0.16);
+          ctx.fillRect(cx - a.size * 0.08, cy - a.size * 0.42, a.size * 0.16, a.size * 0.84);
+        }
+        ctx.globalAlpha = 0.95 * state.impact;
         ctx.globalCompositeOperation = 'lighter';
         ctx.strokeStyle = '#f5f3e8';
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.ellipse(a.x, a.y + a.size * AVATAR_CONTACT_Y, a.size * (0.28 + p * 0.65), a.size * (0.045 + p * 0.07), 0, 0, Math.PI * 2);
+        ctx.ellipse(cx, cy, a.size * (0.28 + p * 0.65), a.size * (0.045 + p * 0.07), 0, 0, Math.PI * 2);
         ctx.stroke();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(210, 226, 255, 0.92)';
+        for (let i = 0; i < 3; i++) {
+          const q = clamp01((p - i * 0.12) / 0.88);
+          const fade = (1 - q) * state.impact;
+          if (fade <= 0) continue;
+          ctx.globalAlpha = 0.72 * fade;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, a.size * (0.22 + q * (1.0 + i * 0.28)), a.size * (0.035 + q * (0.12 + i * 0.03)), 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(255, 255, 246, 0.85)';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 18; i++) {
+          const ang = -Math.PI * 0.94 + i * Math.PI * 1.88 / 17;
+          const rayP = clamp01((p - (i % 3) * 0.035) / 0.82);
+          const rayFade = (1 - rayP) * state.impact;
+          if (rayFade <= 0) continue;
+          const r0 = a.size * (0.24 + rayP * 0.18);
+          const r1 = a.size * (0.56 + rayP * 1.15);
+          const wob = Math.sin(i * 12.989 + state.impactAge * 0.06) * 0.08;
+          ctx.globalAlpha = 0.46 * rayFade;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(ang + wob) * r0, cy + Math.sin(ang + wob) * r0 * 0.24);
+          ctx.lineTo(cx + Math.cos(ang + wob) * r1, cy + Math.sin(ang + wob) * r1 * 0.24);
+          ctx.stroke();
+        }
         ctx.globalCompositeOperation = 'source-over';
       }
       const sx = 1 + a.squash;
