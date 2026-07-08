@@ -377,7 +377,9 @@
   const ATTACK_HEAL_FRAC = 0.10;     // fraction of max HP the hero recovers on a strike
   // The strike flourish: time crawls while an angelic sword is cast at the boss.
   const STRIKE_DURATION = 1150;      // ms (real time) of the whole sequence
+  const STRIKE_IMPACT_AT = STRIKE_DURATION * 0.82;
   const STRIKE_SLOW = 0.05;          // gameplay speed at the deepest slow-mo
+  const FINAL_STRIKE_DURATION = 1900; // extra hitstop before the phase-two fall
   let hp = HP_MAX;
   let vp = 0;
   let dead = false;
@@ -1865,12 +1867,18 @@
     const fromY = board.top + hero.y * board.height / BOARD;
     strike = {
       t: 0,
+      duration: STRIKE_DURATION,
       impacted: false,
+      finalHit: false,
       fromX,
       fromY,
       toX: sprite ? sprite.left + sprite.width / 2 : fromX,
       toY: sprite ? sprite.top + sprite.height * 0.45 : board.top,
     };
+  }
+
+  function wrathAfterStrike() {
+    return BASE_BPM + Math.floor(fightClock / BPM_RAMP_MS) + bpmBonus + ATTACK_WRATH_GAIN;
   }
 
   // Advances the strike flourish in REAL time (so the cinematic plays at full
@@ -1879,22 +1887,35 @@
     if (!strike) return 1;
     strike.t += dtRaw;
     const p = strike.t / STRIKE_DURATION;
-    if (!strike.impacted && p >= 0.82) {
+    if (!strike.impacted && strike.t >= STRIKE_IMPACT_AT) {
+      const finalHit = wrathAfterStrike() >= WRATH_MAX;
       strike.impacted = true;
-      shakeCultist();
+      strike.finalHit = finalHit;
+      if (finalHit) strike.duration = FINAL_STRIKE_DURATION;
+      shakeCultist(finalHit);
       bpmBonus += ATTACK_WRATH_GAIN; // wrath surges on impact, not on keypress
+      if (finalHit) bpm = WRATH_MAX;
       surgeWrath();
     }
-    if (strike.t >= STRIKE_DURATION) { strike = null; return 1; }
+    if (strike.t >= strike.duration) {
+      const wasFinalHit = strike.finalHit;
+      strike = null;
+      if (wasFinalHit) startSecondPhase();
+      return 1;
+    }
+    if (strike.finalHit && strike.impacted) {
+      const hold = Math.max(0, Math.min(1, (strike.t - STRIKE_IMPACT_AT) / (FINAL_STRIKE_DURATION - STRIKE_IMPACT_AT)));
+      return 0.018 + smoothstep((hold - 0.72) / 0.28) * 0.18;
+    }
     // Slow-mo dips to STRIKE_SLOW in the middle, easing back to full at the ends.
     return 1 - Math.sin(Math.min(1, p) * Math.PI) * (1 - STRIKE_SLOW);
   }
 
-  function shakeCultist() {
+  function shakeCultist(finalHit) {
     if (!cultistElement) return;
-    cultistElement.classList.remove('aether-hit');
+    cultistElement.classList.remove('aether-hit', 'aether-final-hit');
     void cultistElement.offsetWidth;   // reflow so the animation restarts
-    cultistElement.classList.add('aether-hit');
+    cultistElement.classList.add(finalHit ? 'aether-final-hit' : 'aether-hit');
   }
 
   function surgeWrath() {
@@ -1959,10 +1980,68 @@
     actx.restore();
   }
 
+  function renderFinalStrikeImpact(s, impactAge) {
+    if (impactAge < 0) return;
+    const holdP = Math.max(0, Math.min(1, impactAge / (FINAL_STRIKE_DURATION - STRIKE_IMPACT_AT)));
+    const snap = 1 - smoothstep(impactAge / 120);
+    const shock = 1 - smoothstep((impactAge - 120) / 620);
+    const x = s.toX;
+    const y = s.toY;
+    actx.save();
+    if (snap > 0) {
+      actx.globalAlpha = 0.48 * snap;
+      actx.fillStyle = '#fff2dc';
+      actx.fillRect(0, 0, attackCanvas.width, attackCanvas.height);
+      actx.globalAlpha = 0.62 * snap;
+      actx.fillStyle = '#090003';
+      actx.fillRect(0, 0, attackCanvas.width, y - 64);
+      actx.fillRect(0, y + 64, attackCanvas.width, attackCanvas.height - y - 64);
+    }
+    actx.globalCompositeOperation = 'lighter';
+    const pulse = Math.sin(Math.max(0, 1 - holdP) * Math.PI * 5) * 0.5 + 0.5;
+    const core = 1 - smoothstep((impactAge - 520) / 720);
+    actx.globalAlpha = Math.max(0, core) * (0.55 + pulse * 0.25);
+    const grad = actx.createRadialGradient(x, y, 0, x, y, 128 + holdP * 70);
+    grad.addColorStop(0, 'rgba(255, 255, 245, 0.92)');
+    grad.addColorStop(0.18, 'rgba(255, 216, 150, 0.55)');
+    grad.addColorStop(0.48, 'rgba(255, 78, 42, 0.22)');
+    grad.addColorStop(1, 'rgba(255, 78, 42, 0)');
+    actx.fillStyle = grad;
+    actx.beginPath();
+    actx.arc(x, y, 132 + holdP * 80, 0, Math.PI * 2);
+    actx.fill();
+    if (shock > 0) {
+      for (let i = 0; i < 3; i++) {
+        const t = Math.max(0, Math.min(1, (impactAge - i * 90) / 600));
+        if (t <= 0 || t >= 1) continue;
+        actx.globalAlpha = shock * (1 - t) * (0.66 - i * 0.12);
+        actx.strokeStyle = i === 0 ? '#fff7db' : '#ff7444';
+        actx.lineWidth = 2.5 - i * 0.35;
+        actx.beginPath();
+        actx.arc(x, y, 18 + easeOutCubic(t) * (120 + i * 44), 0, Math.PI * 2);
+        actx.stroke();
+      }
+    }
+    actx.globalAlpha = Math.max(0, 1 - holdP) * 0.72;
+    actx.strokeStyle = '#fff0c8';
+    actx.lineWidth = 3;
+    actx.lineCap = 'round';
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI * 0.84 + i * Math.PI * 0.19 + Math.sin(i * 17.1) * 0.12;
+      const r0 = 22 + (i % 3) * 9;
+      const r1 = 76 + (i % 4) * 25 + holdP * 80;
+      actx.beginPath();
+      actx.moveTo(x + Math.cos(a) * r0, y + Math.sin(a) * r0);
+      actx.lineTo(x + Math.cos(a) * r1, y + Math.sin(a) * r1);
+      actx.stroke();
+    }
+    actx.restore();
+  }
+
   // The flourish itself, painted over the attack layer in viewport space.
   function renderStrike() {
     if (!strike || !actx) return;
-    const p = strike.t / STRIKE_DURATION;
+    const p = Math.min(strike.t, STRIKE_DURATION) / STRIKE_DURATION;
     const angle = Math.atan2(strike.toY - strike.fromY, strike.toX - strike.fromX);
     // The sword materialises, hovers, then is cast fast at the boss.
     const castStart = 0.55;
@@ -1973,8 +2052,14 @@
     const x = strike.fromX + (strike.toX - strike.fromX) * sp;
     const y = strike.fromY + (strike.toY - strike.fromY) * sp;
     const appear = Math.min(1, p / 0.18);
-    const fade = p > 0.86 ? Math.max(0, 1 - (p - 0.86) / 0.14) : 1;
-    const scale = (0.7 + 0.6 * easeOutCubic(appear)) * (1 + sp * 0.25);
+    let fade = p > 0.86 ? Math.max(0, 1 - (p - 0.86) / 0.14) : 1;
+    let scale = (0.7 + 0.6 * easeOutCubic(appear)) * (1 + sp * 0.25);
+    if (strike.finalHit && strike.impacted) {
+      const impactAge = strike.t - STRIKE_IMPACT_AT;
+      fade = Math.max(0, 1 - smoothstep((impactAge - 840) / 520));
+      scale *= 1.10 + Math.max(0, 1 - smoothstep(impactAge / 420)) * 0.28;
+      renderFinalStrikeImpact(strike, impactAge);
+    }
     const alpha = appear * fade;
     // Light trail behind the cast.
     if (sp > 0 && sp < 1) {
@@ -2052,7 +2137,7 @@
     if (bpmElement) bpmElement.textContent = 'BPM ' + bpm;
     if (overlay) overlay.classList.add('phase-two');
     if (cultistElement) {
-      cultistElement.classList.remove('aether-hit');
+      cultistElement.classList.remove('aether-hit', 'aether-final-hit');
       cultistElement.classList.add('phase-two');
     }
     setPhase(PHASE.SECOND);
@@ -2186,7 +2271,7 @@
 
   function updateTempo(dt) {
     fightClock += dt;
-    const targetBpm = BASE_BPM + Math.floor(fightClock / BPM_RAMP_MS) + bpmBonus;
+    const targetBpm = Math.min(WRATH_MAX, BASE_BPM + Math.floor(fightClock / BPM_RAMP_MS) + bpmBonus);
     if (targetBpm !== bpm) {
       bpm = targetBpm;
       beatMs = 60000 / bpm;
@@ -2399,6 +2484,7 @@
       }
     } else if (phase === PHASE.ACTIVE) {
       updateTempo(dt);
+      if (strike && strike.finalHit && strike.impacted) return;
       if (bpm >= WRATH_MAX) {
         startSecondPhase();
         return;
@@ -4618,7 +4704,7 @@
     vp = 0;
     dead = false;
     strike = null;
-    if (cultistElement) cultistElement.classList.remove('aether-hit');
+    if (cultistElement) cultistElement.classList.remove('aether-hit', 'aether-final-hit');
     if (deathScreen) deathScreen.classList.add('hidden');
     updateBars();
     if (bpmElement) bpmElement.textContent = 'BPM --';
