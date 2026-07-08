@@ -107,8 +107,8 @@
   const BG_FRAME_MS = 1000 / 30;  // slow writhing does not need a 60 Hz redraw
   const OUTER_WIDTH_MULT = 2;     // global art-direction scale for every depth plane
   const ENDGAME_SCENE_STORAGE_KEY = 'aetherEndgameScene';
-  const PHASE2_ATTACK_FADE = 420;  // ms for active attacks to dissolve away
-  const PHASE2_ARENA_TRANSITION = 1650; // ms for the arena to calcify before the ritual casts
+  const PHASE2_ATTACK_FADE = 900;  // ms for active attacks to dissolve away
+  const PHASE2_ARENA_TRANSITION = 3200; // ms for the arena to calcify before the ritual casts
   const PHASE2_ORB_LAUNCH = 1050;  // ms for the casting orb to leave her hand
   const PHASE2_PENT_FORM = 760;    // ms for the orb to unfold into a pentagram
   // One shadow stream from the sky pentagram: the head snakes down (REACH),
