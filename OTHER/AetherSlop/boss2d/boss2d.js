@@ -25,6 +25,7 @@
   const CULTIST_KNEEL_SRC = SCRIPT_DIR + 'spritesV2/shadow-cultist.png';
   const CULTIST_STAND_SRC = SCRIPT_DIR + 'spritesV2/shadow-cultist-standing-v2.png';
   const CULTIST_FALLEN_SRC = SCRIPT_DIR + 'spritesV2/shadow-cultist-fallen-v2.png';
+  const AVATAR_SHADOW_SRC = SCRIPT_DIR + 'spritesV2/avatar-of-shadow-base.png';
 
   // ---- Combat window geometry -------------------------------------------
   const BOARD = 500;            // the static 500x500 combat window (outer)
@@ -67,6 +68,7 @@
   let borderCanvas = null; // pre-rendered static bloody frame
   let calcifiedBorderCanvas = null; // pre-rendered phase-two bone-gray frame
   let cobbledFloorCanvas = null; // pre-rendered phase-two stone floor
+  let cobbledFloorPattern = null;
   let cultistElement = null;   // the boss container (kneel + stand layers)
   let cultistStandWrap = null; // standing layer wrapper (carries the float loop)
   let cultistStandImg = null;  // standing sprite img (carries the pixel jitter)
@@ -361,6 +363,9 @@
   let attacks = [];
   let fadingAttacks = [];
   let phase2Ritual = null;
+  let phase2Avatar = null;
+  let phase2AvatarStarted = false;
+  let phase2LayoutAnchor = null;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
   let nextSlotId = 1;
 
@@ -384,7 +389,7 @@
   let vp = 0;
   let dead = false;
   let strike = null;                 // active strike animation, or null
-  let wrathFill = null, wrathValue = null, wrathTrack = null;
+  let wrathFill = null, wrathValue = null, wrathTrack = null, wrathName = null;
   let hpFill = null, vpFill = null, vpBar = null;
   let deathScreen = null;
 
@@ -395,6 +400,65 @@
     ? smoothstep(phaseTime / PHASE2_ARENA_TRANSITION)
     : 0;
   const phaseTwoRitualTime = () => Math.max(0, phaseTime - PHASE2_ARENA_TRANSITION);
+
+  function ensurePhaseTwoAvatar() {
+    if (!phase2Avatar && window.AetherBoss2DPhase2 && window.AetherBoss2DPhase2.create) {
+      phase2Avatar = window.AetherBoss2DPhase2.create({ avatarSrc: AVATAR_SHADOW_SRC });
+    }
+    return phase2Avatar;
+  }
+
+  function resetPhaseTwoLayout() {
+    if (!overlay) return;
+    overlay.classList.remove('avatar-phase-two');
+    overlay.style.removeProperty('--phase2-stage-w');
+    overlay.style.removeProperty('--phase2-stage-h');
+    overlay.style.removeProperty('--phase2-vbar-h');
+    overlay.style.removeProperty('--phase2-row-left');
+    overlay.style.removeProperty('--phase2-row-top');
+    phase2LayoutAnchor = null;
+    if (canvas && (canvas.width !== BOARD || canvas.height !== BOARD)) {
+      canvas.width = BOARD;
+      canvas.height = BOARD;
+      ctx.imageSmoothingEnabled = false;
+    }
+  }
+
+  function updatePhaseTwoLayout(progress) {
+    if (!overlay || !canvas) return;
+    const p = smoothstep(progress);
+    const anchor = phase2LayoutAnchor || { left: canvas.getBoundingClientRect().left - 38, top: canvas.getBoundingClientRect().top };
+    const targetW = Math.max(500, window.innerWidth - anchor.left - 104);
+    const targetH = Math.max(500, window.innerHeight - anchor.top - 28);
+    const w = 500 + (targetW - 500) * p;
+    const h = 500 + (targetH - 500) * p;
+    const pixelW = Math.max(1, Math.round(w / 16) * 16);
+    const pixelH = Math.max(1, Math.round(h / 16) * 16);
+    const localHero = worldToArena(hero.x, hero.y);
+    overlay.style.setProperty('--phase2-stage-w', pixelW + 'px');
+    overlay.style.setProperty('--phase2-stage-h', pixelH + 'px');
+    overlay.style.setProperty('--phase2-vbar-h', pixelH + 'px');
+    if (canvas.width !== pixelW || canvas.height !== pixelH) {
+      canvas.width = pixelW;
+      canvas.height = pixelH;
+      ctx.imageSmoothingEnabled = false;
+    }
+    Object.assign(arena, {
+      x: pixelW / 2,
+      y: pixelH / 2,
+      width: pixelW,
+      height: pixelH,
+      rotation: 0,
+      shape: 'rect',
+      from: null,
+      target: null,
+      transitionTime: 0,
+      transitionDuration: 0,
+    });
+    const worldHero = arenaToWorld(localHero.x, localHero.y);
+    hero.x = worldHero.x;
+    hero.y = worldHero.y;
+  }
 
   function setSavedEndgameScene(sceneName) {
     try {
@@ -694,6 +758,7 @@
     cobbledFloorCanvas = document.createElement('canvas');
     cobbledFloorCanvas.width = BOARD;
     cobbledFloorCanvas.height = BOARD;
+    cobbledFloorPattern = null;
     const fctx = cobbledFloorCanvas.getContext('2d');
     const random = mulberry32(0xc0bb1e);
 
@@ -847,6 +912,7 @@
     cultistStandWrap = overlay.querySelector('.aether-boss2d-cultist-stand-wrap');
     cultistStandImg = overlay.querySelector('.aether-boss2d-cultist-stand');
     cultistFallenImg = overlay.querySelector('.aether-boss2d-cultist-fallen');
+    wrathName = overlay.querySelector('.aether-boss2d-wrath-name');
     wrathFill = overlay.querySelector('.aether-boss2d-wrath-fill');
     wrathValue = overlay.querySelector('.aether-boss2d-wrath-value');
     wrathTrack = overlay.querySelector('.aether-boss2d-wrath-track');
@@ -899,6 +965,27 @@
       phaseTwoBtn.blur();
     });
     debugPanel.appendChild(phaseTwoBtn);
+
+    const avatarPhaseTwoBtn = document.createElement('button');
+    avatarPhaseTwoBtn.type = 'button';
+    avatarPhaseTwoBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    avatarPhaseTwoBtn.textContent = 'AVATAR';
+    avatarPhaseTwoBtn.addEventListener('click', () => {
+      if (phase !== PHASE.SECOND) {
+        if (phase !== PHASE.ACTIVE) skipToActive();
+        startSecondPhase();
+      }
+      if (phase2Ritual) {
+        phase2Ritual.beams = [];
+        phase2Ritual.pentFade = 0;
+        phase2Ritual.cocoon.hits = P2_COCOON_HITS;
+        phase2Ritual.cocoon.p = 1;
+        phase2Ritual.cocoon.alpha = 1;
+      }
+      startAvatarPhaseTwo();
+      avatarPhaseTwoBtn.blur();
+    });
+    debugPanel.appendChild(avatarPhaseTwoBtn);
 
     const primePhaseTwoBtn = document.createElement('button');
     primePhaseTwoBtn.type = 'button';
@@ -1599,7 +1686,9 @@
   }
 
   function renderScene() {
-    ctx.clearRect(0, 0, BOARD, BOARD);
+    const sceneW = canvas ? canvas.width : BOARD;
+    const sceneH = canvas ? canvas.height : BOARD;
+    ctx.clearRect(0, 0, sceneW, sceneH);
     const calcify = phaseTwoArenaProgress();
     ctx.save();
     arenaPath(ctx, 0);
@@ -1608,20 +1697,27 @@
     // The empty plane inside the current arena geometry, slowly paving over
     // into darker cobbled stone as the second phase takes possession.
     ctx.fillStyle = '#040406';
-    ctx.fillRect(0, 0, BOARD, BOARD);
+    ctx.fillRect(0, 0, sceneW, sceneH);
     if (calcify > 0.001) {
       ctx.save();
       ctx.globalAlpha = calcify;
-      ctx.drawImage(cobbledFloorCanvas, 0, 0);
+      if (!cobbledFloorPattern) cobbledFloorPattern = ctx.createPattern(cobbledFloorCanvas, 'repeat');
+      if (cobbledFloorPattern) {
+        ctx.fillStyle = cobbledFloorPattern;
+        ctx.fillRect(0, 0, sceneW, sceneH);
+      } else {
+        ctx.drawImage(cobbledFloorCanvas, 0, 0);
+      }
       const edgeWake = Math.sin(calcify * Math.PI);
       if (edgeWake > 0.001) {
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = edgeWake * 0.12;
         ctx.strokeStyle = '#d4d2c2';
         ctx.lineWidth = 3;
+        const maxSpan = Math.max(sceneW, sceneH);
         for (let i = 0; i < 5; i++) {
           const inset = BORDER + PAD + i * 18 + calcify * 22;
-          ctx.strokeRect(inset, inset, BOARD - inset * 2, BOARD - inset * 2);
+          ctx.strokeRect(inset, inset, maxSpan - inset * 2, maxSpan - inset * 2);
         }
       }
       ctx.restore();
@@ -2134,6 +2230,9 @@
     strike = null;
     bpm = WRATH_MAX;
     phase2Ritual = makeSecondPhaseRitual();
+    phase2AvatarStarted = false;
+    if (phase2Avatar) phase2Avatar.reset();
+    resetPhaseTwoLayout();
     if (bpmElement) bpmElement.textContent = 'BPM ' + bpm;
     if (overlay) overlay.classList.add('phase-two');
     if (cultistElement) {
@@ -2141,6 +2240,35 @@
       cultistElement.classList.add('phase-two');
     }
     setPhase(PHASE.SECOND);
+  }
+
+  function startAvatarPhaseTwo() {
+    if (phase2AvatarStarted) return;
+    const controller = ensurePhaseTwoAvatar();
+    if (!controller || !canvas || !phase2Ritual) return;
+    const board = canvas.getBoundingClientRect();
+    const bounds = ritualBounds();
+    const geo = cocoonGeometry(bounds, board);
+    controller.start(geo, board);
+    phase2AvatarStarted = true;
+    if (overlay) {
+      const row = overlay.querySelector('.aether-boss2d-stage-row');
+      const rowRect = row ? row.getBoundingClientRect() : null;
+      phase2LayoutAnchor = rowRect
+        ? { left: rowRect.left, top: rowRect.top }
+        : { left: board.left - 38, top: board.top };
+      overlay.style.setProperty('--phase2-row-left', phase2LayoutAnchor.left.toFixed(1) + 'px');
+      overlay.style.setProperty('--phase2-row-top', phase2LayoutAnchor.top.toFixed(1) + 'px');
+      overlay.classList.add('avatar-phase-two');
+    }
+    if (cultistElement) cultistElement.classList.add('avatar-phase-two');
+    if (wrathName) wrathName.textContent = '??? - THE AVATAR OF SHADOW';
+  }
+
+  function phaseTwoRitualComplete() {
+    if (!phase2Ritual || phase2AvatarStarted) return false;
+    const c = phase2Ritual.cocoon;
+    return c.p >= 0.985 && c.alpha >= 0.99 && phase2Ritual.pentFade <= 0.01 && phase2Ritual.beams.length === 0;
   }
 
   function makeSecondPhaseRitual() {
@@ -2250,6 +2378,9 @@
     attacks = [];
     fadingAttacks = [];
     phase2Ritual = null;
+    phase2AvatarStarted = false;
+    if (phase2Avatar) phase2Avatar.reset();
+    resetPhaseTwoLayout();
     // The opening cycle always leads with the pentagram barrage; the rest is
     // shuffled. Later cycles (and all combos) reshuffle fully.
     singleQueue = ['pentagrams'].concat(shuffled(MOVEMENT_SEQUENCE.filter((n) => n !== 'pentagrams')));
@@ -2347,8 +2478,20 @@
     for (const a of fadingAttacks) a.fadeTime += dt;
     fadingAttacks = fadingAttacks.filter((a) => a.fadeTime < a.fadeDuration);
     updateMovement(dt);
+    if (phase2AvatarStarted) {
+      if (phase2Avatar) {
+        phase2Avatar.update(dt, canvas.getBoundingClientRect(), {
+          onSlam: () => {
+            if (overlay) overlay.classList.add('avatar-slammed');
+          },
+        });
+        updatePhaseTwoLayout(phase2Avatar.layoutProgress);
+      }
+      return;
+    }
     if (phaseTime < PHASE2_ARENA_TRANSITION) return;
     updatePhaseTwoBeams(dt);
+    if (phaseTwoRitualComplete()) startAvatarPhaseTwo();
   }
 
   function phaseTwoPentagramCenter(bounds) {
@@ -3565,6 +3708,10 @@
   }
 
   function renderSecondPhaseRitual() {
+    if (phase2AvatarStarted) {
+      if (phase2Avatar) phase2Avatar.render(actx);
+      return;
+    }
     if (!phase2Ritual) return;
     const r = ritualBounds();
     const board = canvas && canvas.getBoundingClientRect();
@@ -4672,6 +4819,9 @@
     heroSquash = 0;
     tentacles = [];
     outerTentacles = [];
+    phase2AvatarStarted = false;
+    if (phase2Avatar) phase2Avatar.reset();
+    resetPhaseTwoLayout();
     pentagram.arm = 0;
     pentagram.armTime = 0;
     pentagram.paused = false;
@@ -4684,8 +4834,9 @@
     heroMove.y = 0;
     keys.clear();
     debugBuffer = '';
-    if (overlay) overlay.classList.remove('phase-two');
-    if (cultistElement) cultistElement.classList.remove('standing', 'phase-two');
+    if (overlay) overlay.classList.remove('phase-two', 'avatar-slammed');
+    if (cultistElement) cultistElement.classList.remove('standing', 'phase-two', 'avatar-phase-two');
+    if (wrathName) wrathName.textContent = 'THE SHADOW CULTIST';
     // Tempo / attacks idle until she stands (PHASE.ACTIVE -> startFight()).
     fightClock = 0;
     bpm = BASE_BPM;
@@ -4726,6 +4877,7 @@
     if (!borderCanvas) buildBorder();
     if (!calcifiedBorderCanvas) buildCalcifiedBorder();
     if (!cobbledFloorCanvas) buildCobbledFloor();
+    ensurePhaseTwoAvatar();
     overlay.classList.remove('hidden');
     document.body.classList.add('aether-boss2d-active');
     active = true;
@@ -4747,7 +4899,10 @@
     cancelAnimationFrame(animationFrame);
     animationFrame = 0;
     keys.clear();
+    resetPhaseTwoLayout();
     overlay.classList.add('hidden');
+    overlay.classList.remove('phase-two', 'avatar-slammed');
+    if (cultistElement) cultistElement.classList.remove('avatar-phase-two');
     document.body.classList.remove('aether-boss2d-active');
     dispatchState();
   }
