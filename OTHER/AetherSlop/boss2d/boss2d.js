@@ -366,6 +366,11 @@
   let phase2Avatar = null;
   let phase2AvatarStarted = false;
   let phase2LayoutAnchor = null;
+  let phase2CombatStarted = false;
+  let phase2Attacks = [];
+  let phase2Cracks = [];
+  let phase2DebugClawQueued = false;
+  let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
   let nextSlotId = 1;
 
@@ -380,6 +385,15 @@
   const VP_PER_BEAT = 200;           // VP gained per beat per overlapping shadow
   const ATTACK_WRATH_GAIN = 10;      // wrath (BPM) the cultist gains when struck
   const ATTACK_HEAL_FRAC = 0.10;     // fraction of max HP the hero recovers on a strike
+  const ENTROPY_MAX = 1000;
+  const PHASE2_BPM_MIN = 150;
+  const PHASE2_BPM_MAX = 250;
+  const ENTROPY_PER_STRIKE = 100;
+  const PHASE2_CRACK_BEATS = 5;
+  const PHASE2_CLAW_TELEGRAPH_BEATS = 2.15;
+  const PHASE2_CLAW_HOLD_BEATS = 0.58;
+  const PHASE2_CLAW_FIRE_BEATS = 0.42;
+  const PHASE2_CLAW_REST_BEATS = 1;
   // The strike flourish: time crawls while an angelic sword is cast at the boss.
   const STRIKE_DURATION = 1150;      // ms (real time) of the whole sequence
   const STRIKE_IMPACT_AT = STRIKE_DURATION * 0.82;
@@ -387,6 +401,7 @@
   const FINAL_STRIKE_DURATION = 1900; // extra hitstop before the phase-two fall
   let hp = HP_MAX;
   let vp = 0;
+  let entropy = 0;
   let dead = false;
   let strike = null;                 // active strike animation, or null
   let wrathFill = null, wrathValue = null, wrathTrack = null, wrathName = null;
@@ -1009,6 +1024,16 @@
       avatarPhaseTwoBtn.blur();
     });
     debugPanel.appendChild(avatarPhaseTwoBtn);
+
+    const shadowClawBtn = document.createElement('button');
+    shadowClawBtn.type = 'button';
+    shadowClawBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    shadowClawBtn.textContent = 'SHADOW CLAW';
+    shadowClawBtn.addEventListener('click', () => {
+      debugPhaseTwoClaw();
+      shadowClawBtn.blur();
+    });
+    debugPanel.appendChild(shadowClawBtn);
 
     const primePhaseTwoBtn = document.createElement('button');
     primePhaseTwoBtn.type = 'button';
@@ -1813,6 +1838,25 @@
     hero.y = world.y;
   }
 
+  function heroTouchesPhaseTwoCrack(worldX, worldY) {
+    if (phase !== PHASE.SECOND || !canvas || phase2Cracks.length === 0) return false;
+    const board = canvas.getBoundingClientRect();
+    const point = worldPointToViewport(worldX, worldY, board);
+    const vx = point.x;
+    const vy = point.y;
+    return phase2Cracks.some((crack) => phaseTwoClawContains(crack, vx, vy));
+  }
+
+  function worldPointToViewport(worldX, worldY, board) {
+    const rect = board || (canvas && canvas.getBoundingClientRect());
+    const worldW = canvas && canvas.width ? canvas.width : BOARD;
+    const worldH = canvas && canvas.height ? canvas.height : BOARD;
+    return {
+      x: rect.left + worldX * rect.width / worldW,
+      y: rect.top + worldY * rect.height / worldH,
+    };
+  }
+
   function updateMovement(dt) {
     let dx = 0;
     let dy = 0;
@@ -1831,9 +1875,30 @@
     heroMove.x = dx / len;
     heroMove.y = dy / len;
     const speed = MOVE_SPEED * (bpm / BASE_BPM);
+    const startX = hero.x;
+    const startY = hero.y;
+    const startedInCrack = heroTouchesPhaseTwoCrack(startX, startY);
     hero.x += heroMove.x * speed * dt;
     hero.y += heroMove.y * speed * dt;
     clampHero();
+    if (!heroTouchesPhaseTwoCrack(hero.x, hero.y)) return;
+    // A fresh scar can form under the hero. Let them move out before it becomes
+    // an impassable boundary, otherwise the first few pixels trap them forever.
+    if (startedInCrack) return;
+
+    // Cracks are impassable, but let diagonal input slide along their edge.
+    const targetX = hero.x;
+    const targetY = hero.y;
+    hero.x = targetX;
+    hero.y = startY;
+    clampHero();
+    if (!heroTouchesPhaseTwoCrack(hero.x, hero.y)) return;
+    hero.x = startX;
+    hero.y = targetY;
+    clampHero();
+    if (!heroTouchesPhaseTwoCrack(hero.x, hero.y)) return;
+    hero.x = startX;
+    hero.y = startY;
   }
 
   // ---- Combat: hitboxes, damage, bars ------------------------------------
@@ -1939,6 +2004,10 @@
     if (a.type === 'sidePortals') {
       return sidePortalZone(a, vx, vy, firing);
     }
+    if (a.type === 'shadowClaw') {
+      const progress = firing ? 1 : phaseTwoClawReach(a);
+      return phaseTwoClawContains(a, vx, vy, progress) ? (firing ? 'live' : 'shadow') : null;
+    }
     return null;
   }
 
@@ -1947,7 +2016,8 @@
   function countOverlaps(vx, vy) {
     let live = 0;
     let shadow = 0;
-    for (const a of attacks) {
+    const activeAttacks = phase === PHASE.SECOND ? phase2Attacks : attacks;
+    for (const a of activeAttacks) {
       const zone = heroAttackZone(a, vx, vy);
       if (zone === 'live') live++;
       else if (zone === 'shadow') shadow++;
@@ -1959,8 +2029,9 @@
     if (!canvas || dead) return;
     // The hero's centre, carried into the attack canvas's viewport space.
     const board = canvas.getBoundingClientRect();
-    const vx = board.left + hero.x * board.width / BOARD;
-    const vy = board.top + hero.y * board.height / BOARD;
+    const heroV = worldPointToViewport(hero.x, hero.y, board);
+    const vx = heroV.x;
+    const vy = heroV.y;
     const beats = dt / beatMs;
     const { live, shadow } = countOverlaps(vx, vy);
     // Damage scales with overlaps (two attacks at once drain twice as fast).
@@ -1971,10 +2042,11 @@
   }
 
   // The hero spends a full VP meter to strike: heals a little, stokes the
-  // cultist's wrath (tempo), and launches the slow-mo angelic-sword flourish.
+  // current boss's tempo gauge, and launches the slow-mo angelic-sword flourish.
   // Bound to F / Space.
   function playerAttack() {
-    if (!active || dead || phase !== PHASE.ACTIVE || strike) return;
+    if (!active || dead || (phase !== PHASE.ACTIVE && phase !== PHASE.SECOND) || strike) return;
+    if (phase === PHASE.SECOND && !phase2CombatStarted) return;
     if (vp < VP_MAX) return;
     vp = 0;
     hp = Math.min(HP_MAX, hp + HP_MAX * ATTACK_HEAL_FRAC);
@@ -1982,17 +2054,20 @@
     // Capture the flight path: from the hero up to the cultist.
     const board = canvas.getBoundingClientRect();
     const sprite = cultistStandImg ? cultistStandImg.getBoundingClientRect() : null;
-    const fromX = board.left + hero.x * board.width / BOARD;
-    const fromY = board.top + hero.y * board.height / BOARD;
+    const avatar = phase2Avatar && phase2Avatar.state && phase2Avatar.state.avatar;
+    const heroV = worldPointToViewport(hero.x, hero.y, board);
+    const fromX = heroV.x;
+    const fromY = heroV.y;
     strike = {
       t: 0,
       duration: STRIKE_DURATION,
       impacted: false,
       finalHit: false,
+      phaseTwo: phase === PHASE.SECOND,
       fromX,
       fromY,
-      toX: sprite ? sprite.left + sprite.width / 2 : fromX,
-      toY: sprite ? sprite.top + sprite.height * 0.45 : board.top,
+      toX: phase === PHASE.SECOND && avatar ? avatar.x : (sprite ? sprite.left + sprite.width / 2 : fromX),
+      toY: phase === PHASE.SECOND && avatar ? avatar.y : (sprite ? sprite.top + sprite.height * 0.45 : board.top),
     };
   }
 
@@ -2007,6 +2082,14 @@
     strike.t += dtRaw;
     const p = strike.t / STRIKE_DURATION;
     if (!strike.impacted && strike.t >= STRIKE_IMPACT_AT) {
+      if (strike.phaseTwo) {
+        strike.impacted = true;
+        entropy = Math.min(ENTROPY_MAX, entropy + ENTROPY_PER_STRIKE);
+        bpm = phaseTwoBpm();
+        beatMs = 60000 / bpm;
+        surgeWrath();
+        return 1 - Math.sin(Math.min(1, p) * Math.PI) * (1 - STRIKE_SLOW);
+      }
       const finalHit = wrathAfterStrike() >= WRATH_MAX;
       strike.impacted = true;
       strike.finalHit = finalHit;
@@ -2216,12 +2299,15 @@
     if (deathScreen) deathScreen.classList.remove('hidden');
   }
 
-  // Pushes wrath / HP / VP to their bars. Wrath reads the live tempo once the
-  // fight begins (it snaps 0 -> BASE_BPM as she stands), and idles at 0 before.
+  // Pushes wrath / entropy, HP and VP to their bars. The shared DOM bar changes
+  // identity with the boss so phase one can retain its existing markup.
   function updateBars() {
-    const wrath = (phase === PHASE.ACTIVE || phase === PHASE.SECOND) ? bpm : 0;
-    if (wrathFill) wrathFill.style.width = (Math.min(1, wrath / WRATH_MAX) * 100) + '%';
-    if (wrathValue) wrathValue.textContent = 'WRATH ' + wrath;
+    const isPhaseTwoCombat = phase === PHASE.SECOND && phase2AvatarStarted;
+    const wrath = phase === PHASE.ACTIVE ? bpm : 0;
+    if (wrathFill) wrathFill.style.width = ((isPhaseTwoCombat ? entropy / ENTROPY_MAX : Math.min(1, wrath / WRATH_MAX)) * 100) + '%';
+    if (wrathValue) wrathValue.textContent = isPhaseTwoCombat
+      ? 'ENTROPY ' + Math.round(entropy) + ' / ' + ENTROPY_MAX
+      : 'WRATH ' + wrath;
     if (hpFill) hpFill.style.height = (Math.max(0, hp) / HP_MAX * 100) + '%';
     if (vpFill) vpFill.style.height = (Math.max(0, vp) / VP_MAX * 100) + '%';
     if (vpBar) vpBar.classList.toggle('is-full', vp >= VP_MAX);
@@ -2248,6 +2334,12 @@
     if (phase === PHASE.SECOND) return;
     fadingAttacks = attacks.map((a) => ({ ...a, fadeTime: 0, fadeDuration: PHASE2_ATTACK_FADE }));
     attacks = [];
+    phase2Attacks = [];
+    phase2Cracks = [];
+    phase2CombatStarted = false;
+    phase2DebugClawQueued = false;
+    nextPhase2AttackBeat = Infinity;
+    entropy = 0;
     activeSet = [];
     nextAttackBeat = Infinity;
     strike = null;
@@ -2256,7 +2348,7 @@
     phase2AvatarStarted = false;
     if (phase2Avatar) phase2Avatar.reset();
     resetPhaseTwoLayout();
-    if (bpmElement) bpmElement.textContent = 'BPM ' + bpm;
+    if (bpmElement) bpmElement.textContent = 'BPM --';
     if (overlay) overlay.classList.add('phase-two');
     if (cultistElement) {
       cultistElement.classList.remove('aether-hit', 'aether-final-hit');
@@ -2286,7 +2378,7 @@
       overlay.classList.add('avatar-phase-two');
     }
     if (cultistElement) cultistElement.classList.add('avatar-phase-two');
-    if (wrathName) wrathName.textContent = '??? - THE AVATAR OF SHADOW';
+    if (wrathName) wrathName.textContent = 'SZAGO - THE AVATAR OF SHADOW';
   }
 
   function phaseTwoRitualComplete() {
@@ -2403,6 +2495,12 @@
     fadingAttacks = [];
     phase2Ritual = null;
     phase2AvatarStarted = false;
+    phase2CombatStarted = false;
+    phase2Attacks = [];
+    phase2Cracks = [];
+    phase2DebugClawQueued = false;
+    nextPhase2AttackBeat = Infinity;
+    entropy = 0;
     if (phase2Avatar) phase2Avatar.reset();
     resetPhaseTwoLayout();
     // The opening cycle always leads with the pentagram barrage; the rest is
@@ -2498,6 +2596,275 @@
     if (spawnWave(beatIndex)) updateNextAttackBeat();
   }
 
+  function phaseTwoBpm() {
+    return PHASE2_BPM_MIN + (PHASE2_BPM_MAX - PHASE2_BPM_MIN) * (entropy / ENTROPY_MAX);
+  }
+
+  function beginPhaseTwoCombat() {
+    if (phase2CombatStarted) return;
+    phase2CombatStarted = true;
+    entropy = 0;
+    bpm = phaseTwoBpm();
+    beatMs = 60000 / bpm;
+    beatPhase = 0;
+    beatIndex = 0;
+    phase2Attacks = [];
+    phase2Cracks = [];
+    nextPhase2AttackBeat = phase2DebugClawQueued ? 0 : 2;
+    if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
+  }
+
+  function phaseTwoClawPoint(a, t) {
+    if (a.pathPoints && a.pathPoints.length) {
+      const scaled = clamp01(t) * (a.pathSteps || 56);
+      const index = Math.min(a.pathPoints.length - 1, Math.floor(scaled));
+      const nextIndex = Math.min(a.pathPoints.length - 1, index + 1);
+      const mix = nextIndex === index ? 0 : scaled - index;
+      const p = a.pathPoints[index];
+      const q = a.pathPoints[nextIndex];
+      return { x: p.x + (q.x - p.x) * mix, y: p.y + (q.y - p.y) * mix };
+    }
+    const u = 1 - t;
+    return {
+      x: u * u * u * a.x0 + 3 * u * u * t * a.c1x + 3 * u * t * t * a.c2x + t * t * t * a.x1,
+      y: u * u * u * a.y0 + 3 * u * u * t * a.c1y + 3 * u * t * t * a.c2y + t * t * t * a.y1,
+    };
+  }
+
+  function phaseTwoClawWidthAt(a, t) {
+    const p = clamp01(t);
+    const startWidth = a.startWidth || 9;
+    const grow = smoothstep(p / 0.62);
+    const tip = p < 0.88 ? 1 : Math.pow((1 - p) / 0.12, 0.42);
+    const launchBoost = p < 0.49 ? 1.18 : 1;
+    return Math.max(3, (startWidth + (a.width - startWidth) * grow) * tip * launchBoost);
+  }
+
+  function phaseTwoClawReach(a) {
+    if (a.state === 'armed' || a.state === 'fire' || a.state === 'done') return 1;
+    return Math.pow(clamp01(a.stretch), 1.8);
+  }
+
+  function phaseTwoClawContains(a, vx, vy, progress) {
+    const end = clamp01(progress == null ? 1 : progress);
+    if (end <= 0) return false;
+    const steps = Math.max(5, Math.ceil(30 * end));
+    let prev = phaseTwoClawPoint(a, 0);
+    for (let i = 1; i <= steps; i++) {
+      const t = end * i / steps;
+      const next = phaseTwoClawPoint(a, t);
+      const sampleT = t - end / (steps * 2);
+      const frontWindow = Math.max(0.035, Math.min(0.11, end * 0.22));
+      const frontTaper = smoothstep((end - sampleT) / frontWindow);
+      const width = phaseTwoClawWidthAt(a, sampleT) * frontTaper;
+      if (distToSeg(vx, vy, prev.x, prev.y, next.x, next.y) <= width * 0.5) return true;
+      prev = next;
+    }
+    return false;
+  }
+
+  function retargetPhaseTwoShadowClaw(a, board) {
+    const avatar = phase2Avatar && phase2Avatar.state && phase2Avatar.state.avatar;
+    if (!avatar || !avatar.visible || !board || !board.width) return false;
+    const heroV = worldPointToViewport(hero.x, hero.y, board);
+    const dx = heroV.x - avatar.x;
+    const dy = heroV.y - avatar.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const dirX = dx / distance;
+    const dirY = dy / distance;
+    const scaleX = board.width / (canvas && canvas.width ? canvas.width : BOARD);
+    const pastHero = Math.max(105, HERO_W * scaleX * 4.8);
+    if (!a.turnSign) a.turnSign = heroV.x >= avatar.x ? -1 : 1;
+    a.targetX = heroV.x + dirX * pastHero;
+    a.targetY = heroV.y + dirY * pastHero;
+    if (!a.pathPoints.length) {
+      const start = {
+        x: avatar.x + a.turnSign * avatar.size * 0.045,
+        y: avatar.y - avatar.size * 0.08,
+      };
+      a.pathPoints.push(start);
+      a.headX = start.x;
+      a.headY = start.y;
+      a.headAngle = -Math.PI / 2 + a.turnSign * 0.62;
+      a.baseStep = Math.max(14, Math.min(21, (distance + avatar.size * 1.9) / a.pathSteps));
+    }
+    a.board = { left: board.left, top: board.top, width: board.width, height: board.height };
+    return true;
+  }
+
+  function extendPhaseTwoClawPath(a, progress) {
+    const wanted = Math.min(a.pathSteps, Math.floor(clamp01(progress) * a.pathSteps));
+    while (a.pathPoints.length - 1 < wanted) {
+      const index = a.pathPoints.length;
+      const t = index / a.pathSteps;
+      let angle;
+      if (t < 0.29) {
+        // Launch hard toward the shoulder side before climbing into the hook.
+        angle = -Math.PI / 2 + a.turnSign * 0.62;
+      } else if (t < 0.49) {
+        // A deliberate, compact 180-degree hook at the apex.
+        const turn = smoothstep((t - 0.29) / 0.20);
+        angle = (-Math.PI / 2 + a.turnSign * 0.62) + a.turnSign * Math.PI * turn;
+      } else {
+        const desired = Math.atan2(a.targetY - a.headY, a.targetX - a.headX);
+        let delta = desired - a.headAngle;
+        while (delta > Math.PI) delta -= Math.PI * 2;
+        while (delta < -Math.PI) delta += Math.PI * 2;
+        angle = a.headAngle + Math.max(-0.46, Math.min(0.46, delta));
+      }
+      const remaining = Math.max(1, a.pathSteps - index + 1);
+      const targetDistance = Math.hypot(a.targetX - a.headX, a.targetY - a.headY);
+      const step = t >= 0.49 ? Math.max(a.baseStep, targetDistance / remaining * 1.05) : a.baseStep;
+      if (index === a.pathSteps) {
+        a.headX = a.targetX;
+        a.headY = a.targetY;
+      } else {
+        a.headX += Math.cos(angle) * step;
+        a.headY += Math.sin(angle) * step;
+      }
+      a.headAngle = angle;
+      a.pathPoints.push({ x: a.headX, y: a.headY });
+    }
+  }
+
+  function spawnPhaseTwoShadowClaw(board) {
+    if (!board || !board.width || !phase2Avatar || !phase2Avatar.state) return false;
+    const makeClaw = (turnSign, waitBeats) => ({
+      type: 'shadowClaw',
+      state: waitBeats > 0 ? 'waiting' : 'telegraph',
+      waitTime: 0,
+      waitBeats,
+      x0: 0, y0: 0, c1x: 0, c1y: 0, c2x: 0, c2y: 0, x1: 0, y1: 0,
+      width: Math.max(52, Math.min(78, Math.min(board.width, board.height) * 0.10)),
+      startWidth: 9,
+      turnSign,
+      pathSteps: 56,
+      pathPoints: [],
+      headX: 0,
+      headY: 0,
+      headAngle: 0,
+      targetX: 0,
+      targetY: 0,
+      baseStep: 16,
+      stretch: 0,
+      stretchBeats: PHASE2_CLAW_TELEGRAPH_BEATS,
+      holdBeats: PHASE2_CLAW_HOLD_BEATS,
+      holdTime: 0,
+      fire: 0,
+      fireBeats: PHASE2_CLAW_FIRE_BEATS,
+      restBeats: PHASE2_CLAW_REST_BEATS,
+      crackSpawned: false,
+      seed: Math.random() * 1000,
+      board: null,
+    });
+    const left = makeClaw(-1, 0);
+    const right = makeClaw(1, 0.42);
+    if (!retargetPhaseTwoShadowClaw(left, board)) return false;
+    phase2Attacks.push(left, right);
+    return true;
+  }
+
+  function leavePhaseTwoCrack(a) {
+    if (a.crackSpawned) return;
+    a.crackSpawned = true;
+    phase2Cracks.push({
+      x0: a.x0, y0: a.y0,
+      c1x: a.c1x, c1y: a.c1y,
+      c2x: a.c2x, c2y: a.c2y,
+      x1: a.x1, y1: a.y1,
+      width: a.width,
+      startWidth: a.startWidth,
+      pathSteps: a.pathSteps,
+      pathPoints: a.pathPoints.map((point) => ({ x: point.x, y: point.y })),
+      seed: a.seed,
+      expiresBeat: beatIndex + PHASE2_CRACK_BEATS,
+      board: a.board,
+    });
+  }
+
+  function updatePhaseTwoAttacks(dt) {
+    for (const a of phase2Attacks) {
+      if (a.state === 'waiting') {
+        a.waitTime += dt;
+        if (a.waitTime >= beatMs * a.waitBeats) {
+          a.state = 'telegraph';
+          retargetPhaseTwoShadowClaw(a, canvas && canvas.getBoundingClientRect());
+        }
+      } else if (a.state === 'telegraph') {
+        retargetPhaseTwoShadowClaw(a, canvas && canvas.getBoundingClientRect());
+        a.stretch += dt / (beatMs * a.stretchBeats);
+        extendPhaseTwoClawPath(a, phaseTwoClawReach(a));
+        if (a.stretch >= 1) {
+          a.stretch = 1;
+          extendPhaseTwoClawPath(a, 1);
+          a.state = 'armed';
+          a.holdTime = 0;
+        }
+      } else if (a.state === 'armed') {
+        a.holdTime += dt;
+        if (a.holdTime >= beatMs * a.holdBeats) {
+          a.state = 'fire';
+          a.fire = 0;
+          leavePhaseTwoCrack(a);
+        }
+      } else if (a.state === 'fire') {
+        a.fire += dt / (beatMs * a.fireBeats);
+        if (a.fire >= 1) {
+          a.fire = 1;
+          a.state = 'done';
+          nextPhase2AttackBeat = beatIndex + a.restBeats;
+        }
+      }
+    }
+    phase2Attacks = phase2Attacks.filter((a) => a.state !== 'done');
+  }
+
+  function onPhaseTwoBeat(beat) {
+    phase2Cracks = phase2Cracks.filter((crack) => beat < crack.expiresBeat);
+    if (phase2Attacks.length || beat < nextPhase2AttackBeat) return;
+    if (spawnPhaseTwoShadowClaw(canvas && canvas.getBoundingClientRect())) {
+      phase2DebugClawQueued = false;
+      nextPhase2AttackBeat = Infinity;
+    }
+  }
+
+  function updatePhaseTwoTempo(dt) {
+    bpm = phaseTwoBpm();
+    beatMs = 60000 / bpm;
+    beatPhase += dt;
+    while (beatPhase >= beatMs) {
+      beatPhase -= beatMs;
+      beatIndex++;
+      onPhaseTwoBeat(beatIndex);
+    }
+    if (bpm !== lastAnimBpm) {
+      lastAnimBpm = bpm;
+      if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
+    }
+  }
+
+  function debugPhaseTwoClaw() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    if (!phase2AvatarStarted && phase2Ritual) {
+      phase2Ritual.beams = [];
+      phase2Ritual.pentFade = 0;
+      phase2Ritual.cocoon.hits = P2_COCOON_HITS;
+      phase2Ritual.cocoon.p = 1;
+      phase2Ritual.cocoon.alpha = 1;
+      startAvatarPhaseTwo();
+    }
+    phase2DebugClawQueued = true;
+    if (phase2CombatStarted) {
+      phase2Attacks = [];
+      nextPhase2AttackBeat = beatIndex;
+      onPhaseTwoBeat(beatIndex);
+    }
+  }
+
   function updateSecondPhase(dt) {
     for (const a of fadingAttacks) a.fadeTime += dt;
     fadingAttacks = fadingAttacks.filter((a) => a.fadeTime < a.fadeDuration);
@@ -2514,6 +2881,13 @@
           },
         });
         updatePhaseTwoLayout(phase2Avatar.layoutProgress);
+      }
+      if (phase2Avatar && phase2Avatar.layoutProgress >= 1) {
+        beginPhaseTwoCombat();
+        if (phase2DebugClawQueued && phase2Attacks.length === 0) onPhaseTwoBeat(beatIndex);
+        updatePhaseTwoTempo(dt);
+        updatePhaseTwoAttacks(dt);
+        updateCombat(dt);
       }
       return;
     }
@@ -3187,11 +3561,16 @@
     if (phase === PHASE.ACTIVE) {
       for (const a of attacks) renderAttack(a);
     } else if (phase === PHASE.SECOND) {
+      for (const crack of phase2Cracks) renderPhaseTwoCrack(crack);
+      for (const a of phase2Attacks) renderAttack(a, 'behind');
       renderSecondPhaseRitual();
+      for (const a of phase2Attacks) {
+        if (a.type === 'shadowClaw') renderAttack(a, 'front');
+      }
     }
   }
 
-  function renderAttack(a) {
+  function renderAttack(a, depthLayer) {
     if (a.type === 'pentaBeam') renderPentaBeam(a);
     else if (a.type === 'tentacle') renderTentacleAttack(a);
     else if (a.type === 'xRay') renderXRay(a);
@@ -3201,6 +3580,252 @@
     else if (a.type === 'checkerboard') renderCheckerboard(a);
     else if (a.type === 'portalCurve') renderPortalCurve(a);
     else if (a.type === 'sidePortals') renderSidePortals(a);
+    else if (a.type === 'shadowClaw') renderShadowClaw(a, depthLayer);
+  }
+
+  function clipPhaseTwoClawToArena(a, depthLayer) {
+    const b = a.board;
+    if (!b) return false;
+    if (a.type === 'shadowClaw' && depthLayer === 'behind') return true;
+    const worldW = canvas && canvas.width ? canvas.width : BOARD;
+    const worldH = canvas && canvas.height ? canvas.height : BOARD;
+    const insetX = BORDER * b.width / worldW;
+    const insetY = BORDER * b.height / worldH;
+    actx.beginPath();
+    if (a.type === 'shadowClaw') {
+      // The intentional launch can climb through the sky behind Szago, but the
+      // arena's top frame remains a hidden band before it re-enters the floor.
+      actx.rect(0, 0, attackCanvas.width, Math.max(0, b.top));
+    }
+    actx.rect(
+      b.left + insetX,
+      b.top + insetY,
+      Math.max(1, b.width - insetX * 2),
+      Math.max(1, b.height - insetY * 2)
+    );
+    actx.clip();
+    return true;
+  }
+
+  function traceJaggedClawShape(a, progress, widthScale, layer, animated, startAt, taperAtEnd) {
+    const start = clamp01(startAt || 0);
+    const end = clamp01(progress);
+    const span = Math.max(0, end - start);
+    const steps = Math.max(8, Math.ceil(46 * span));
+    const phase = a.seed * 0.019 + layer * 8.71 + (animated ? clock * (0.0032 + layer * 0.00035) : 0);
+    const left = [];
+    const right = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = start + span * i / steps;
+      const p = phaseTwoClawPoint(a, t);
+      const before = phaseTwoClawPoint(a, Math.max(0, t - 0.01));
+      const after = phaseTwoClawPoint(a, Math.min(1, t + 0.01));
+      const dx = after.x - before.x;
+      const dy = after.y - before.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len;
+      const ny = dx / len;
+      const frontWindow = Math.max(0.035, Math.min(0.11, end * 0.22));
+      const frontTaper = taperAtEnd === false ? 1 : smoothstep((end - t) / frontWindow);
+      const base = phaseTwoClawWidthAt(a, t) * 0.5 * widthScale * frontTaper;
+      const leftNoise = 1 + Math.sin(t * 53 + phase) * 0.16 + Math.sin(t * 127 - phase * 1.4) * 0.08;
+      const rightNoise = 1 + Math.sin(t * 47 - phase * 0.9) * 0.18 + Math.sin(t * 119 + phase * 1.8) * 0.07;
+      const leftTongue = Math.pow(Math.max(0, Math.sin(t * 83 + phase * 2.1)), 7) * base * 0.34;
+      const rightTongue = Math.pow(Math.max(0, Math.sin(t * 79 - phase * 1.7)), 7) * base * 0.32;
+      left.push({ x: p.x + nx * (base * leftNoise + leftTongue), y: p.y + ny * (base * leftNoise + leftTongue) });
+      right.push({ x: p.x - nx * (base * rightNoise + rightTongue), y: p.y - ny * (base * rightNoise + rightTongue) });
+    }
+    const tip = phaseTwoClawPoint(a, end);
+    const tipBefore = phaseTwoClawPoint(a, Math.max(0, end - 0.015));
+    const tipLen = Math.hypot(tip.x - tipBefore.x, tip.y - tipBefore.y) || 1;
+    const spike = 5 + Math.abs(Math.sin(phase * 2.3)) * 9;
+    const tipX = tip.x + (tip.x - tipBefore.x) / tipLen * spike;
+    const tipY = tip.y + (tip.y - tipBefore.y) / tipLen * spike;
+    actx.beginPath();
+    actx.moveTo(left[0].x, left[0].y);
+    for (let i = 1; i < left.length; i++) actx.lineTo(left[i].x, left[i].y);
+    if (taperAtEnd !== false) actx.lineTo(tipX, tipY);
+    for (let i = right.length - 1; i >= 0; i--) actx.lineTo(right[i].x, right[i].y);
+    actx.closePath();
+  }
+
+  function fillJaggedClaw(a, progress, widthScale, layer, animated, color, startAt, taperAtEnd) {
+    traceJaggedClawShape(a, progress, widthScale, layer, animated, startAt, taperAtEnd);
+    actx.fillStyle = color;
+    actx.fill();
+  }
+
+  function strokeJaggedClaw(a, progress, widthScale, layer, animated, color, startAt, taperAtEnd) {
+    traceJaggedClawShape(a, progress, widthScale, layer, animated, startAt, taperAtEnd);
+    actx.strokeStyle = color;
+    actx.lineWidth = 1;
+    actx.stroke();
+  }
+
+  function strokeClawTexture(a, layer, alpha, progress, startAt) {
+    const start = clamp01(startAt || 0);
+    const end = clamp01(progress == null ? 1 : progress);
+    const span = Math.max(0, end - start);
+    const steps = Math.max(6, Math.ceil(34 * span));
+    const seed = a.seed * 0.021 + layer * 9.17;
+    actx.strokeStyle = 'rgba(158, 38, 31, ' + alpha.toFixed(3) + ')';
+    actx.lineWidth = layer % 2 ? 1 : 1.5;
+    actx.lineCap = 'round';
+    actx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const t = start + span * i / steps;
+      const p = phaseTwoClawPoint(a, t);
+      const before = phaseTwoClawPoint(a, Math.max(0, t - 0.012));
+      const after = phaseTwoClawPoint(a, Math.min(1, t + 0.012));
+      const dx = after.x - before.x;
+      const dy = after.y - before.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const width = phaseTwoClawWidthAt(a, t);
+      const offset = (Math.sin(t * (18 + layer * 3) + seed) * 0.18 + (layer - 2) * 0.10) * width;
+      const x = p.x - dy / len * offset;
+      const y = p.y + dx / len * offset;
+      if (i === 0) actx.moveTo(x, y); else actx.lineTo(x, y);
+    }
+    actx.stroke();
+  }
+
+  function renderShadowClaw(a, depthLayer) {
+    const telegraph = a.state === 'telegraph' || a.state === 'armed';
+    const progress = telegraph ? phaseTwoClawReach(a) : 1;
+    const split = 0.49;
+    const foreground = depthLayer === 'front';
+    const startAt = foreground ? split : 0;
+    const endAt = foreground ? progress : Math.min(progress, split);
+    const taperAtEnd = foreground || progress <= split;
+    if (endAt - startAt <= 0.005) return;
+    actx.save();
+    if (!clipPhaseTwoClawToArena(a, depthLayer)) { actx.restore(); return; }
+    actx.lineCap = 'round';
+    actx.lineJoin = 'round';
+    if (telegraph) {
+      const armed = a.state === 'armed';
+      const pulse = armed ? 0.88 + Math.sin(clock * 0.035) * 0.12 : 1;
+      const visibility = foreground ? 1 : 1.24;
+      fillJaggedClaw(a, endAt, 1.10, 0, true, 'rgba(24, 25, 28, ' + (0.18 * pulse * visibility).toFixed(3) + ')', startAt, taperAtEnd);
+      fillJaggedClaw(a, endAt, 0.94, 1, true, 'rgba(12, 13, 15, ' + (0.30 * pulse * visibility).toFixed(3) + ')', startAt, taperAtEnd);
+      fillJaggedClaw(a, endAt, 0.72, 2, true, 'rgba(50, 51, 54, ' + (0.14 * pulse * visibility).toFixed(3) + ')', startAt, taperAtEnd);
+      strokeJaggedClaw(a, endAt, 1.10, 0, true, 'rgba(128, 18, 20, ' + ((foreground ? 0.48 : 0.62) * pulse).toFixed(3) + ')', startAt, taperAtEnd);
+      for (let i = 0; i < 3; i++) strokeClawTexture(a, i, 0.035 * pulse, endAt, startAt);
+    } else if (a.state === 'fire') {
+      const life = 1 - smoothstep((a.fire - 0.38) / 0.62);
+      const snap = 1 - smoothstep(a.fire / 0.16);
+      if (foreground && snap > 0) {
+        const b = a.board;
+        actx.globalCompositeOperation = 'screen';
+        actx.globalAlpha = snap * 0.16;
+        actx.fillStyle = '#ffd8ce';
+        actx.fillRect(b.left, b.top, b.width, b.height);
+        actx.globalCompositeOperation = 'source-over';
+        actx.globalAlpha = snap * 0.34;
+        fillJaggedClaw(a, endAt, 1.34, 3, false, '#ffe0d8', startAt, true);
+      }
+      actx.globalAlpha = Math.max(0, life);
+      fillJaggedClaw(a, endAt, 1.18, 0, true, '#ff2118', startAt, taperAtEnd);
+      fillJaggedClaw(a, endAt, 1.00, 1, true, '#000000', startAt, taperAtEnd);
+      for (let i = 0; i < 5; i++) strokeClawTexture(a, i, (0.045 + snap * 0.025) * life, endAt, startAt);
+    }
+    actx.restore();
+  }
+
+  function renderPhaseTwoCrack(crack) {
+    const b = crack.board;
+    if (!b) return;
+    actx.save();
+    if (!clipPhaseTwoClawToArena(crack)) { actx.restore(); return; }
+    actx.lineCap = 'round';
+    actx.lineJoin = 'round';
+    // Three broken fault lines describe the damaged corridor without leaving
+    // the attack's filled silhouette lying on top of the floor.
+    for (let lane = -1; lane <= 1; lane++) {
+      const steps = 32;
+      const seed = crack.seed * 0.017 + lane * 7.31;
+      actx.beginPath();
+      for (let i = 1; i < steps; i++) {
+        const t = i / steps;
+        const point = phaseTwoClawPoint(crack, t);
+        const before = phaseTwoClawPoint(crack, Math.max(0, t - 0.012));
+        const after = phaseTwoClawPoint(crack, Math.min(1, t + 0.012));
+        const dx = after.x - before.x;
+        const dy = after.y - before.y;
+        const length = Math.hypot(dx, dy) || 1;
+        const width = phaseTwoClawWidthAt(crack, t);
+        const offset = lane * width * (0.24 + Math.sin(t * 31 + seed) * 0.045)
+          + Math.sin(t * 91 - seed) * (2.5 + Math.abs(lane));
+        const x = point.x - dy / length * offset;
+        const y = point.y + dx / length * offset;
+        if (i === 1) actx.moveTo(x, y); else actx.lineTo(x, y);
+      }
+      actx.strokeStyle = 'rgba(0, 0, 0, 0.92)';
+      actx.lineWidth = lane === 0 ? 5 : 3;
+      actx.stroke();
+      actx.strokeStyle = lane === 0 ? 'rgba(126, 37, 30, 0.72)' : 'rgba(106, 102, 94, 0.42)';
+      actx.lineWidth = 1;
+      actx.stroke();
+    }
+
+    // Short forks split away from the main faults, giving the floor a broken,
+    // displaced texture instead of a decorative line painted over it.
+    for (let i = 1; i <= 11; i++) {
+      const t = 0.10 + i * 0.072;
+      const point = phaseTwoClawPoint(crack, t);
+      const before = phaseTwoClawPoint(crack, Math.max(0, t - 0.015));
+      const after = phaseTwoClawPoint(crack, Math.min(1, t + 0.015));
+      const dx = after.x - before.x;
+      const dy = after.y - before.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const normalX = -dy / length;
+      const normalY = dx / length;
+      const side = i % 2 ? 1 : -1;
+      const branch = phaseTwoClawWidthAt(crack, t) * (0.28 + 0.18 * Math.abs(Math.sin(crack.seed + i * 2.7)));
+      const midX = point.x + normalX * branch * side * 0.48 + dx / length * (i % 3 - 1) * 5;
+      const midY = point.y + normalY * branch * side * 0.48 + dy / length * (i % 3 - 1) * 5;
+      const endX = point.x + normalX * branch * side;
+      const endY = point.y + normalY * branch * side;
+      actx.beginPath();
+      actx.moveTo(point.x - dx / length * 8, point.y - dy / length * 8);
+      actx.lineTo(midX, midY);
+      actx.lineTo(endX, endY);
+      actx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+      actx.lineWidth = 3;
+      actx.stroke();
+      actx.strokeStyle = 'rgba(128, 118, 105, 0.38)';
+      actx.lineWidth = 1;
+      actx.stroke();
+    }
+
+    // A few lifted floor chips catch a dim edge highlight around the fractures.
+    for (let i = 0; i < 8; i++) {
+      const t = 0.16 + i * 0.095;
+      const point = phaseTwoClawPoint(crack, t);
+      const before = phaseTwoClawPoint(crack, Math.max(0, t - 0.012));
+      const after = phaseTwoClawPoint(crack, Math.min(1, t + 0.012));
+      const dx = after.x - before.x;
+      const dy = after.y - before.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const nx = -dy / length;
+      const ny = dx / length;
+      const side = i % 2 ? 1 : -1;
+      const offset = phaseTwoClawWidthAt(crack, t) * (0.14 + (i % 3) * 0.055) * side;
+      const x = point.x + nx * offset;
+      const y = point.y + ny * offset;
+      const size = 5 + Math.abs(Math.sin(crack.seed + i * 3.1)) * 7;
+      actx.beginPath();
+      actx.moveTo(x - dx / length * size, y - dy / length * size * 0.35);
+      actx.lineTo(x + nx * size * 0.55, y + ny * size * 0.55);
+      actx.lineTo(x + dx / length * size * 0.75, y + dy / length * size * 0.28);
+      actx.closePath();
+      actx.fillStyle = 'rgba(3, 3, 4, 0.7)';
+      actx.fill();
+      actx.strokeStyle = 'rgba(158, 151, 136, 0.28)';
+      actx.lineWidth = 1;
+      actx.stroke();
+    }
+    actx.restore();
   }
 
   function ritualBounds() {
@@ -4874,6 +5499,11 @@
     beatIndex = 0;
     lastAnimBpm = -1;
     attacks = [];
+    phase2Attacks = [];
+    phase2Cracks = [];
+    phase2CombatStarted = false;
+    phase2DebugClawQueued = false;
+    nextPhase2AttackBeat = Infinity;
     activeSet = [];
     singleQueue = [];
     lastSingle = null;
@@ -4881,6 +5511,7 @@
     nextAttackBeat = Infinity;
     hp = HP_MAX;
     vp = 0;
+    entropy = 0;
     dead = false;
     strike = null;
     if (cultistElement) cultistElement.classList.remove('aether-hit', 'aether-final-hit');
