@@ -69,6 +69,8 @@
   let calcifiedBorderCanvas = null; // pre-rendered phase-two bone-gray frame
   let cobbledFloorCanvas = null; // pre-rendered phase-two stone floor
   let cobbledFloorPattern = null;
+  let phase2CrackMaskCanvas = null;
+  let phase2CrackEdgeCanvas = null;
   let cultistElement = null;   // the boss container (kneel + stand layers)
   let cultistStandWrap = null; // standing layer wrapper (carries the float loop)
   let cultistStandImg = null;  // standing sprite img (carries the pixel jitter)
@@ -390,6 +392,7 @@
   const PHASE2_BPM_MAX = 250;
   const ENTROPY_PER_STRIKE = 100;
   const PHASE2_CRACK_BEATS = 5;
+  const PHASE2_CRACK_CLOSE_MS = 420;
   const PHASE2_CLAW_TELEGRAPH_BEATS = 2.15;
   const PHASE2_CLAW_HOLD_BEATS = 0.58;
   const PHASE2_CLAW_FIRE_BEATS = 0.42;
@@ -1800,6 +1803,7 @@
     renderShockwave();
     ctx.restore();
 
+    if (phase === PHASE.SECOND && phase2Cracks.length) renderPhaseTwoGroundCracks();
     drawHero();
     ctx.restore();
 
@@ -1844,7 +1848,7 @@
     const point = worldPointToViewport(worldX, worldY, board);
     const vx = point.x;
     const vy = point.y;
-    return phase2Cracks.some((crack) => phaseTwoClawContains(crack, vx, vy));
+    return phase2Cracks.some((crack) => pointInPoly(vx, vy, phaseTwoCrackPolygon(crack)));
   }
 
   function worldPointToViewport(worldX, worldY, board) {
@@ -2778,6 +2782,8 @@
       pathPoints: a.pathPoints.map((point) => ({ x: point.x, y: point.y })),
       seed: a.seed,
       expiresBeat: beatIndex + PHASE2_CRACK_BEATS,
+      closing: false,
+      closeTime: 0,
       board: a.board,
     });
   }
@@ -2817,10 +2823,16 @@
       }
     }
     phase2Attacks = phase2Attacks.filter((a) => a.state !== 'done');
+    for (const crack of phase2Cracks) {
+      if (crack.closing) crack.closeTime += dt;
+    }
+    phase2Cracks = phase2Cracks.filter((crack) => crack.closeTime < PHASE2_CRACK_CLOSE_MS);
   }
 
   function onPhaseTwoBeat(beat) {
-    phase2Cracks = phase2Cracks.filter((crack) => beat < crack.expiresBeat);
+    for (const crack of phase2Cracks) {
+      if (beat >= crack.expiresBeat) crack.closing = true;
+    }
     if (phase2Attacks.length || beat < nextPhase2AttackBeat) return;
     if (spawnPhaseTwoShadowClaw(canvas && canvas.getBoundingClientRect())) {
       phase2DebugClawQueued = false;
@@ -3561,7 +3573,6 @@
     if (phase === PHASE.ACTIVE) {
       for (const a of attacks) renderAttack(a);
     } else if (phase === PHASE.SECOND) {
-      for (const crack of phase2Cracks) renderPhaseTwoCrack(crack);
       for (const a of phase2Attacks) renderAttack(a, 'behind');
       renderSecondPhaseRitual();
       for (const a of phase2Attacks) {
@@ -3730,6 +3741,128 @@
       for (let i = 0; i < 5; i++) strokeClawTexture(a, i, (0.045 + snap * 0.025) * life, endAt, startAt);
     }
     actx.restore();
+  }
+
+  function phaseTwoCrackOpenScale(crack) {
+    return crack.closing ? 1 - smoothstep(crack.closeTime / PHASE2_CRACK_CLOSE_MS) : 1;
+  }
+
+  function phaseTwoCrackPolygon(crack, visual) {
+    const steps = visual ? (crack.pathSteps || 56) * 2 : (crack.pathSteps || 56);
+    const open = phaseTwoCrackOpenScale(crack);
+    const left = [];
+    const right = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const point = phaseTwoClawPoint(crack, t);
+      const before = phaseTwoClawPoint(crack, Math.max(0, t - 0.012));
+      const after = phaseTwoClawPoint(crack, Math.min(1, t + 0.012));
+      const dx = after.x - before.x;
+      const dy = after.y - before.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const nx = -dy / length;
+      const ny = dx / length;
+      const frontTaper = smoothstep((1 - t) / 0.11);
+      const halfWidth = phaseTwoClawWidthAt(crack, t) * 0.5 * frontTaper * open;
+      const leftJag = visual
+        ? 0.84 + Math.sin(t * 53 + crack.seed * 0.031) * 0.16
+          + Math.sin(t * 149 - crack.seed * 0.017) * 0.09
+          + Math.pow(Math.max(0, Math.sin(t * 101 + crack.seed)), 9) * 0.28
+        : 1;
+      const rightJag = visual
+        ? 0.83 + Math.sin(t * 47 - crack.seed * 0.027) * 0.17
+          + Math.sin(t * 143 + crack.seed * 0.021) * 0.09
+          + Math.pow(Math.max(0, Math.sin(t * 97 - crack.seed * 1.3)), 9) * 0.30
+        : 1;
+      left.push({ x: point.x + nx * halfWidth * leftJag, y: point.y + ny * halfWidth * leftJag });
+      right.push({ x: point.x - nx * halfWidth * rightJag, y: point.y - ny * halfWidth * rightJag });
+    }
+    return left.concat(right.reverse());
+  }
+
+  function renderPhaseTwoGroundCracks() {
+    const board = canvas && canvas.getBoundingClientRect();
+    if (!board || !board.width) return;
+    const sx = canvas.width / board.width;
+    const sy = canvas.height / board.height;
+    const toCanvas = (point) => ({ x: (point.x - board.left) * sx, y: (point.y - board.top) * sy });
+    if (!phase2CrackMaskCanvas) phase2CrackMaskCanvas = document.createElement('canvas');
+    if (!phase2CrackEdgeCanvas) phase2CrackEdgeCanvas = document.createElement('canvas');
+    for (const buffer of [phase2CrackMaskCanvas, phase2CrackEdgeCanvas]) {
+      if (buffer.width !== canvas.width || buffer.height !== canvas.height) {
+        buffer.width = canvas.width;
+        buffer.height = canvas.height;
+      }
+    }
+    const maskCtx = phase2CrackMaskCanvas.getContext('2d');
+    const edgeCtx = phase2CrackEdgeCanvas.getContext('2d');
+    maskCtx.clearRect(0, 0, canvas.width, canvas.height);
+    maskCtx.fillStyle = '#fff';
+
+    // Fill every rupture into one mask first. Canvas unioning removes internal
+    // borders automatically where two attack corridors intersect.
+    for (const crack of phase2Cracks) {
+      const polygon = phaseTwoCrackPolygon(crack, true).map(toCanvas);
+      if (polygon.length < 3) continue;
+      maskCtx.beginPath();
+      maskCtx.moveTo(polygon[0].x, polygon[0].y);
+      for (let i = 1; i < polygon.length; i++) maskCtx.lineTo(polygon[i].x, polygon[i].y);
+      maskCtx.closePath();
+      maskCtx.fill();
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(BORDER, BORDER, Math.max(1, canvas.width - BORDER * 2), Math.max(1, canvas.height - BORDER * 2));
+    ctx.clip();
+
+    // Secondary splits live only on intact floor; the union cutout below erases
+    // any part of them that would otherwise cross an open intersection.
+    for (const crack of phase2Cracks) {
+      const open = phaseTwoCrackOpenScale(crack);
+      ctx.strokeStyle = 'rgba(22, 22, 21, ' + (0.82 * open).toFixed(3) + ')';
+      ctx.lineWidth = 2;
+      for (let i = 2; i < 13; i++) {
+        const t = i / 14;
+        const point = toCanvas(phaseTwoClawPoint(crack, t));
+        const before = toCanvas(phaseTwoClawPoint(crack, Math.max(0, t - 0.014)));
+        const after = toCanvas(phaseTwoClawPoint(crack, Math.min(1, t + 0.014)));
+        const dx = after.x - before.x;
+        const dy = after.y - before.y;
+        const length = Math.hypot(dx, dy) || 1;
+        const side = i % 2 ? 1 : -1;
+        const branch = phaseTwoClawWidthAt(crack, t) * sx * (0.18 + (i % 3) * 0.055) * open;
+        ctx.beginPath();
+        ctx.moveTo(point.x, point.y);
+        ctx.lineTo(
+          point.x - dy / length * branch * side + dx / length * 5,
+          point.y + dx / length * branch * side + dy / length * 5
+        );
+        ctx.stroke();
+      }
+    }
+
+    // Remove the complete union from the floor so the animated background is
+    // genuinely visible through every opening and intersection.
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.drawImage(phase2CrackMaskCanvas, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Build a pale outer edge from the union mask itself. Internal overlap
+    // contours cannot survive this dilation-minus-mask operation.
+    edgeCtx.clearRect(0, 0, canvas.width, canvas.height);
+    edgeCtx.globalCompositeOperation = 'source-over';
+    for (const offset of [[-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      edgeCtx.drawImage(phase2CrackMaskCanvas, offset[0], offset[1]);
+    }
+    edgeCtx.globalCompositeOperation = 'destination-out';
+    edgeCtx.drawImage(phase2CrackMaskCanvas, 0, 0);
+    edgeCtx.globalCompositeOperation = 'source-in';
+    edgeCtx.fillStyle = 'rgba(190, 190, 180, 0.72)';
+    edgeCtx.fillRect(0, 0, canvas.width, canvas.height);
+    edgeCtx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(phase2CrackEdgeCanvas, 0, 0);
+    ctx.restore();
   }
 
   function renderPhaseTwoCrack(crack) {
