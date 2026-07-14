@@ -15,6 +15,9 @@
   const SETTLE_MS = 520;
   const ECHO_INTERVAL = 200;
   const ECHO_LIFE = 720;
+  const DASH_ECHO_INTERVAL = 24;
+  const DASH_ECHO_LIFE = 430;
+  const MAX_ECHOES = 24;
   const AVATAR_CONTACT_Y = 0.33;
   const AVATAR_FLOAT_IN_MS = 2600;
   const IMPACT_FLASH_MS = 150;
@@ -45,6 +48,8 @@
       slamY: null,
       echoes: [],
       echoClock: 0,
+      combatAnchor: null,
+      dash: null,
       avatar: {
         x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0,
         size: 250, baseSize: 250, alpha: 0, squash: 0, visible: false,
@@ -62,6 +67,8 @@
       state.slamY = null;
       state.echoes = [];
       state.echoClock = 0;
+      state.combatAnchor = null;
+      state.dash = null;
       state.layoutProgress = 0;
       state.impact = 0;
       state.impactAge = Infinity;
@@ -111,15 +118,35 @@
       return Math.max(28, size * 0.22);
     }
 
-    function spawnEcho() {
+    function spawnEcho(dashing, backtrack) {
       const a = state.avatar;
       if (!a.visible || a.alpha < 0.65) return;
       const mag = Math.max(1, Math.hypot(a.vx, a.vy));
+      const sampleX = a.x - a.vx * (backtrack || 0);
+      const sampleY = a.y - a.vy * (backtrack || 0);
       state.echoes.push({
-        x: a.x, y: a.y, size: a.size,
+        x: sampleX, y: sampleY, size: a.size,
         nx: a.vx / mag, ny: a.vy / mag,
         age: 0,
+        life: dashing ? DASH_ECHO_LIFE : ECHO_LIFE,
+        dash: dashing,
       });
+      if (state.echoes.length > MAX_ECHOES) state.echoes.splice(0, state.echoes.length - MAX_ECHOES);
+    }
+
+    function dashTo(x, y, duration) {
+      if (!state.active || !state.avatar.visible) return false;
+      const anchor = state.combatAnchor || { x: state.avatar.x, y: state.avatar.y };
+      state.dash = {
+        fromX: anchor.x,
+        fromY: anchor.y,
+        toX: x,
+        toY: y,
+        elapsed: 0,
+        duration: Math.max(180, duration || 330),
+      };
+      state.echoClock = DASH_ECHO_INTERVAL;
+      return true;
     }
 
     function update(dt, boardRect, callbacks) {
@@ -193,9 +220,25 @@
         const impactY = Number.isFinite(state.slamY) ? state.slamY : targetImpactY(boardRect);
         const perchY = targetInsideTopY(boardRect);
         const minY = viewportSafeY(a.size);
-        a.x = boardRect.left + boardRect.width / 2 + Math.sin(t * 1.65) * 18 + Math.sin(t * 0.61) * 9;
-        a.y = impactY + (perchY - impactY) * floatP
-          + (Math.sin(t * 2.1) * 12 + Math.cos(t * 0.72) * 7) * floatP;
+        if (!state.combatAnchor) {
+          state.combatAnchor = { x: boardRect.left + boardRect.width / 2, y: perchY };
+        }
+        if (state.dash) {
+          state.dash.elapsed += dt;
+          const p = clamp01(state.dash.elapsed / state.dash.duration);
+          const eased = p < 0.38
+            ? easeInQuad(p / 0.38) * 0.46
+            : 0.46 + easeOutCubic((p - 0.38) / 0.62) * 0.54;
+          state.combatAnchor.x = state.dash.fromX + (state.dash.toX - state.dash.fromX) * eased;
+          state.combatAnchor.y = state.dash.fromY + (state.dash.toY - state.dash.fromY) * eased;
+          if (p >= 1) state.dash = null;
+        }
+        const dashWeight = state.dash ? 0.18 : 1;
+        a.x = state.combatAnchor.x
+          + (Math.sin(t * 1.65) * 18 + Math.sin(t * 0.61) * 9) * dashWeight;
+        const baseY = impactY + (state.combatAnchor.y - impactY) * floatP;
+        a.y = baseY
+          + (Math.sin(t * 2.1) * 12 + Math.cos(t * 0.72) * 7) * floatP * dashWeight;
         a.y = Math.max(minY, a.y);
         a.squash = Math.max(0, Math.sin(Math.min(1, (state.elapsed - slamEnd) / SETTLE_MS) * Math.PI) * 0.08);
         a.alpha = 1;
@@ -204,15 +247,16 @@
 
       a.vx = a.x - a.prevX;
       a.vy = a.y - a.prevY;
+      const echoInterval = state.dash ? DASH_ECHO_INTERVAL : ECHO_INTERVAL;
       state.echoClock += dt;
       let spawned = 0;
-      while (state.echoClock >= ECHO_INTERVAL && spawned < 4) {
-        state.echoClock -= ECHO_INTERVAL;
-        spawnEcho();
+      while (state.echoClock >= echoInterval && spawned < 4) {
+        state.echoClock -= echoInterval;
+        spawnEcho(!!state.dash, dt > 0 ? clamp01(state.echoClock / dt) : 0);
         spawned++;
       }
       for (const e of state.echoes) e.age += dt;
-      state.echoes = state.echoes.filter((e) => e.age < ECHO_LIFE);
+      state.echoes = state.echoes.filter((e) => e.age < e.life);
       return state;
     }
 
@@ -255,14 +299,14 @@
       ctx.save();
       ctx.imageSmoothingEnabled = false;
       for (const e of state.echoes) {
-        const p = e.age / ECHO_LIFE;
-        const alpha = (1 - p) * 0.26;
-        const drift = 18 + p * 44;
+        const p = e.age / e.life;
+        const alpha = (1 - p) * (e.dash ? 0.20 : 0.26);
+        const drift = e.dash ? p * 12 : 18 + p * 44;
         const size = e.size * (1 + p * 0.035);
         ctx.globalAlpha = alpha;
         ctx.globalCompositeOperation = 'lighter';
         ctx.shadowColor = 'rgba(220, 220, 230, 0.45)';
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = e.dash ? 2 : 6;
         ctx.drawImage(img, e.x - size / 2 - e.nx * drift, e.y - size / 2 - e.ny * drift, size, size);
         ctx.globalCompositeOperation = 'source-over';
         ctx.shadowBlur = 0;
@@ -339,10 +383,12 @@
     return {
       reset,
       start,
+      dashTo,
       update,
       render,
       get active() { return state.active; },
       get layoutProgress() { return state.layoutProgress; },
+      get dashing() { return !!state.dash; },
       get state() { return state; },
     };
   }

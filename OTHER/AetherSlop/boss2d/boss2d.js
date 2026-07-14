@@ -71,6 +71,7 @@
   let cobbledFloorPattern = null;
   let phase2CrackMaskCanvas = null;
   let phase2CrackEdgeCanvas = null;
+  let phase2CrackCacheDirty = true;
   let cultistElement = null;   // the boss container (kneel + stand layers)
   let cultistStandWrap = null; // standing layer wrapper (carries the float loop)
   let cultistStandImg = null;  // standing sprite img (carries the pixel jitter)
@@ -370,6 +371,8 @@
   let phase2LayoutAnchor = null;
   let phase2CombatStarted = false;
   let phase2Attacks = [];
+  let phase2BurstActive = false;
+  let phase2DashZone = 'top';
   let phase2Cracks = [];
   let phase2DebugClawQueued = false;
   let nextPhase2AttackBeat = Infinity;
@@ -1848,7 +1851,12 @@
     const point = worldPointToViewport(worldX, worldY, board);
     const vx = point.x;
     const vy = point.y;
-    return phase2Cracks.some((crack) => pointInPoly(vx, vy, phaseTwoCrackPolygon(crack)));
+    return phase2Cracks.some((crack) => {
+      const polygon = crack.closing
+        ? phaseTwoCrackPolygon(crack)
+        : crack.hitPolygon || (crack.hitPolygon = phaseTwoCrackPolygon(crack));
+      return pointInPoly(vx, vy, polygon);
+    });
   }
 
   function worldPointToViewport(worldX, worldY, board) {
@@ -2026,7 +2034,28 @@
       if (zone === 'live') live++;
       else if (zone === 'shadow') shadow++;
     }
+    if (phase === PHASE.SECOND && phaseTwoBossContains(vx, vy)) live++;
     return { live, shadow };
+  }
+
+  function phaseTwoBossContains(vx, vy) {
+    if (!phase2CombatStarted || !phase2Avatar || !phase2Avatar.state) return false;
+    const a = phase2Avatar.state.avatar;
+    if (!a || !a.visible || a.alpha < 0.5) return false;
+    const radius = a.size * 0.24;
+    const dx = vx - a.x;
+    const dy = (vy - a.y) * 0.88;
+    if (dx * dx + dy * dy <= radius * radius) return true;
+    if (!phase2Avatar.dashing) return false;
+    const sx = a.x - a.prevX;
+    const sy = a.y - a.prevY;
+    const lengthSq = sx * sx + sy * sy;
+    const t = lengthSq > 0
+      ? Math.max(0, Math.min(1, ((vx - a.prevX) * sx + (vy - a.prevY) * sy) / lengthSq))
+      : 0;
+    const nearestX = a.prevX + sx * t;
+    const nearestY = a.prevY + sy * t;
+    return Math.hypot(vx - nearestX, (vy - nearestY) * 0.88) <= radius;
   }
 
   function updateCombat(dt) {
@@ -2339,6 +2368,8 @@
     fadingAttacks = attacks.map((a) => ({ ...a, fadeTime: 0, fadeDuration: PHASE2_ATTACK_FADE }));
     attacks = [];
     phase2Attacks = [];
+    phase2BurstActive = false;
+    phase2DashZone = 'top';
     phase2Cracks = [];
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
@@ -2501,6 +2532,8 @@
     phase2AvatarStarted = false;
     phase2CombatStarted = false;
     phase2Attacks = [];
+    phase2BurstActive = false;
+    phase2DashZone = 'top';
     phase2Cracks = [];
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -2613,6 +2646,8 @@
     beatPhase = 0;
     beatIndex = 0;
     phase2Attacks = [];
+    phase2BurstActive = false;
+    phase2DashZone = 'top';
     phase2Cracks = [];
     nextPhase2AttackBeat = phase2DebugClawQueued ? 0 : 2;
     if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
@@ -2765,7 +2800,37 @@
     const right = makeClaw(1, 0.42);
     if (!retargetPhaseTwoShadowClaw(left, board)) return false;
     phase2Attacks.push(left, right);
+    phase2BurstActive = true;
     return true;
+  }
+
+  function triggerPhaseTwoDash() {
+    if (!canvas || !phase2Avatar || typeof phase2Avatar.dashTo !== 'function') return;
+    const board = canvas.getBoundingClientRect();
+    const avatar = phase2Avatar.state && phase2Avatar.state.avatar;
+    if (!board.width || !board.height || !avatar) return;
+    const insetX = Math.min(board.width * 0.14, avatar.size * 0.24);
+    const insetY = Math.min(board.height * 0.14, avatar.size * 0.24);
+    const x0 = board.left + insetX;
+    const x1 = board.right - insetX;
+    const y0 = board.top + insetY;
+    const y1 = board.bottom - insetY;
+    const random = (lo, hi) => lo + Math.random() * Math.max(0, hi - lo);
+    const thirdY = board.height / 3;
+    const zones = [
+      { id: 'bottom-left', x: () => random(x0, board.left + board.width * 0.31), y: () => y1 },
+      { id: 'middle-left', x: () => x0, y: () => random(board.top + thirdY * 1.12, board.top + thirdY * 1.88) },
+      { id: 'top-left', x: () => x0, y: () => random(y0, board.top + thirdY * 0.78) },
+      { id: 'top', x: () => random(board.left + board.width * 0.34, board.left + board.width * 0.66), y: () => y0 },
+      { id: 'top-right', x: () => x1, y: () => random(y0, board.top + thirdY * 0.78) },
+      { id: 'middle-right', x: () => x1, y: () => random(board.top + thirdY * 1.12, board.top + thirdY * 1.88) },
+      { id: 'bottom-right', x: () => random(board.left + board.width * 0.69, x1), y: () => y1 },
+    ];
+    const choices = zones.filter((zone) => zone.id !== phase2DashZone);
+    const zone = choices[Math.floor(Math.random() * choices.length)];
+    const target = { x: zone.x(), y: zone.y() };
+    phase2DashZone = zone.id;
+    phase2Avatar.dashTo(target.x, target.y, 330);
   }
 
   function leavePhaseTwoCrack(a) {
@@ -2786,6 +2851,9 @@
       closeTime: 0,
       board: a.board,
     });
+    const crack = phase2Cracks[phase2Cracks.length - 1];
+    crack.hitPolygon = phaseTwoCrackPolygon(crack);
+    phase2CrackCacheDirty = true;
   }
 
   function updatePhaseTwoAttacks(dt) {
@@ -2823,17 +2891,29 @@
       }
     }
     phase2Attacks = phase2Attacks.filter((a) => a.state !== 'done');
-    for (const crack of phase2Cracks) {
-      if (crack.closing) crack.closeTime += dt;
+    if (phase2BurstActive && phase2Attacks.length === 0) {
+      phase2BurstActive = false;
+      triggerPhaseTwoDash();
     }
+    for (const crack of phase2Cracks) {
+      if (crack.closing) {
+        crack.closeTime += dt;
+        phase2CrackCacheDirty = true;
+      }
+    }
+    const crackCount = phase2Cracks.length;
     phase2Cracks = phase2Cracks.filter((crack) => crack.closeTime < PHASE2_CRACK_CLOSE_MS);
+    if (phase2Cracks.length !== crackCount) phase2CrackCacheDirty = true;
   }
 
   function onPhaseTwoBeat(beat) {
     for (const crack of phase2Cracks) {
-      if (beat >= crack.expiresBeat) crack.closing = true;
+      if (beat >= crack.expiresBeat && !crack.closing) {
+        crack.closing = true;
+        phase2CrackCacheDirty = true;
+      }
     }
-    if (phase2Attacks.length || beat < nextPhase2AttackBeat) return;
+    if (phase2Attacks.length || phase2Avatar && phase2Avatar.dashing || beat < nextPhase2AttackBeat) return;
     if (spawnPhaseTwoShadowClaw(canvas && canvas.getBoundingClientRect())) {
       phase2DebugClawQueued = false;
       nextPhase2AttackBeat = Infinity;
@@ -2872,6 +2952,7 @@
     phase2DebugClawQueued = true;
     if (phase2CombatStarted) {
       phase2Attacks = [];
+      phase2BurstActive = false;
       nextPhase2AttackBeat = beatIndex;
       onPhaseTwoBeat(beatIndex);
     }
@@ -3788,27 +3869,46 @@
     const toCanvas = (point) => ({ x: (point.x - board.left) * sx, y: (point.y - board.top) * sy });
     if (!phase2CrackMaskCanvas) phase2CrackMaskCanvas = document.createElement('canvas');
     if (!phase2CrackEdgeCanvas) phase2CrackEdgeCanvas = document.createElement('canvas');
+    let resized = false;
     for (const buffer of [phase2CrackMaskCanvas, phase2CrackEdgeCanvas]) {
       if (buffer.width !== canvas.width || buffer.height !== canvas.height) {
         buffer.width = canvas.width;
         buffer.height = canvas.height;
+        resized = true;
       }
     }
     const maskCtx = phase2CrackMaskCanvas.getContext('2d');
     const edgeCtx = phase2CrackEdgeCanvas.getContext('2d');
-    maskCtx.clearRect(0, 0, canvas.width, canvas.height);
-    maskCtx.fillStyle = '#fff';
+    if (phase2CrackCacheDirty || resized) {
+      maskCtx.clearRect(0, 0, canvas.width, canvas.height);
+      maskCtx.fillStyle = '#fff';
 
-    // Fill every rupture into one mask first. Canvas unioning removes internal
-    // borders automatically where two attack corridors intersect.
-    for (const crack of phase2Cracks) {
-      const polygon = phaseTwoCrackPolygon(crack, true).map(toCanvas);
-      if (polygon.length < 3) continue;
-      maskCtx.beginPath();
-      maskCtx.moveTo(polygon[0].x, polygon[0].y);
-      for (let i = 1; i < polygon.length; i++) maskCtx.lineTo(polygon[i].x, polygon[i].y);
-      maskCtx.closePath();
-      maskCtx.fill();
+      // Fill every rupture into one mask first. Canvas unioning removes internal
+      // borders automatically where two attack corridors intersect.
+      for (const crack of phase2Cracks) {
+        const polygon = phaseTwoCrackPolygon(crack, true).map(toCanvas);
+        if (polygon.length < 3) continue;
+        maskCtx.beginPath();
+        maskCtx.moveTo(polygon[0].x, polygon[0].y);
+        for (let i = 1; i < polygon.length; i++) maskCtx.lineTo(polygon[i].x, polygon[i].y);
+        maskCtx.closePath();
+        maskCtx.fill();
+      }
+
+      // Build a pale outer edge from the union mask itself. Internal overlap
+      // contours cannot survive this dilation-minus-mask operation.
+      edgeCtx.clearRect(0, 0, canvas.width, canvas.height);
+      edgeCtx.globalCompositeOperation = 'source-over';
+      for (const offset of [[-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        edgeCtx.drawImage(phase2CrackMaskCanvas, offset[0], offset[1]);
+      }
+      edgeCtx.globalCompositeOperation = 'destination-out';
+      edgeCtx.drawImage(phase2CrackMaskCanvas, 0, 0);
+      edgeCtx.globalCompositeOperation = 'source-in';
+      edgeCtx.fillStyle = 'rgba(190, 190, 180, 0.72)';
+      edgeCtx.fillRect(0, 0, canvas.width, canvas.height);
+      edgeCtx.globalCompositeOperation = 'source-over';
+      phase2CrackCacheDirty = false;
     }
 
     ctx.save();
@@ -3848,19 +3948,6 @@
     ctx.drawImage(phase2CrackMaskCanvas, 0, 0);
     ctx.globalCompositeOperation = 'source-over';
 
-    // Build a pale outer edge from the union mask itself. Internal overlap
-    // contours cannot survive this dilation-minus-mask operation.
-    edgeCtx.clearRect(0, 0, canvas.width, canvas.height);
-    edgeCtx.globalCompositeOperation = 'source-over';
-    for (const offset of [[-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-      edgeCtx.drawImage(phase2CrackMaskCanvas, offset[0], offset[1]);
-    }
-    edgeCtx.globalCompositeOperation = 'destination-out';
-    edgeCtx.drawImage(phase2CrackMaskCanvas, 0, 0);
-    edgeCtx.globalCompositeOperation = 'source-in';
-    edgeCtx.fillStyle = 'rgba(190, 190, 180, 0.72)';
-    edgeCtx.fillRect(0, 0, canvas.width, canvas.height);
-    edgeCtx.globalCompositeOperation = 'source-over';
     ctx.drawImage(phase2CrackEdgeCanvas, 0, 0);
     ctx.restore();
   }
@@ -5633,6 +5720,8 @@
     lastAnimBpm = -1;
     attacks = [];
     phase2Attacks = [];
+    phase2BurstActive = false;
+    phase2DashZone = 'top';
     phase2Cracks = [];
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
