@@ -372,6 +372,8 @@
   let phase2CombatStarted = false;
   let phase2Attacks = [];
   let phase2BurstActive = false;
+  let phase2BurstSize = 1;
+  let phase2BurstsAtSize = 0;
   let phase2DashZone = 'top';
   let phase2Cracks = [];
   let phase2DebugClawQueued = false;
@@ -1040,6 +1042,21 @@
       shadowClawBtn.blur();
     });
     debugPanel.appendChild(shadowClawBtn);
+
+    const tempoControls = document.createElement('div');
+    tempoControls.className = 'aether-boss2d-debug-tempo';
+    for (const delta of [-10, 10]) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'aether-boss2d-debug-btn';
+      btn.textContent = (delta > 0 ? '+' : '') + delta + ' BPM';
+      btn.addEventListener('click', () => {
+        debugAdjustBpm(delta);
+        btn.blur();
+      });
+      tempoControls.appendChild(btn);
+    }
+    debugPanel.appendChild(tempoControls);
 
     const primePhaseTwoBtn = document.createElement('button');
     primePhaseTwoBtn.type = 'button';
@@ -1849,8 +1866,11 @@
     if (phase !== PHASE.SECOND || !canvas || phase2Cracks.length === 0) return false;
     const board = canvas.getBoundingClientRect();
     const point = worldPointToViewport(worldX, worldY, board);
-    const vx = point.x;
-    const vy = point.y;
+    return viewportTouchesPhaseTwoCrack(point.x, point.y);
+  }
+
+  function viewportTouchesPhaseTwoCrack(vx, vy) {
+    if (phase !== PHASE.SECOND || phase2Cracks.length === 0) return false;
     return phase2Cracks.some((crack) => {
       const polygon = crack.closing
         ? phaseTwoCrackPolygon(crack)
@@ -2035,6 +2055,9 @@
       else if (zone === 'shadow') shadow++;
     }
     if (phase === PHASE.SECOND && phaseTwoBossContains(vx, vy)) live++;
+    // Overlapping cracks are rendered as one connected hole and count as one
+    // terrain hazard, rather than multiplying damage at their intersections.
+    if (phase === PHASE.SECOND && viewportTouchesPhaseTwoCrack(vx, vy)) live++;
     return { live, shadow };
   }
 
@@ -2369,6 +2392,8 @@
     attacks = [];
     phase2Attacks = [];
     phase2BurstActive = false;
+    phase2BurstSize = 1;
+    phase2BurstsAtSize = 0;
     phase2DashZone = 'top';
     phase2Cracks = [];
     phase2CombatStarted = false;
@@ -2533,6 +2558,8 @@
     phase2CombatStarted = false;
     phase2Attacks = [];
     phase2BurstActive = false;
+    phase2BurstSize = 1;
+    phase2BurstsAtSize = 0;
     phase2DashZone = 'top';
     phase2Cracks = [];
     phase2DebugClawQueued = false;
@@ -2637,6 +2664,25 @@
     return PHASE2_BPM_MIN + (PHASE2_BPM_MAX - PHASE2_BPM_MIN) * (entropy / ENTROPY_MAX);
   }
 
+  function debugAdjustBpm(delta) {
+    if (!active) return;
+    if (phase === PHASE.SECOND && phase2CombatStarted) {
+      const target = Math.max(PHASE2_BPM_MIN, Math.min(PHASE2_BPM_MAX, phaseTwoBpm() + delta));
+      entropy = (target - PHASE2_BPM_MIN) / (PHASE2_BPM_MAX - PHASE2_BPM_MIN) * ENTROPY_MAX;
+      bpm = phaseTwoBpm();
+    } else {
+      const naturalBpm = BASE_BPM + Math.floor(fightClock / BPM_RAMP_MS);
+      const target = Math.max(BASE_BPM, Math.min(WRATH_MAX, bpm + delta));
+      bpmBonus = Math.max(0, target - naturalBpm);
+      bpm = Math.min(WRATH_MAX, naturalBpm + bpmBonus);
+    }
+    beatMs = 60000 / bpm;
+    lastAnimBpm = -1;
+    applyTempoToAnimations();
+    updateBars();
+    if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
+  }
+
   function beginPhaseTwoCombat() {
     if (phase2CombatStarted) return;
     phase2CombatStarted = true;
@@ -2647,6 +2693,8 @@
     beatIndex = 0;
     phase2Attacks = [];
     phase2BurstActive = false;
+    phase2BurstSize = 1;
+    phase2BurstsAtSize = 0;
     phase2DashZone = 'top';
     phase2Cracks = [];
     nextPhase2AttackBeat = phase2DebugClawQueued ? 0 : 2;
@@ -2796,10 +2844,13 @@
       seed: Math.random() * 1000,
       board: null,
     });
-    const left = makeClaw(-1, 0);
-    const right = makeClaw(1, 0.42);
-    if (!retargetPhaseTwoShadowClaw(left, board)) return false;
-    phase2Attacks.push(left, right);
+    const claws = [];
+    for (let i = 0; i < phase2BurstSize; i++) {
+      const turnSign = (i + phase2BurstsAtSize) % 2 === 0 ? -1 : 1;
+      claws.push(makeClaw(turnSign, i * 0.42));
+    }
+    if (!retargetPhaseTwoShadowClaw(claws[0], board)) return false;
+    phase2Attacks.push(...claws);
     phase2BurstActive = true;
     return true;
   }
@@ -2893,6 +2944,11 @@
     phase2Attacks = phase2Attacks.filter((a) => a.state !== 'done');
     if (phase2BurstActive && phase2Attacks.length === 0) {
       phase2BurstActive = false;
+      phase2BurstsAtSize++;
+      if (phase2BurstsAtSize >= 2) {
+        phase2BurstsAtSize = 0;
+        phase2BurstSize++;
+      }
       triggerPhaseTwoDash();
     }
     for (const crack of phase2Cracks) {
@@ -5721,6 +5777,8 @@
     attacks = [];
     phase2Attacks = [];
     phase2BurstActive = false;
+    phase2BurstSize = 1;
+    phase2BurstsAtSize = 0;
     phase2DashZone = 'top';
     phase2Cracks = [];
     phase2CombatStarted = false;

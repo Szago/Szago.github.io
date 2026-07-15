@@ -111,6 +111,11 @@
   color: #f0d6ff;
 }
 
+.aether-boss2d-debug-tempo {
+  display: flex;
+  gap: 5px;
+}
+
 .aether-boss2d-debug-btn-danger {
   color: #ffd3cc;
   background: rgba(54, 0, 4, 0.9);
