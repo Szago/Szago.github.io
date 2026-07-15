@@ -2945,7 +2945,7 @@
     if (phase2BurstActive && phase2Attacks.length === 0) {
       phase2BurstActive = false;
       phase2BurstsAtSize++;
-      if (phase2BurstsAtSize >= 2) {
+      if (phase2BurstsAtSize >= phase2BurstSize) {
         phase2BurstsAtSize = 0;
         phase2BurstSize++;
       }
