@@ -376,6 +376,8 @@
   let phase2BurstsAtSize = 0;
   let phase2DashZone = 'top';
   let phase2Cracks = [];
+  let phase2GridSpecial = null;
+  let phase2GridDebugQueued = false;
   let phase2DebugClawQueued = false;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
@@ -402,6 +404,10 @@
   const PHASE2_CLAW_HOLD_BEATS = 0.58;
   const PHASE2_CLAW_FIRE_BEATS = 0.42;
   const PHASE2_CLAW_REST_BEATS = 1;
+  const PHASE2_GRID_CHANNEL_BEATS = 3;
+  const PHASE2_GRID_RECALL_MS = 460;
+  const PHASE2_GRID_IMPACT_MS = 220;
+  const PHASE2_GRID_HOP_MS = 115;
   // The strike flourish: time crawls while an angelic sword is cast at the boss.
   const STRIKE_DURATION = 1150;      // ms (real time) of the whole sequence
   const STRIKE_IMPACT_AT = STRIKE_DURATION * 0.82;
@@ -1042,6 +1048,16 @@
       shadowClawBtn.blur();
     });
     debugPanel.appendChild(shadowClawBtn);
+
+    const gridSpecialBtn = document.createElement('button');
+    gridSpecialBtn.type = 'button';
+    gridSpecialBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    gridSpecialBtn.textContent = 'GRID CUT';
+    gridSpecialBtn.addEventListener('click', () => {
+      debugPhaseTwoGridSpecial();
+      gridSpecialBtn.blur();
+    });
+    debugPanel.appendChild(gridSpecialBtn);
 
     const tempoControls = document.createElement('div');
     tempoControls.className = 'aether-boss2d-debug-tempo';
@@ -1756,6 +1772,91 @@
     ctx.restore();
   }
 
+  function phaseTwoGridTimeline(special) {
+    const impactAt = PHASE2_GRID_RECALL_MS + special.channelMs;
+    const activeAt = impactAt + PHASE2_GRID_IMPACT_MS;
+    return { impactAt, activeAt };
+  }
+
+  function buildPhaseTwoGridCutBuffers(special) {
+    const layout = special.layout;
+    const mask = document.createElement('canvas');
+    const edge = document.createElement('canvas');
+    mask.width = edge.width = canvas.width;
+    mask.height = edge.height = canvas.height;
+    const maskCtx = mask.getContext('2d');
+    const edgeCtx = edge.getContext('2d');
+    const gap = Math.min(48, Math.max(30, Math.min(layout.cellW, layout.cellH) * 0.34));
+    const fillCorridor = (vertical, index, center) => {
+      const steps = vertical ? Math.max(16, Math.round(layout.height / 28)) : Math.max(16, Math.round(layout.width / 28));
+      const left = [];
+      const right = [];
+      for (let i = 0; i <= steps; i++) {
+        const p = i / steps;
+        const along = vertical
+          ? layout.top + layout.height * p
+          : layout.left + layout.width * p;
+        const wave = Math.sin(p * 31 + special.seed + index * 4.7) * gap * 0.10
+          + Math.sin(p * 83 - special.seed * 0.4 + index) * gap * 0.055;
+        const leftWidth = gap * (0.48 + Math.sin(p * 57 + index * 2.3) * 0.09);
+        const rightWidth = gap * (0.49 + Math.sin(p * 49 - index * 3.1) * 0.10);
+        if (vertical) {
+          left.push({ x: center + wave - leftWidth, y: along });
+          right.push({ x: center + wave + rightWidth, y: along });
+        } else {
+          left.push({ x: along, y: center + wave - leftWidth });
+          right.push({ x: along, y: center + wave + rightWidth });
+        }
+      }
+      const polygon = left.concat(right.reverse());
+      maskCtx.beginPath();
+      maskCtx.moveTo(polygon[0].x, polygon[0].y);
+      for (let i = 1; i < polygon.length; i++) maskCtx.lineTo(polygon[i].x, polygon[i].y);
+      maskCtx.closePath();
+      maskCtx.fill();
+    };
+    maskCtx.fillStyle = '#fff';
+    for (let col = 1; col < layout.cols; col++) {
+      fillCorridor(true, col, layout.left + col * layout.cellW);
+    }
+    for (let row = 1; row < layout.rows; row++) {
+      fillCorridor(false, row + layout.cols, layout.top + row * layout.cellH);
+    }
+    edgeCtx.globalCompositeOperation = 'source-over';
+    for (const offset of [[-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      edgeCtx.drawImage(mask, offset[0], offset[1]);
+    }
+    edgeCtx.globalCompositeOperation = 'destination-out';
+    edgeCtx.drawImage(mask, 0, 0);
+    edgeCtx.globalCompositeOperation = 'source-in';
+    edgeCtx.fillStyle = 'rgba(188, 188, 178, 0.78)';
+    edgeCtx.fillRect(0, 0, edge.width, edge.height);
+    edgeCtx.globalCompositeOperation = 'source-over';
+    special.cutMask = mask;
+    special.cutEdge = edge;
+    special.cutGap = gap;
+  }
+
+  function renderPhaseTwoGridFloor() {
+    const special = phase2GridSpecial;
+    if (!special || !special.struck) return;
+    const timeline = phaseTwoGridTimeline(special);
+    const opening = smoothstep((special.elapsed - timeline.impactAt) / 130);
+    const cut = opening;
+    if (cut <= 0.001) return;
+    if (!special.cutMask || special.cutMask.width !== canvas.width || special.cutMask.height !== canvas.height) {
+      buildPhaseTwoGridCutBuffers(special);
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.globalAlpha = cut;
+    ctx.drawImage(special.cutMask, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = cut;
+    ctx.drawImage(special.cutEdge, 0, 0);
+    ctx.restore();
+  }
+
   function renderScene() {
     const sceneW = canvas ? canvas.width : BOARD;
     const sceneH = canvas ? canvas.height : BOARD;
@@ -1823,6 +1924,7 @@
     renderShockwave();
     ctx.restore();
 
+    if (phase === PHASE.SECOND && phase2GridSpecial) renderPhaseTwoGridFloor();
     if (phase === PHASE.SECOND && phase2Cracks.length) renderPhaseTwoGroundCracks();
     drawHero();
     ctx.restore();
@@ -2057,7 +2159,8 @@
     if (phase === PHASE.SECOND && phaseTwoBossContains(vx, vy)) live++;
     // Overlapping cracks are rendered as one connected hole and count as one
     // terrain hazard, rather than multiplying damage at their intersections.
-    if (phase === PHASE.SECOND && viewportTouchesPhaseTwoCrack(vx, vy)) live++;
+    const hoppingTiles = phase2GridSpecial && phase2GridSpecial.hop;
+    if (phase === PHASE.SECOND && !hoppingTiles && viewportTouchesPhaseTwoCrack(vx, vy)) live++;
     return { live, shadow };
   }
 
@@ -2396,6 +2499,8 @@
     phase2BurstsAtSize = 0;
     phase2DashZone = 'top';
     phase2Cracks = [];
+    phase2GridSpecial = null;
+    phase2GridDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -2562,6 +2667,8 @@
     phase2BurstsAtSize = 0;
     phase2DashZone = 'top';
     phase2Cracks = [];
+    phase2GridSpecial = null;
+    phase2GridDebugQueued = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
     entropy = 0;
@@ -2683,6 +2790,192 @@
     if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
   }
 
+  function makePhaseTwoGridLayout() {
+    const left = BORDER + PAD;
+    const top = BORDER + PAD;
+    const right = canvas.width - BORDER - PAD;
+    const bottom = canvas.height - BORDER - PAD;
+    const width = Math.max(1, right - left);
+    const height = Math.max(1, bottom - top);
+    const cols = Math.max(4, Math.round(width / 135));
+    const rows = Math.max(4, Math.round(height / 125));
+    const cellW = width / cols;
+    const cellH = height / rows;
+    const tiles = [];
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        tiles.push({
+          col,
+          row,
+          x: left + (col + 0.5) * cellW,
+          y: top + (row + 0.5) * cellH,
+        });
+      }
+    }
+    return { left, top, right, bottom, width, height, cols, rows, cellW, cellH, tiles };
+  }
+
+  function nearestPhaseTwoGridTile(layout, x, y) {
+    let nearest = layout.tiles[0];
+    let nearestDistance = Infinity;
+    for (const tile of layout.tiles) {
+      const distance = (tile.x - x) * (tile.x - x) + (tile.y - y) * (tile.y - y);
+      if (distance < nearestDistance) {
+        nearest = tile;
+        nearestDistance = distance;
+      }
+    }
+    return nearest;
+  }
+
+  function phaseTwoGridTileBroken(tile, layout) {
+    if (!canvas || phase2Cracks.length === 0) return false;
+    const board = canvas.getBoundingClientRect();
+    const gap = phase2GridSpecial && phase2GridSpecial.cutGap
+      ? phase2GridSpecial.cutGap
+      : Math.min(48, Math.max(30, Math.min(layout.cellW, layout.cellH) * 0.34));
+    const halfW = Math.max(4, (layout.cellW - gap) * 0.5);
+    const halfH = Math.max(4, (layout.cellH - gap) * 0.5);
+    const x0 = board.left + (tile.x - halfW) * board.width / canvas.width;
+    const x1 = board.left + (tile.x + halfW) * board.width / canvas.width;
+    const y0 = board.top + (tile.y - halfH) * board.height / canvas.height;
+    const y1 = board.top + (tile.y + halfH) * board.height / canvas.height;
+    const samples = [];
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        samples.push({ x: x0 + (x1 - x0) * col / 2, y: y0 + (y1 - y0) * row / 2 });
+      }
+    }
+    return phase2Cracks.some((crack) => {
+      const polygon = crack.closing
+        ? phaseTwoCrackPolygon(crack)
+        : crack.hitPolygon || (crack.hitPolygon = phaseTwoCrackPolygon(crack));
+      if (samples.some((sample) => pointInPoly(sample.x, sample.y, polygon))) return true;
+      return polygon.some((point) => point.x >= x0 && point.x <= x1 && point.y >= y0 && point.y <= y1);
+    });
+  }
+
+  function startPhaseTwoGridSpecial() {
+    if (!phase2CombatStarted || !canvas || !phase2Avatar || phase2GridSpecial) return false;
+    const board = canvas.getBoundingClientRect();
+    const avatar = phase2Avatar.state && phase2Avatar.state.avatar;
+    if (!board.width || !avatar) return false;
+    phase2Attacks = [];
+    phase2BurstActive = false;
+    nextPhase2AttackBeat = Infinity;
+    phase2Cracks = [];
+    phase2CrackCacheDirty = true;
+    phase2GridDebugQueued = false;
+    phase2DebugClawQueued = false;
+    keys.clear();
+    phase2DashZone = 'top';
+    phase2Avatar.dashTo(
+      board.left + board.width / 2,
+      board.top + avatar.size * 0.34,
+      PHASE2_GRID_RECALL_MS
+    );
+    phase2GridSpecial = {
+      elapsed: 0,
+      channelMs: beatMs * PHASE2_GRID_CHANNEL_BEATS,
+      layout: makePhaseTwoGridLayout(),
+      struck: false,
+      settled: false,
+      tileMode: false,
+      hop: null,
+      tileCol: 0,
+      tileRow: 0,
+      seed: Math.random() * 1000,
+    };
+    return true;
+  }
+
+  function beginPhaseTwoGridHop(tile, duration) {
+    if (!phase2GridSpecial) return;
+    phase2GridSpecial.hop = {
+      fromX: hero.x,
+      fromY: hero.y,
+      toX: tile.x,
+      toY: tile.y,
+      elapsed: 0,
+      duration,
+    };
+    phase2GridSpecial.tileCol = tile.col;
+    phase2GridSpecial.tileRow = tile.row;
+  }
+
+  function queuePhaseTwoGridHop(dx, dy) {
+    const special = phase2GridSpecial;
+    if (!special || !special.tileMode || special.hop) return false;
+    let col = special.tileCol + dx;
+    let row = special.tileRow + dy;
+    while (col >= 0 && col < special.layout.cols && row >= 0 && row < special.layout.rows) {
+      const tile = special.layout.tiles[row * special.layout.cols + col];
+      if (!phaseTwoGridTileBroken(tile, special.layout)) {
+        beginPhaseTwoGridHop(tile, PHASE2_GRID_HOP_MS);
+        return true;
+      }
+      col += dx;
+      row += dy;
+    }
+    return true;
+  }
+
+  function updatePhaseTwoGridHop(dt) {
+    const special = phase2GridSpecial;
+    if (!special || !special.hop) return;
+    const hop = special.hop;
+    hop.elapsed += dt;
+    const p = Math.max(0, Math.min(1, hop.elapsed / hop.duration));
+    const travel = smoothstep(p);
+    hero.x = hop.fromX + (hop.toX - hop.fromX) * travel;
+    hero.y = hop.fromY + (hop.toY - hop.fromY) * travel - Math.sin(p * Math.PI) * 10;
+    heroSquash = Math.sin(p * Math.PI) * 0.12;
+    if (p >= 1) {
+      hero.x = hop.toX;
+      hero.y = hop.toY;
+      heroSquash = 0;
+      special.hop = null;
+    }
+  }
+
+  function updatePhaseTwoGridSpecial(dt) {
+    const special = phase2GridSpecial;
+    if (!special) return;
+    special.elapsed += dt;
+    const impactAt = PHASE2_GRID_RECALL_MS + special.channelMs;
+    const activeAt = impactAt + PHASE2_GRID_IMPACT_MS;
+    if (!special.struck && special.elapsed >= impactAt) {
+      special.struck = true;
+      special.tileMode = true;
+      keys.clear();
+      const tile = nearestPhaseTwoGridTile(special.layout, hero.x, hero.y);
+      beginPhaseTwoGridHop(tile, PHASE2_GRID_IMPACT_MS);
+    }
+    if (!special.settled && special.elapsed >= activeAt) {
+      special.settled = true;
+      nextPhase2AttackBeat = beatIndex + 1;
+    }
+  }
+
+  function debugPhaseTwoGridSpecial() {
+    if (!active) return;
+    if (phase2GridSpecial) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    if (!phase2AvatarStarted && phase2Ritual) {
+      phase2Ritual.beams = [];
+      phase2Ritual.pentFade = 0;
+      phase2Ritual.cocoon.hits = P2_COCOON_HITS;
+      phase2Ritual.cocoon.p = 1;
+      phase2Ritual.cocoon.alpha = 1;
+      startAvatarPhaseTwo();
+    }
+    phase2GridDebugQueued = true;
+    if (phase2CombatStarted) startPhaseTwoGridSpecial();
+  }
+
   function beginPhaseTwoCombat() {
     if (phase2CombatStarted) return;
     phase2CombatStarted = true;
@@ -2697,8 +2990,10 @@
     phase2BurstsAtSize = 0;
     phase2DashZone = 'top';
     phase2Cracks = [];
+    phase2GridSpecial = null;
     nextPhase2AttackBeat = phase2DebugClawQueued ? 0 : 2;
     if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
+    if (phase2GridDebugQueued) startPhaseTwoGridSpecial();
   }
 
   function phaseTwoClawPoint(a, t) {
@@ -2969,7 +3264,8 @@
         phase2CrackCacheDirty = true;
       }
     }
-    if (phase2Attacks.length || phase2Avatar && phase2Avatar.dashing || beat < nextPhase2AttackBeat) return;
+    if ((phase2GridSpecial && !phase2GridSpecial.settled) || phase2Attacks.length ||
+        (phase2Avatar && phase2Avatar.dashing) || beat < nextPhase2AttackBeat) return;
     if (spawnPhaseTwoShadowClaw(canvas && canvas.getBoundingClientRect())) {
       phase2DebugClawQueued = false;
       nextPhase2AttackBeat = Infinity;
@@ -3007,6 +3303,7 @@
     }
     phase2DebugClawQueued = true;
     if (phase2CombatStarted) {
+      phase2GridDebugQueued = false;
       phase2Attacks = [];
       phase2BurstActive = false;
       nextPhase2AttackBeat = beatIndex;
@@ -3017,7 +3314,13 @@
   function updateSecondPhase(dt) {
     for (const a of fadingAttacks) a.fadeTime += dt;
     fadingAttacks = fadingAttacks.filter((a) => a.fadeTime < a.fadeDuration);
-    updateMovement(dt);
+    if (phase2GridSpecial && phase2GridSpecial.struck) {
+      heroMove.x = 0;
+      heroMove.y = 0;
+      updatePhaseTwoGridHop(dt);
+    } else {
+      updateMovement(dt);
+    }
     if (phase2AvatarStarted) {
       if (phase2Avatar) {
         phase2Avatar.update(dt, canvas.getBoundingClientRect(), {
@@ -3035,6 +3338,7 @@
         beginPhaseTwoCombat();
         if (phase2DebugClawQueued && phase2Attacks.length === 0) onPhaseTwoBeat(beatIndex);
         updatePhaseTwoTempo(dt);
+        updatePhaseTwoGridSpecial(dt);
         updatePhaseTwoAttacks(dt);
         updateCombat(dt);
       }
@@ -3696,6 +4000,103 @@
     }
   }
 
+  function renderPhaseTwoGridChannel() {
+    const special = phase2GridSpecial;
+    if (!special || special.settled || !canvas) return;
+    const board = canvas.getBoundingClientRect();
+    if (!board.width || !board.height) return;
+    const timeline = phaseTwoGridTimeline(special);
+    const channelP = smoothstep(
+      (special.elapsed - PHASE2_GRID_RECALL_MS) / Math.max(1, special.channelMs)
+    );
+    const impactAge = special.elapsed - timeline.impactAt;
+    if (channelP <= 0 && impactAge < 0) return;
+    const layout = special.layout;
+    const sx = board.width / canvas.width;
+    const sy = board.height / canvas.height;
+    const vx = (x) => board.left + x * sx;
+    const vy = (y) => board.top + y * sy;
+    const left = vx(layout.left);
+    const right = vx(layout.right);
+    const top = vy(layout.top);
+    const bottom = vy(layout.bottom);
+    const cx = (left + right) / 2;
+    const cy = (top + bottom) / 2;
+    actx.save();
+    actx.beginPath();
+    actx.rect(left, top, right - left, bottom - top);
+    actx.clip();
+
+    if (!special.struck) {
+      const points = 52;
+      actx.fillStyle = 'rgba(4, 5, 7, ' + (0.18 + channelP * 0.56).toFixed(3) + ')';
+      actx.beginPath();
+      for (let i = 0; i < points; i++) {
+        const angle = i / points * Math.PI * 2;
+        const dx = Math.cos(angle);
+        const dy = Math.sin(angle);
+        const tx = dx > 0 ? (right - cx) / dx : (left - cx) / dx;
+        const ty = dy > 0 ? (bottom - cy) / dy : (top - cy) / dy;
+        const edgeDistance = Math.min(Math.abs(tx), Math.abs(ty));
+        const ragged = 0.91 + Math.sin(i * 8.31 + special.seed) * 0.055
+          + Math.sin(i * 2.17 - special.seed * 0.7) * 0.035;
+        const edgeLock = smoothstep((channelP - 0.82) / 0.18);
+        const reach = edgeDistance * Math.min(1, channelP * 1.08) * (ragged + (1 - ragged) * edgeLock);
+        const x = cx + dx * reach;
+        const y = cy + dy * reach;
+        if (i === 0) actx.moveTo(x, y); else actx.lineTo(x, y);
+      }
+      actx.closePath();
+      actx.fill();
+    }
+
+    const guideAlpha = special.struck ? 0 : smoothstep((channelP - 0.32) / 0.68);
+    if (guideAlpha > 0) {
+      actx.globalAlpha = guideAlpha * (0.48 + Math.sin(clock * 0.025) * 0.12);
+      actx.strokeStyle = '#8f1618';
+      actx.lineWidth = 2 + channelP * 2;
+      actx.shadowColor = 'rgba(190, 16, 20, 0.8)';
+      actx.shadowBlur = 8;
+      for (let col = 1; col < layout.cols; col++) {
+        const x = vx(layout.left + col * layout.cellW);
+        actx.beginPath();
+        actx.moveTo(x, cy - (cy - top) * channelP);
+        actx.lineTo(x, cy + (bottom - cy) * channelP);
+        actx.stroke();
+      }
+      for (let row = 1; row < layout.rows; row++) {
+        const y = vy(layout.top + row * layout.cellH);
+        actx.beginPath();
+        actx.moveTo(cx - (cx - left) * channelP, y);
+        actx.lineTo(cx + (right - cx) * channelP, y);
+        actx.stroke();
+      }
+      actx.shadowBlur = 0;
+    }
+
+    if (impactAge >= 0 && impactAge < PHASE2_GRID_IMPACT_MS) {
+      const p = impactAge / PHASE2_GRID_IMPACT_MS;
+      const flash = 1 - smoothstep(p);
+      actx.globalCompositeOperation = 'screen';
+      actx.globalAlpha = flash * 0.24;
+      actx.fillStyle = '#fff8ee';
+      actx.fillRect(left, top, right - left, bottom - top);
+      actx.globalCompositeOperation = 'source-over';
+      actx.globalAlpha = 0.95 * flash;
+      actx.strokeStyle = '#ff2a20';
+      actx.lineWidth = 8 * (1 - p) + 2;
+      for (let col = 1; col < layout.cols; col++) {
+        const x = vx(layout.left + col * layout.cellW);
+        actx.beginPath(); actx.moveTo(x, top); actx.lineTo(x, bottom); actx.stroke();
+      }
+      for (let row = 1; row < layout.rows; row++) {
+        const y = vy(layout.top + row * layout.cellH);
+        actx.beginPath(); actx.moveTo(left, y); actx.lineTo(right, y); actx.stroke();
+      }
+    }
+    actx.restore();
+  }
+
   // Clears and repaints the full-viewport attack canvas (pentagrams + beams).
   function renderAttackLayer() {
     if (!actx) return;
@@ -3711,6 +4112,7 @@
       for (const a of attacks) renderAttack(a);
     } else if (phase === PHASE.SECOND) {
       for (const a of phase2Attacks) renderAttack(a, 'behind');
+      renderPhaseTwoGridChannel();
       renderSecondPhaseRitual();
       for (const a of phase2Attacks) {
         if (a.type === 'shadowClaw') renderAttack(a, 'front');
@@ -5723,6 +6125,16 @@
       return;
     }
     if (MOVE_CODES.has(event.code)) {
+      if (phase2GridSpecial && phase2GridSpecial.tileMode) {
+        if (!event.repeat) {
+          if (event.code === 'KeyW' || event.code === 'ArrowUp') queuePhaseTwoGridHop(0, -1);
+          else if (event.code === 'KeyS' || event.code === 'ArrowDown') queuePhaseTwoGridHop(0, 1);
+          else if (event.code === 'KeyA' || event.code === 'ArrowLeft') queuePhaseTwoGridHop(-1, 0);
+          else if (event.code === 'KeyD' || event.code === 'ArrowRight') queuePhaseTwoGridHop(1, 0);
+        }
+        event.preventDefault();
+        return;
+      }
       keys.add(event.code);
       event.preventDefault();
     }
@@ -5781,6 +6193,8 @@
     phase2BurstsAtSize = 0;
     phase2DashZone = 'top';
     phase2Cracks = [];
+    phase2GridSpecial = null;
+    phase2GridDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
