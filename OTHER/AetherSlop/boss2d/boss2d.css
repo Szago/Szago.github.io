@@ -52,6 +52,10 @@
   z-index: 8;
 }
 
+#aether-boss2d-overlay.phase-two .aether-boss2d-attacks.sword-ring-active {
+  z-index: 12;
+}
+
 /* Temporary standalone performance readout for the boss scene. */
 .aether-boss2d-fps {
   position: absolute;
