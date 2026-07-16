@@ -15,9 +15,9 @@
   const SETTLE_MS = 520;
   const ECHO_INTERVAL = 200;
   const ECHO_LIFE = 720;
-  const DASH_ECHO_INTERVAL = 28;
-  const DASH_ECHO_LIFE = 390;
-  const MAX_ECHOES = 18;
+  const DASH_ECHO_INTERVAL = 34;
+  const DASH_ECHO_LIFE = 320;
+  const MAX_ECHOES = 12;
   const AVATAR_CONTACT_Y = 0.33;
   const AVATAR_FLOAT_IN_MS = 2600;
   const IMPACT_FLASH_MS = 150;
@@ -39,6 +39,8 @@
   function makeController(options) {
     const img = new Image();
     img.src = options.avatarSrc;
+    let scaledAvatar = null;
+    let scaledAvatarSize = 0;
 
     const state = {
       active: false,
@@ -96,6 +98,20 @@
       return Math.max(215, Math.min(370, basis * 0.34));
     }
 
+    function avatarBitmap(size) {
+      const target = Math.max(1, Math.round(size));
+      if (!scaledAvatar || scaledAvatarSize !== target) {
+        scaledAvatar = document.createElement('canvas');
+        scaledAvatar.width = target;
+        scaledAvatar.height = target;
+        const scaledCtx = scaledAvatar.getContext('2d');
+        scaledCtx.imageSmoothingEnabled = false;
+        scaledCtx.drawImage(img, 0, 0, target, target);
+        scaledAvatarSize = target;
+      }
+      return scaledAvatar;
+    }
+
     function targetHover(boardRect) {
       const size = state.avatar.baseSize || state.avatar.size;
       return {
@@ -124,6 +140,14 @@
       const mag = Math.max(1, Math.hypot(a.vx, a.vy));
       const sampleX = a.x - a.vx * (backtrack || 0);
       const sampleY = a.y - a.vy * (backtrack || 0);
+      if (dashing) {
+        let previous = null;
+        for (let i = state.echoes.length - 1; i >= 0; i--) {
+          if (state.echoes[i].dash) { previous = state.echoes[i]; break; }
+        }
+        const minSpacing = Math.max(14, a.size * 0.055);
+        if (previous && Math.hypot(sampleX - previous.x, sampleY - previous.y) < minSpacing) return;
+      }
       state.echoes.push({
         x: sampleX, y: sampleY, size: a.size,
         nx: a.vx / mag, ny: a.vy / mag,
@@ -145,6 +169,9 @@
         elapsed: 0,
         duration: Math.max(180, duration || 330),
       };
+      // Keep a hint of the idle aura, but do not carry its full stack into the
+      // much denser movement trail.
+      state.echoes = state.echoes.filter((echo) => !echo.dash).slice(-2);
       state.echoClock = DASH_ECHO_INTERVAL;
       return true;
     }
@@ -295,22 +322,23 @@
 
     function drawAvatar(ctx) {
       const a = state.avatar;
-      if (!a.visible || a.alpha <= 0 || !img.complete) return;
+      if (!a.visible || a.alpha <= 0 || !img.complete || !img.naturalWidth) return;
+      const sprite = avatarBitmap(a.baseSize || a.size);
       ctx.save();
       ctx.imageSmoothingEnabled = false;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.shadowColor = 'rgba(220, 220, 230, 0.45)';
       for (const e of state.echoes) {
         const p = e.age / e.life;
         const alpha = (1 - p) * (e.dash ? 0.20 : 0.26);
         const drift = e.dash ? p * 12 : 18 + p * 44;
         const size = e.size * (1 + p * 0.035);
         ctx.globalAlpha = alpha;
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.shadowColor = 'rgba(220, 220, 230, 0.45)';
-        ctx.shadowBlur = e.dash ? 2 : 6;
-        ctx.drawImage(img, e.x - size / 2 - e.nx * drift, e.y - size / 2 - e.ny * drift, size, size);
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.shadowBlur = 0;
+        ctx.shadowBlur = e.dash ? 0 : 5;
+        ctx.drawImage(sprite, e.x - size / 2 - e.nx * drift, e.y - size / 2 - e.ny * drift, size, size);
       }
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.shadowBlur = 0;
       if (state.impact > 0) {
         const p = 1 - state.impact;
         const cx = a.x;
@@ -367,10 +395,10 @@
       const sy = 1 - a.squash * 0.55;
       ctx.globalAlpha = a.alpha;
       ctx.shadowColor = 'rgba(210, 210, 230, 0.42)';
-      ctx.shadowBlur = 18;
+      ctx.shadowBlur = state.dash ? 8 : 18;
       ctx.translate(a.x, a.y);
       ctx.scale(sx, sy);
-      ctx.drawImage(img, -a.size / 2, -a.size / 2, a.size, a.size);
+      ctx.drawImage(sprite, -a.size / 2, -a.size / 2, a.size, a.size);
       ctx.restore();
     }
 
