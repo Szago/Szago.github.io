@@ -15,9 +15,9 @@
   const SETTLE_MS = 520;
   const ECHO_INTERVAL = 200;
   const ECHO_LIFE = 720;
-  const DASH_ECHO_INTERVAL = 24;
-  const DASH_ECHO_LIFE = 430;
-  const MAX_ECHOES = 24;
+  const DASH_ECHO_INTERVAL = 28;
+  const DASH_ECHO_LIFE = 390;
+  const MAX_ECHOES = 18;
   const AVATAR_CONTACT_Y = 0.33;
   const AVATAR_FLOAT_IN_MS = 2600;
   const IMPACT_FLASH_MS = 150;
