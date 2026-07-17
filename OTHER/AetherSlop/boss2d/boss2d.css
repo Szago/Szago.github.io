@@ -303,42 +303,131 @@
   position: fixed;
   inset: 0;
   z-index: 20000;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 40px;
-  background: radial-gradient(circle at 50% 45%, rgba(60, 2, 3, 0.92) 0%, rgba(12, 0, 1, 0.97) 70%, #000 100%);
+  display: block;
+  background: transparent;
   font-family: 'Press Start 2P', monospace;
+  pointer-events: none;
 }
 
 .aether-boss2d-death.hidden {
   display: none;
 }
 
-.aether-boss2d-death-title {
-  color: #e0342c;
-  font-size: 40px;
-  letter-spacing: 6px;
-  text-shadow: 0 0 18px rgba(214, 32, 26, 0.9), 0 0 4px #000;
+.aether-boss2d-death-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+.aether-boss2d-persist,
+.aether-boss2d-persist-echo {
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  padding: 22px 36px 20px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 28px;
+  letter-spacing: 4px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .aether-boss2d-persist {
-  padding: 22px 54px;
+  z-index: 2;
   cursor: pointer;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 22px;
-  letter-spacing: 4px;
-  color: #ffd9d2;
-  background: #3a0506;
-  border: 3px solid #b3201c;
-  text-shadow: 0 0 10px #ff3a2a;
-  box-shadow: 0 0 24px 4px rgba(150, 6, 4, 0.6), inset 0 0 18px rgba(0, 0, 0, 0.6);
+  color: #c82d2d;
+  background: #000;
+  border: 1px solid #9e2020;
+  border-radius: 0;
+  text-shadow: none;
+  box-shadow: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.aether-boss2d-persist::before,
+.aether-boss2d-persist::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 5px;
+  background: #000;
+  pointer-events: none;
+}
+
+.aether-boss2d-persist::before {
+  left: -1px;
+  top: -1px;
+  border-right: 1px solid #9e2020;
+  border-bottom: 1px solid #9e2020;
+}
+
+.aether-boss2d-persist::after {
+  right: -1px;
+  bottom: -1px;
+  border-left: 1px solid #9e2020;
+  border-top: 1px solid #9e2020;
+}
+
+.aether-boss2d-persist-echo {
+  z-index: 1;
+  box-sizing: border-box;
+  color: transparent;
+  background: transparent;
+  border: 1px solid rgba(190, 28, 36, 0.68);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+}
+
+.aether-boss2d-death.is-ready .aether-boss2d-persist-echo {
+  visibility: visible;
+  animation: aether-persist-echo 1.25s ease-out infinite;
+}
+
+.aether-boss2d-persist-echo.echo-one {
+  animation-delay: 0s;
+}
+
+.aether-boss2d-persist-echo.echo-two {
+  animation-delay: -0.42s;
+}
+
+.aether-boss2d-persist-echo.echo-three {
+  animation-delay: -0.84s;
+}
+
+@keyframes aether-persist-echo {
+  0% {
+    opacity: 0.44;
+    transform: translateX(-50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) scale(1.28);
+  }
+}
+
+.aether-boss2d-death.is-ready {
+  pointer-events: auto;
+}
+
+.aether-boss2d-death.is-ready .aether-boss2d-persist {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .aether-boss2d-persist:hover {
-  background: #54080a;
-  border-color: #e0342c;
+  color: #ff4a4a;
+  background: #000;
+  border-color: #d43838;
 }
 
 /* The boss looming in the room above the arena. Two layers (kneel + stand)

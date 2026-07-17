@@ -65,6 +65,8 @@
   let bgCtx = null;
   let attackCanvas = null; // full-viewport layer for pentagrams + beams
   let actx = null;
+  let deathCanvas = null;  // full-viewport death cut + broken-screen layer
+  let deathCtx = null;
   let borderCanvas = null; // pre-rendered static bloody frame
   let calcifiedBorderCanvas = null; // pre-rendered phase-two bone-gray frame
   let cobbledFloorCanvas = null; // pre-rendered phase-two stone floor
@@ -440,6 +442,16 @@
   const PHASE2_BOSS_SLAM_MS = 1200;
   const PHASE2_BOSS_RETURN_DASH_MS = 430;
   const PHASE2_BOSS_SLAM_DAMAGE = 60;
+  const DEATH_SLOW_MS = 900;
+  const DEATH_FADE_START = 90;
+  const DEATH_FADE_END = 1080;
+  const DEATH_CUT_START = 1080;
+  const DEATH_CUT_IMPACT = 1480;
+  const DEATH_BLACKOUT = 1610;
+  const DEATH_CRACK_START = 1770;
+  const DEATH_CRACK_FORM_MS = 760;
+  const DEATH_PERSIST_AT = 2380;
+  const DEATH_REVIVE_MS = 680;
   const PHASE2_SWORD_DIRECTIONS = [
     { x: 0, y: -1 },
     { x: Math.SQRT1_2, y: -Math.SQRT1_2 },
@@ -459,6 +471,7 @@
   let vp = 0;
   let entropy = 0;
   let dead = false;
+  let deathSequence = null;
   let strike = null;                 // active strike animation, or null
   let wrathFill = null, wrathValue = null, wrathTrack = null, wrathName = null;
   let hpFill = null, vpFill = null, vpBar = null;
@@ -1046,9 +1059,12 @@
       '<div class="aether-boss2d-help">WASD / ARROWS MOVE' +
         '<span class="aether-boss2d-status">ENTER SKIP INTRO &nbsp; F / SPACE STRIKE</span>' +
       '</div>' +
-      // Death screen: a full bloody curtain with the PERSIST restart button.
+      // Death screen: canvas-driven cut/fracture sequence and a bare restart prompt.
       '<div class="aether-boss2d-death hidden">' +
-        '<div class="aether-boss2d-death-title">SLAIN</div>' +
+        '<canvas class="aether-boss2d-death-canvas"></canvas>' +
+        '<span class="aether-boss2d-persist-echo echo-one" aria-hidden="true">PERSIST</span>' +
+        '<span class="aether-boss2d-persist-echo echo-two" aria-hidden="true">PERSIST</span>' +
+        '<span class="aether-boss2d-persist-echo echo-three" aria-hidden="true">PERSIST</span>' +
         '<button type="button" class="aether-boss2d-persist">PERSIST</button>' +
       '</div>';
     document.body.appendChild(overlay);
@@ -1074,8 +1090,13 @@
     vpFill = overlay.querySelector('.aether-boss2d-vp .aether-boss2d-vbar-fill');
     hpFill = overlay.querySelector('.aether-boss2d-hp .aether-boss2d-vbar-fill');
     deathScreen = overlay.querySelector('.aether-boss2d-death');
+    deathCanvas = overlay.querySelector('.aether-boss2d-death-canvas');
+    deathCtx = deathCanvas ? deathCanvas.getContext('2d') : null;
     const persistBtn = overlay.querySelector('.aether-boss2d-persist');
-    if (persistBtn) persistBtn.addEventListener('click', () => { restart(); persistBtn.blur(); });
+    if (persistBtn) persistBtn.addEventListener('click', () => {
+      beginDeathRevive();
+      persistBtn.blur();
+    });
 
     // Debug: one button per attack movement. Left-click plays that pattern
     // solo. Right-click a button to arm it, then left-click another to play the
@@ -1632,6 +1653,15 @@
     attackCanvas.style.width = window.innerWidth + 'px';
     attackCanvas.style.height = window.innerHeight + 'px';
     actx.imageSmoothingEnabled = true;
+  }
+
+  function sizeDeathCanvas() {
+    if (!deathCanvas) return;
+    deathCanvas.width = window.innerWidth;
+    deathCanvas.height = window.innerHeight;
+    deathCanvas.style.width = window.innerWidth + 'px';
+    deathCanvas.style.height = window.innerHeight + 'px';
+    if (deathCtx) deathCtx.imageSmoothingEnabled = false;
   }
 
   function spawnOuterTentacles(instant) {
@@ -2823,11 +2853,391 @@
     drawAngelicSword(x, y, angle, scale, alpha);
   }
 
+  function partialPolyline(g, points, progress) {
+    if (!points || points.length < 2 || progress <= 0) return false;
+    let total = 0;
+    const lengths = [];
+    for (let i = 1; i < points.length; i++) {
+      const length = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+      lengths.push(length);
+      total += length;
+    }
+    let remaining = total * clamp01(progress);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length && remaining > 0; i++) {
+      const length = lengths[i - 1];
+      if (remaining >= length) {
+        g.lineTo(points[i].x, points[i].y);
+        remaining -= length;
+      } else {
+        const p = length > 0 ? remaining / length : 1;
+        g.lineTo(
+          points[i - 1].x + (points[i].x - points[i - 1].x) * p,
+          points[i - 1].y + (points[i].y - points[i - 1].y) * p
+        );
+        remaining = 0;
+      }
+    }
+    return true;
+  }
+
+  function deathFractureRadius(width, height) {
+    return Math.min(310, Math.max(210, Math.min(width, height) * 0.30));
+  }
+
+  function makeDeathCracks(cx, cy, width, height) {
+    const random = mulberry32(0xd34d2026 ^ Math.round(cx * 13 + cy * 29));
+    const cracks = [];
+    const radius = deathFractureRadius(width, height);
+    const primaryCount = 22;
+    const rays = [];
+    for (let i = 0; i < primaryCount; i++) {
+      const angle = -Math.PI + i * Math.PI * 2 / primaryCount + (random() - 0.5) * 0.18;
+      const rayLength = radius * (0.68 + random() * 0.34);
+      const segments = 5 + Math.floor(random() * 4);
+      const points = [{ x: cx, y: cy }];
+      for (let step = 1; step <= segments; step++) {
+        const p = step / segments;
+        const distance = rayLength * p;
+        const jitter = (random() - 0.5) * (7 + distance * 0.018);
+        points.push({
+          x: cx + Math.cos(angle) * distance + Math.cos(angle + Math.PI / 2) * jitter,
+          y: cy + Math.sin(angle) * distance + Math.sin(angle + Math.PI / 2) * jitter,
+        });
+      }
+      rays.push({ angle, length: rayLength });
+      cracks.push({ points, delay: i * 0.008, width: 0.72 + random() * 0.5 });
+
+      const branchCount = random() < 0.72 ? 2 : 1;
+      for (let branch = 0; branch < branchCount; branch++) {
+        const startIndex = 2 + Math.floor(random() * Math.max(2, segments - 2));
+        const start = points[Math.min(points.length - 2, startIndex)];
+        const branchAngle = angle + (random() < 0.5 ? -1 : 1) * (0.42 + random() * 0.58);
+        const branchLength = radius * (0.10 + random() * 0.15);
+        const branchPoints = [{ x: start.x, y: start.y }];
+        for (let step = 1; step <= 3; step++) {
+          const p = step / 3;
+          const jitter = (random() - 0.5) * 7;
+          branchPoints.push({
+            x: start.x + Math.cos(branchAngle) * branchLength * p + Math.cos(branchAngle + Math.PI / 2) * jitter,
+            y: start.y + Math.sin(branchAngle) * branchLength * p + Math.sin(branchAngle + Math.PI / 2) * jitter,
+          });
+        }
+        cracks.push({
+          points: branchPoints,
+          delay: 0.18 + startIndex / segments * 0.36 + random() * 0.06,
+          width: 0.48 + random() * 0.34,
+        });
+      }
+    }
+
+    // Broken polygonal rings link the radial fractures into a dense glass web.
+    const ringFractions = [0.22, 0.39, 0.58, 0.78, 0.94];
+    for (let ringIndex = 0; ringIndex < ringFractions.length; ringIndex++) {
+      const ringRadius = radius * ringFractions[ringIndex];
+      const ringPoints = rays.map((ray) => {
+        const distance = Math.min(ray.length * 0.96, ringRadius * (0.92 + random() * 0.16));
+        return {
+          x: cx + Math.cos(ray.angle) * distance,
+          y: cy + Math.sin(ray.angle) * distance,
+        };
+      });
+      for (let i = 0; i < primaryCount; i++) {
+        if (random() < 0.16 + ringIndex * 0.025) continue;
+        const next = (i + 1) % primaryCount;
+        const a = ringPoints[i];
+        const b = ringPoints[next];
+        const angleDelta = Math.atan2(
+          Math.sin(rays[next].angle - rays[i].angle),
+          Math.cos(rays[next].angle - rays[i].angle)
+        );
+        const midAngle = rays[i].angle + angleDelta * 0.5;
+        const midDistance = ringRadius * (0.90 + random() * 0.16);
+        cracks.push({
+          points: [
+            a,
+            { x: cx + Math.cos(midAngle) * midDistance, y: cy + Math.sin(midAngle) * midDistance },
+            b,
+          ],
+          delay: 0.16 + ringIndex * 0.085 + i * 0.002,
+          width: 0.42 + random() * 0.32,
+        });
+      }
+    }
+    return cracks;
+  }
+
+  function makeDeathCut(cx, cy) {
+    return [
+      { x: cx - 112, y: cy - 170 },
+      { x: cx - 73, y: cy - 118 },
+      { x: cx - 89, y: cy - 82 },
+      { x: cx - 31, y: cy - 39 },
+      { x: cx - 48, y: cy - 10 },
+      { x: cx + 4, y: cy + 7 },
+      { x: cx - 9, y: cy + 35 },
+      { x: cx + 57, y: cy + 78 },
+      { x: cx + 40, y: cy + 111 },
+      { x: cx + 112, y: cy + 172 },
+    ];
+  }
+
+  function drawDeathHero(sequence, alpha) {
+    if (!deathCtx || alpha <= 0) return;
+    const cellW = HERO_SCALE * sequence.heroScaleX;
+    const cellH = HERO_SCALE * sequence.heroScaleY;
+    const ox = sequence.heroX - HERO_W * sequence.heroScaleX / 2;
+    const oy = sequence.heroY - HERO_H * sequence.heroScaleY / 2;
+    const outline = Math.max(2, Math.min(4, Math.max(sequence.heroScaleX, sequence.heroScaleY) * 2));
+    deathCtx.save();
+    deathCtx.globalAlpha = alpha;
+    deathCtx.fillStyle = '#ffffff';
+    for (let y = 0; y < HERO.rows.length; y++) {
+      for (let x = 0; x < HERO.rows[y].length; x++) {
+        const token = HERO.rows[y][x];
+        if (token === '.' || token === ' ' || !HERO.pal[token]) continue;
+        deathCtx.fillRect(
+          Math.floor(ox + x * cellW - outline),
+          Math.floor(oy + y * cellH - outline),
+          Math.ceil(cellW + outline * 2),
+          Math.ceil(cellH + outline * 2)
+        );
+      }
+    }
+    for (let y = 0; y < HERO.rows.length; y++) {
+      for (let x = 0; x < HERO.rows[y].length; x++) {
+        const token = HERO.rows[y][x];
+        if (token === '.' || token === ' ' || !HERO.pal[token]) continue;
+        deathCtx.fillStyle = HERO.pal[token];
+        deathCtx.fillRect(
+          Math.floor(ox + x * cellW),
+          Math.floor(oy + y * cellH),
+          Math.ceil(cellW),
+          Math.ceil(cellH)
+        );
+      }
+    }
+    deathCtx.restore();
+  }
+
+  function drawDeathCut(sequence, progress) {
+    if (!deathCtx || progress <= 0) return;
+    deathCtx.save();
+    deathCtx.lineCap = 'butt';
+    deathCtx.lineJoin = 'miter';
+    deathCtx.globalCompositeOperation = 'screen';
+    if (partialPolyline(deathCtx, sequence.cut, progress)) {
+      deathCtx.strokeStyle = 'rgba(128, 0, 4, 0.76)';
+      deathCtx.lineWidth = 15;
+      deathCtx.shadowColor = '#ff1018';
+      deathCtx.shadowBlur = 28;
+      deathCtx.stroke();
+    }
+    if (partialPolyline(deathCtx, sequence.cut, progress)) {
+      deathCtx.strokeStyle = '#ef2028';
+      deathCtx.lineWidth = 4;
+      deathCtx.shadowBlur = 8;
+      deathCtx.stroke();
+    }
+    if (partialPolyline(deathCtx, sequence.cut, progress)) {
+      deathCtx.strokeStyle = 'rgba(255, 218, 210, 0.86)';
+      deathCtx.lineWidth = 1;
+      deathCtx.shadowBlur = 0;
+      deathCtx.stroke();
+    }
+    deathCtx.restore();
+  }
+
+  function drawDeathImpactFrame(sequence, age) {
+    if (!deathCtx || age < 0 || age >= DEATH_BLACKOUT - DEATH_CUT_IMPACT) return;
+    const width = deathCanvas.width;
+    const height = deathCanvas.height;
+    deathCtx.save();
+    if (age < 34) {
+      deathCtx.fillStyle = age < 17 ? '#fff8f2' : '#e51e26';
+      deathCtx.fillRect(0, 0, width, height);
+    } else {
+      deathCtx.fillStyle = '#000';
+      deathCtx.fillRect(0, 0, width, height);
+      const p = smoothstep((age - 34) / 96);
+      deathCtx.translate(sequence.heroX, sequence.heroY);
+      deathCtx.rotate(-0.73);
+      deathCtx.fillStyle = 'rgba(220, 18, 28, ' + (1 - p).toFixed(3) + ')';
+      deathCtx.beginPath();
+      deathCtx.moveTo(-width, -8 - p * 42);
+      deathCtx.lineTo(width, -32 + p * 18);
+      deathCtx.lineTo(width, 24 - p * 10);
+      deathCtx.lineTo(-width, 10 + p * 38);
+      deathCtx.closePath();
+      deathCtx.fill();
+      deathCtx.strokeStyle = 'rgba(255, 110, 110, ' + (0.9 * (1 - p)).toFixed(3) + ')';
+      deathCtx.lineWidth = 2;
+      for (let i = 0; i < 12; i++) {
+        const y = (i - 5.5) * 17;
+        deathCtx.beginPath();
+        deathCtx.moveTo((i % 3) * 16 - 80, y);
+        deathCtx.lineTo(width * (0.24 + (i % 4) * 0.07), y + (i % 2 ? 18 : -18));
+        deathCtx.stroke();
+      }
+    }
+    deathCtx.restore();
+  }
+
+  function strokeDeathCrackSegments(sequence, crack, progress, pass) {
+    const points = crack.points;
+    const segmentCount = points.length - 1;
+    const radius = deathFractureRadius(deathCanvas.width, deathCanvas.height);
+    for (let i = 0; i < segmentCount; i++) {
+      const localProgress = clamp01((progress - i / segmentCount) * segmentCount);
+      if (localProgress <= 0) continue;
+      const a = points[i];
+      const b = points[i + 1];
+      const endX = a.x + (b.x - a.x) * localProgress;
+      const endY = a.y + (b.y - a.y) * localProgress;
+      const midX = (a.x + endX) * 0.5;
+      const midY = (a.y + endY) * 0.5;
+      const distance = clamp01(Math.hypot(midX - sequence.heroX, midY - sequence.heroY) / radius);
+      const strength = Math.pow(1 - distance, 1.12);
+      const coreWidth = crack.width * (0.48 + strength * 2.25);
+
+      if (pass === 0) {
+        deathCtx.strokeStyle = 'rgba(48, 0, 3, ' + (0.28 + strength * 0.58).toFixed(3) + ')';
+        deathCtx.lineWidth = coreWidth + 0.65 + strength * 0.75;
+        deathCtx.shadowBlur = 0;
+      } else if (pass === 1) {
+        deathCtx.strokeStyle = 'rgba(205, 18, 28, ' + (0.20 + strength * 0.75).toFixed(3) + ')';
+        deathCtx.lineWidth = coreWidth;
+        deathCtx.shadowColor = '#b81019';
+        deathCtx.shadowBlur = strength * (progress < 1 ? 3 : 1);
+      } else {
+        deathCtx.strokeStyle = 'rgba(255, 91, 94, ' + (0.08 + strength * 0.54).toFixed(3) + ')';
+        deathCtx.lineWidth = Math.max(0.24, coreWidth * 0.27);
+        deathCtx.shadowBlur = 0;
+      }
+      deathCtx.beginPath();
+      deathCtx.moveTo(a.x, a.y);
+      deathCtx.lineTo(endX, endY);
+      deathCtx.stroke();
+    }
+  }
+
+  function drawDeathFracture(sequence, progress) {
+    if (!deathCtx || progress <= 0) return;
+    deathCtx.save();
+    deathCtx.lineCap = 'butt';
+    deathCtx.lineJoin = 'miter';
+    for (const crack of sequence.cracks) {
+      const branchProgress = clamp01((progress - crack.delay) / Math.max(0.08, 1 - crack.delay));
+      if (branchProgress <= 0) continue;
+      const reveal = easeOutCubic(branchProgress);
+      strokeDeathCrackSegments(sequence, crack, reveal, 0);
+      strokeDeathCrackSegments(sequence, crack, reveal, 1);
+      strokeDeathCrackSegments(sequence, crack, reveal, 2);
+    }
+    const burst = smoothstep(progress / 0.32);
+    deathCtx.translate(sequence.heroX, sequence.heroY);
+    deathCtx.strokeStyle = 'rgba(248, 36, 44, ' + (0.94 * burst).toFixed(3) + ')';
+    deathCtx.lineWidth = 2.1;
+    deathCtx.beginPath();
+    for (let i = 0; i < 22; i++) {
+      const angle = i * Math.PI * 2 / 22;
+      const inner = 8 + (i % 3) * 3;
+      const outer = (24 + (i % 5) * 5) * burst;
+      deathCtx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+      deathCtx.lineTo(Math.cos(angle + (i % 2 ? 0.09 : -0.08)) * outer,
+        Math.sin(angle + (i % 2 ? 0.09 : -0.08)) * outer);
+    }
+    deathCtx.stroke();
+    deathCtx.restore();
+  }
+
+  function renderDeathSequence() {
+    if (!deathCtx || !deathCanvas || !deathSequence) return;
+    const sequence = deathSequence;
+    const age = sequence.age;
+    deathCtx.setTransform(1, 0, 0, 1, 0, 0);
+    deathCtx.clearRect(0, 0, deathCanvas.width, deathCanvas.height);
+
+    const blackAlpha = smoothstep((age - DEATH_FADE_START) / (DEATH_FADE_END - DEATH_FADE_START));
+    if (blackAlpha > 0) {
+      deathCtx.fillStyle = 'rgba(0, 0, 0, ' + blackAlpha.toFixed(3) + ')';
+      deathCtx.fillRect(0, 0, deathCanvas.width, deathCanvas.height);
+    }
+    if (age < DEATH_CUT_IMPACT) {
+      const reveal = smoothstep((age - 320) / 430);
+      drawDeathHero(sequence, reveal);
+      const cutProgress = smoothstep((age - DEATH_CUT_START) / (DEATH_CUT_IMPACT - DEATH_CUT_START));
+      drawDeathCut(sequence, cutProgress);
+    }
+    if (age >= DEATH_CUT_IMPACT && age < DEATH_BLACKOUT) {
+      drawDeathImpactFrame(sequence, age - DEATH_CUT_IMPACT);
+    }
+    if (age >= DEATH_BLACKOUT) {
+      deathCtx.fillStyle = '#000';
+      deathCtx.fillRect(0, 0, deathCanvas.width, deathCanvas.height);
+      const formedProgress = clamp01((age - DEATH_CRACK_START) / DEATH_CRACK_FORM_MS);
+      const crackProgress = sequence.reviving
+        ? sequence.reviveFromProgress * (1 - smoothstep(sequence.reviveAge / DEATH_REVIVE_MS))
+        : formedProgress;
+      drawDeathFracture(sequence, crackProgress);
+    }
+  }
+
+  function beginDeathRevive() {
+    if (!dead || !deathSequence || deathSequence.reviving ||
+        deathSequence.age < DEATH_PERSIST_AT) return false;
+    deathSequence.reviving = true;
+    deathSequence.reviveAge = 0;
+    deathSequence.reviveFromProgress = clamp01(
+      (deathSequence.age - DEATH_CRACK_START) / DEATH_CRACK_FORM_MS
+    );
+    if (deathScreen) deathScreen.classList.remove('is-ready');
+    keys.clear();
+    return true;
+  }
+
+  function updateDeathSequence(dt) {
+    if (!deathSequence) return false;
+    if (deathSequence.reviving) {
+      deathSequence.reviveAge += dt;
+      renderDeathSequence();
+      if (deathSequence.reviveAge >= DEATH_REVIVE_MS) {
+        restart();
+        return true;
+      }
+      return false;
+    }
+    deathSequence.age += dt;
+    if (deathScreen) deathScreen.classList.toggle('is-ready', deathSequence.age >= DEATH_PERSIST_AT);
+    renderDeathSequence();
+    return false;
+  }
+
   function die() {
     if (dead) return;
+    frameBoardRect = null;
+    const board = getBoardRect();
+    const heroViewport = worldPointToViewport(hero.x, hero.y, board);
+    sizeDeathCanvas();
+    deathSequence = {
+      age: 0,
+      heroX: heroViewport.x,
+      heroY: heroViewport.y,
+      heroScaleX: board.width / Math.max(1, canvas.width),
+      heroScaleY: board.height / Math.max(1, canvas.height),
+      reviving: false,
+      reviveAge: 0,
+      reviveFromProgress: 0,
+      cut: makeDeathCut(heroViewport.x, heroViewport.y),
+      cracks: makeDeathCracks(heroViewport.x, heroViewport.y, window.innerWidth, window.innerHeight),
+    };
     dead = true;
     keys.clear();
-    if (deathScreen) deathScreen.classList.remove('hidden');
+    if (deathScreen) {
+      deathScreen.classList.remove('hidden', 'is-ready');
+    }
+    renderDeathSequence();
   }
 
   // Pushes wrath / entropy, HP and VP to their bars. The shared DOM bar changes
@@ -7669,11 +8079,30 @@
   }
 
   function frame(time) {
-    if (!active || dead) return;
+    if (!active) return;
     frameBoardRect = null;
     updateFpsCounter(time);
     const dtRaw = Math.min(48, time - previousTime || 16);
     previousTime = time;
+    if (dead && deathSequence) {
+      const timeScale = 1 - smoothstep(deathSequence.age / DEATH_SLOW_MS);
+      const dt = dtRaw * timeScale;
+      if (dt > 0.001) {
+        clock += dt;
+        phaseTime += dt;
+        updateArena(dt);
+        updatePhase(dt);
+        if (phase === PHASE.ACTIVE || phase === PHASE.SECOND) clampHero();
+      }
+      renderBackground(time, false);
+      renderScene();
+      renderAttackLayer();
+      renderStrike();
+      updateBars();
+      if (updateDeathSequence(dtRaw)) return;
+      animationFrame = requestAnimationFrame(frame);
+      return;
+    }
     // The strike flourish advances in real time but slows everything else down.
     const timeScale = updateStrike(dtRaw);
     const dt = dtRaw * timeScale;
@@ -7687,8 +8116,7 @@
     renderAttackLayer();
     renderStrike();
     updateBars();
-    // Died this frame: leave the scene frozen beneath the death screen.
-    if (dead) return;
+    if (dead) updateDeathSequence(0);
     animationFrame = requestAnimationFrame(frame);
   }
 
@@ -7818,9 +8246,12 @@
     vp = 0;
     entropy = 0;
     dead = false;
+    deathSequence = null;
     strike = null;
     if (cultistElement) cultistElement.classList.remove('aether-hit', 'aether-final-hit');
     if (deathScreen) deathScreen.classList.add('hidden');
+    if (deathScreen) deathScreen.classList.remove('is-ready');
+    if (deathCtx && deathCanvas) deathCtx.clearRect(0, 0, deathCanvas.width, deathCanvas.height);
     updateBars();
     if (bpmElement) bpmElement.textContent = 'BPM --';
     fpsSampleStart = 0;
@@ -7847,6 +8278,7 @@
     active = true;
     sizeBackground();
     sizeAttackCanvas();
+    sizeDeathCanvas();
     resetRun();
     dispatchState();
   }
@@ -7876,6 +8308,16 @@
     frameBoardRect = null;
     sizeBackground();
     sizeAttackCanvas();
+    sizeDeathCanvas();
+    if (dead && deathSequence) {
+      deathSequence.cracks = makeDeathCracks(
+        deathSequence.heroX,
+        deathSequence.heroY,
+        window.innerWidth,
+        window.innerHeight
+      );
+      renderDeathSequence();
+    }
     // Re-anchor the long tentacles to the box's new position, already grown.
     if (outerTentacles.length) spawnOuterTentacles(true);
   }
