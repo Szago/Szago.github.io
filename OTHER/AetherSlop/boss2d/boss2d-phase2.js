@@ -95,6 +95,36 @@
       });
     }
 
+    function skipToGroundSlam(boardRect) {
+      if (!state.active || !boardRect) return false;
+      const poiseEnd = COLLAPSE_MS + EMERGE_MS + POISE_MS;
+      if (state.elapsed >= poiseEnd) return false;
+      const hover = targetHover(boardRect);
+      state.elapsed = poiseEnd;
+      state.startedSlam = false;
+      state.slamY = null;
+      state.layoutProgress = 0;
+      state.impact = 0;
+      state.impactAge = Infinity;
+      state.combatAnchor = null;
+      state.dash = null;
+      state.combatSlam = null;
+      state.echoes = [];
+      state.echoClock = 0;
+      Object.assign(state.avatar, {
+        x: hover.x,
+        y: hover.y,
+        prevX: hover.x,
+        prevY: hover.y,
+        vx: 0,
+        vy: 0,
+        alpha: 1,
+        squash: 0,
+        visible: true,
+      });
+      return true;
+    }
+
     function avatarSize() {
       const basis = Math.min(window.innerWidth, window.innerHeight);
       return Math.max(215, Math.min(370, basis * 0.34));
@@ -469,6 +499,7 @@
     return {
       reset,
       start,
+      skipToGroundSlam,
       dashTo,
       dashHome,
       slamTo,

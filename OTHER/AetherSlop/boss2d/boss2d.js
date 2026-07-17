@@ -3226,6 +3226,7 @@
       heroY: heroViewport.y,
       heroScaleX: board.width / Math.max(1, canvas.width),
       heroScaleY: board.height / Math.max(1, canvas.height),
+      restartPhase: phase === PHASE.SECOND ? PHASE.SECOND : PHASE.FALL,
       reviving: false,
       reviveAge: 0,
       reviveFromProgress: 0,
@@ -3339,6 +3340,29 @@
     if (!phase2Ritual || phase2AvatarStarted) return false;
     const c = phase2Ritual.cocoon;
     return c.p >= 0.985 && c.alpha >= 0.99 && phase2Ritual.pentFade <= 0.01 && phase2Ritual.beams.length === 0;
+  }
+
+  function skipPhaseTwoTransition() {
+    if (phase !== PHASE.SECOND) return false;
+    if (phase2CombatStarted || (phase2Avatar && phase2Avatar.layoutProgress >= 1)) return true;
+    if (!phase2AvatarStarted) {
+      if (phase2Ritual) {
+        phase2Ritual.beams = [];
+        phase2Ritual.pentFade = 0;
+        phase2Ritual.cocoon.hits = P2_COCOON_HITS;
+        phase2Ritual.cocoon.p = 1;
+        phase2Ritual.cocoon.alpha = 1;
+      }
+      phaseTime = Math.max(
+        phaseTime,
+        PHASE2_ARENA_TRANSITION + PHASE2_ORB_LAUNCH + PHASE2_PENT_FORM
+      );
+      startAvatarPhaseTwo();
+    }
+    if (phase2Avatar && typeof phase2Avatar.skipToGroundSlam === 'function') {
+      phase2Avatar.skipToGroundSlam(getBoardRect());
+    }
+    return true;
   }
 
   function makeSecondPhaseRitual() {
@@ -8146,7 +8170,12 @@
       if (debugBuffer === DEBUG_QUIT_SEQUENCE) { debugBuffer = ''; close(); return; }
     }
     if (dead) return; // only the PERSIST button responds on the death screen
-    if (event.code === 'Enter') { skipToActive(); event.preventDefault(); return; }
+    if (event.code === 'Enter') {
+      if (phase === PHASE.SECOND) skipPhaseTwoTransition();
+      else skipToActive();
+      event.preventDefault();
+      return;
+    }
     if (handlePhaseTwoSwordGuardKey(event.code, event.repeat)) {
       event.preventDefault();
       return;
@@ -8181,9 +8210,10 @@
   }
 
   // ---- Lifecycle ---------------------------------------------------------
-  // Reset everything back to the opening fall and (re)start the loop. Shared by
-  // the first open() and the PERSIST restart on the death screen.
-  function resetRun() {
+  // Reset all combat state and (re)start the loop at the requested phase boundary.
+  // A normal open starts from the phase-one fall; PERSIST may select phase two.
+  function resetRun(restartPhase) {
+    const checkpoint = restartPhase === PHASE.SECOND ? PHASE.SECOND : PHASE.FALL;
     // Reset the scripted intro sequence.
     phase = PHASE.FALL;
     phaseTime = 0;
@@ -8252,6 +8282,10 @@
     if (deathScreen) deathScreen.classList.add('hidden');
     if (deathScreen) deathScreen.classList.remove('is-ready');
     if (deathCtx && deathCanvas) deathCtx.clearRect(0, 0, deathCanvas.width, deathCanvas.height);
+    if (checkpoint === PHASE.SECOND) {
+      skipToActive();
+      startSecondPhase();
+    }
     updateBars();
     if (bpmElement) bpmElement.textContent = 'BPM --';
     fpsSampleStart = 0;
@@ -8283,10 +8317,11 @@
     dispatchState();
   }
 
-  // PERSIST: from the death screen, run the whole fight again from the fall.
+  // PERSIST: restart at the beginning of the phase in which the hero died.
   function restart() {
     if (!active) return;
-    resetRun();
+    const checkpoint = deathSequence ? deathSequence.restartPhase : PHASE.FALL;
+    resetRun(checkpoint);
   }
 
   function close() {
