@@ -372,6 +372,7 @@
   let phase2AvatarStarted = false;
   let phase2LayoutAnchor = null;
   let phase2LayoutSignature = '';
+  let phase2SquareArenaLocked = false;
   let phase2CombatStarted = false;
   let phase2Attacks = [];
   let phase2BurstActive = false;
@@ -433,6 +434,12 @@
   const PHASE2_SWORD_RESPAWN_DELAY_MS = 430;
   const PHASE2_SWORD_RESPAWN_FORM_MS = 180;
   const PHASE2_SWORD_RING_DAMAGE = 100;
+  const PHASE2_SWORD_PARRY_HEAL = 12;
+  const PHASE2_SWORD_PARRY_VP = VP_MAX * 0.10;
+  const PHASE2_SWORD_FINAL_PARRIES = 20;
+  const PHASE2_BOSS_SLAM_MS = 1200;
+  const PHASE2_BOSS_RETURN_DASH_MS = 430;
+  const PHASE2_BOSS_SLAM_DAMAGE = 60;
   const PHASE2_SWORD_DIRECTIONS = [
     { x: 0, y: -1 },
     { x: Math.SQRT1_2, y: -Math.SQRT1_2 },
@@ -481,6 +488,7 @@
 
   function resetPhaseTwoLayout() {
     if (!overlay) return;
+    phase2SquareArenaLocked = false;
     overlay.classList.remove('avatar-phase-two');
     overlay.style.removeProperty('--phase2-stage-w');
     overlay.style.removeProperty('--phase2-stage-h');
@@ -556,6 +564,54 @@
     const worldHero = arenaToWorld(localHero.x, localHero.y);
     hero.x = worldHero.x;
     hero.y = worldHero.y;
+  }
+
+  function restorePhaseTwoSquareArena() {
+    if (!overlay || !canvas || phase2SquareArenaLocked) return;
+    phase2SquareArenaLocked = true;
+    phase2GridSpecial = null;
+    phase2TileRuinPattern = null;
+    phase2TileRuinDebugQueued = false;
+    phase2Cracks = [];
+    phase2CrackCacheDirty = true;
+
+    const side = BOARD;
+    const anchor = phase2LayoutAnchor || {
+      left: getBoardRect().left - 38,
+      top: getBoardRect().top,
+      stageTop: getBoardRect().top,
+      centerX: getBoardRect().left + getBoardRect().width / 2,
+    };
+    const rowLeft = anchor.left - (side - BOARD) / 2;
+    const rowTop = anchor.top - (side - BOARD);
+    const stageTop = anchor.stageTop - (side - BOARD);
+    overlay.style.setProperty('--phase2-row-left', rowLeft.toFixed(1) + 'px');
+    overlay.style.setProperty('--phase2-row-top', rowTop.toFixed(1) + 'px');
+    overlay.style.setProperty('--phase2-wrath-top', Math.max(14, stageTop - 48).toFixed(1) + 'px');
+    overlay.style.setProperty('--phase2-stage-w', side + 'px');
+    overlay.style.setProperty('--phase2-stage-h', side + 'px');
+    overlay.style.setProperty('--phase2-vbar-h', side + 'px');
+    phase2LayoutSignature = 'square|' + side;
+    if (canvas.width !== side || canvas.height !== side) {
+      canvas.width = side;
+      canvas.height = side;
+      ctx.imageSmoothingEnabled = false;
+      frameBoardRect = null;
+    }
+    Object.assign(arena, {
+      x: side / 2,
+      y: side / 2,
+      width: side,
+      height: side,
+      rotation: 0,
+      shape: 'rect',
+      from: null,
+      target: null,
+      transitionTime: 0,
+      transitionDuration: 0,
+    });
+    hero.x = side / 2;
+    hero.y = side / 2;
   }
 
   function setSavedEndgameScene(sceneName) {
@@ -3493,6 +3549,19 @@
       activeSpeedScale: 1,
       burstRemaining: 0,
       nextDelayMs: PHASE2_SWORD_NEXT_MS,
+      finalClockwisePending: false,
+      finalClockwise: false,
+      clockwiseIndex: 0,
+      bossSlamResolved: false,
+      bossSlamParried: false,
+      bossSlamImpactAge: -1,
+      bossSlamFlashAge: -1,
+      bossSlamRangeEntered: false,
+      bossSlamReturning: false,
+      bossContactX: 0,
+      bossContactY: 0,
+      bossPrevContactX: 0,
+      bossPrevContactY: 0,
       defended: false,
       guardSwapAge: 1000,
       guardDirX: 0,
@@ -3620,6 +3689,130 @@
     return false;
   }
 
+  function phaseTwoBossSlamContact() {
+    const avatar = phase2Avatar && phase2Avatar.state && phase2Avatar.state.avatar;
+    if (!avatar) return null;
+    return {
+      x: avatar.x,
+      y: avatar.y + avatar.size * 0.33,
+      radius: avatar.size * 0.085,
+    };
+  }
+
+  function phaseTwoBossSlamTouchesGuard(pattern, geometry, ideal) {
+    const sourceX = ideal ? 0 : geometry.guardDirectionX;
+    const sourceY = ideal ? -1 : geometry.guardDirectionY;
+    if (!ideal && sourceY > -0.9) return false;
+    const guardX = geometry.center.x + sourceX * 34;
+    const guardY = geometry.center.y + sourceY * 34;
+    const radius = phase2Avatar && phase2Avatar.state
+      ? phase2Avatar.state.avatar.size * 0.085
+      : 20;
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8;
+      const x = pattern.bossPrevContactX + (pattern.bossContactX - pattern.bossPrevContactX) * t;
+      const y = pattern.bossPrevContactY + (pattern.bossContactY - pattern.bossPrevContactY) * t;
+      const offsetX = x - guardX;
+      const offsetY = y - guardY;
+      const tangent = (-offsetX * sourceY + offsetY * sourceX) / (39 + radius);
+      const radial = (offsetX * sourceX + offsetY * sourceY) / (17 + radius);
+      if (tangent * tangent + radial * radial <= 1) return true;
+    }
+    return false;
+  }
+
+  function phaseTwoBossSlamTouchesPlayer(pattern, geometry, radius) {
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8;
+      const x = pattern.bossPrevContactX + (pattern.bossContactX - pattern.bossPrevContactX) * t;
+      const y = pattern.bossPrevContactY + (pattern.bossContactY - pattern.bossPrevContactY) * t;
+      const dx = (x - geometry.center.x) / (14 + radius);
+      const dy = (y - geometry.center.y) / (18 + radius);
+      if (dx * dx + dy * dy <= 1) return true;
+    }
+    return false;
+  }
+
+  function resolvePhaseTwoBossSlam(pattern, parried) {
+    if (pattern.bossSlamResolved) return;
+    pattern.bossSlamResolved = true;
+    pattern.bossSlamParried = parried;
+    pattern.bossSlamImpactAge = 0;
+    if (parried) {
+      vp = Math.min(VP_MAX, vp + PHASE2_SWORD_PARRY_VP);
+    } else {
+      hp = Math.max(0, hp - PHASE2_BOSS_SLAM_DAMAGE * (bpm / PHASE2_BPM_MIN));
+    }
+    restorePhaseTwoSquareArena();
+    pattern.centerX = hero.x;
+    pattern.centerY = hero.y;
+    if (hp <= 0) die();
+  }
+
+  function startPhaseTwoBossSlam(pattern) {
+    if (!phase2Avatar || typeof phase2Avatar.slamTo !== 'function') {
+      restorePhaseTwoSquareArena();
+      phase2SwordRingPattern = null;
+      return false;
+    }
+    const board = getBoardRect();
+    const center = worldPointToViewport(pattern.centerX, pattern.centerY, board);
+    const contact = phaseTwoBossSlamContact();
+    pattern.state = 'bossSlam';
+    pattern.activeIndex = -1;
+    pattern.elapsed = 0;
+    pattern.bossSlamResolved = false;
+    pattern.bossSlamParried = false;
+    pattern.bossSlamImpactAge = -1;
+    pattern.bossSlamFlashAge = -1;
+    pattern.bossSlamRangeEntered = false;
+    pattern.bossSlamReturning = false;
+    pattern.bossContactX = contact ? contact.x : center.x;
+    pattern.bossContactY = contact ? contact.y : center.y - 120;
+    pattern.bossPrevContactX = pattern.bossContactX;
+    pattern.bossPrevContactY = pattern.bossContactY;
+    const duration = phaseTwoSwordDuration(PHASE2_BOSS_SLAM_MS, pattern, false);
+    return phase2Avatar.slamTo(center.x, center.y, duration);
+  }
+
+  function updatePhaseTwoBossSlam(pattern, dt) {
+    const contact = phaseTwoBossSlamContact();
+    const geometry = phaseTwoSwordRingGeometry(pattern, 0);
+    if (!contact || !geometry) return;
+    pattern.bossPrevContactX = pattern.bossContactX;
+    pattern.bossPrevContactY = pattern.bossContactY;
+    pattern.bossContactX = contact.x;
+    pattern.bossContactY = contact.y;
+    if (pattern.bossSlamFlashAge >= 0) pattern.bossSlamFlashAge += dt;
+    if (pattern.bossSlamImpactAge >= 0) pattern.bossSlamImpactAge += dt;
+
+    if (!pattern.bossSlamResolved) {
+      if (!pattern.bossSlamRangeEntered && phaseTwoBossSlamTouchesGuard(pattern, geometry, true)) {
+        pattern.bossSlamRangeEntered = true;
+        pattern.bossSlamFlashAge = 0;
+      }
+      if (phaseTwoBossSlamTouchesGuard(pattern, geometry, false)) {
+        resolvePhaseTwoBossSlam(pattern, true);
+      } else if (phaseTwoBossSlamTouchesPlayer(pattern, geometry, contact.radius)) {
+        resolvePhaseTwoBossSlam(pattern, false);
+      }
+    }
+    if (!pattern.bossSlamResolved && phase2Avatar && !phase2Avatar.slamming) {
+      resolvePhaseTwoBossSlam(pattern, false);
+    }
+    if (pattern.bossSlamResolved && phase2Avatar && !phase2Avatar.slamming &&
+        pattern.bossSlamImpactAge >= 220) {
+      if (!pattern.bossSlamReturning) {
+        const duration = phaseTwoSwordDuration(PHASE2_BOSS_RETURN_DASH_MS, pattern, false);
+        pattern.bossSlamReturning = phase2Avatar.dashHome(getBoardRect(), duration);
+        if (!pattern.bossSlamReturning) phase2SwordRingPattern = null;
+      } else if (!phase2Avatar.dashing) {
+        phase2SwordRingPattern = null;
+      }
+      if (!phase2SwordRingPattern) keys.clear();
+    }
+  }
+
   function resolvePhaseTwoSwordStrike(pattern, type, geometry) {
     pattern.defended = type === 'parry';
     pattern.impactType = type;
@@ -3631,7 +3824,17 @@
     pattern.impactSwordScale = geometry.swordScale;
     pattern.impactOutX = geometry.direction.x;
     pattern.impactOutY = geometry.direction.y;
-    if (type === 'parry') pattern.successfulParries++;
+    if (type === 'parry') {
+      pattern.successfulParries++;
+      hp = Math.min(
+        HP_MAX,
+        hp + PHASE2_SWORD_PARRY_HEAL * (bpm / PHASE2_BPM_MIN)
+      );
+      vp = Math.min(VP_MAX, vp + PHASE2_SWORD_PARRY_VP);
+      if (!pattern.finalClockwise && pattern.successfulParries >= PHASE2_SWORD_FINAL_PARRIES) {
+        pattern.finalClockwisePending = true;
+      }
+    }
     if (type === 'hit') {
       hp = Math.max(0, hp - PHASE2_SWORD_RING_DAMAGE * (bpm / PHASE2_BPM_MIN));
       if (hp <= 0) die();
@@ -3646,7 +3849,10 @@
     slot.status = 'active';
     pattern.activeIndex = index;
     pattern.lastAttackIndex = index;
-    pattern.activeSpeedScale = Math.max(0.65, 1 - pattern.successfulParries * 0.025);
+    pattern.activeSpeedScale = Math.max(
+      0.50,
+      1 - Math.min(PHASE2_SWORD_FINAL_PARRIES, pattern.successfulParries) * 0.025
+    );
     pattern.defended = false;
     pattern.impactType = null;
     pattern.parryRangeEntered = false;
@@ -3699,6 +3905,10 @@
     pattern.guardSwapAge += dt;
     if (pattern.parryFlashAge >= 0) pattern.parryFlashAge += dt;
     pattern.elapsed += dt;
+    if (pattern.state === 'bossSlam') {
+      updatePhaseTwoBossSlam(pattern, dt);
+      return;
+    }
     const formMs = phaseTwoSwordDuration(PHASE2_SWORD_RING_FORM_MS, pattern, false);
     const flashMs = phaseTwoSwordDuration(PHASE2_SWORD_FLASH_MS, pattern, true);
     const strikeMs = phaseTwoSwordDuration(PHASE2_SWORD_STRIKE_MS, pattern, true);
@@ -3722,6 +3932,35 @@
       }
     } else if (pattern.state === 'impact' && pattern.elapsed >= impactMs) {
       const slot = pattern.slots[pattern.activeIndex];
+      if (pattern.finalClockwise) {
+        if (slot) slot.status = 'spent';
+        pattern.clockwiseIndex++;
+        pattern.activeIndex = -1;
+        if (pattern.clockwiseIndex >= PHASE2_SWORD_DIRECTIONS.length) {
+          startPhaseTwoBossSlam(pattern);
+          return;
+        }
+        pattern.state = 'waiting';
+        pattern.nextDelayMs = PHASE2_SWORD_NEXT_MS;
+        pattern.elapsed = 0;
+        return;
+      }
+      if (pattern.finalClockwisePending) {
+        pattern.finalClockwisePending = false;
+        pattern.finalClockwise = true;
+        pattern.clockwiseIndex = 0;
+        pattern.burstRemaining = 0;
+        pattern.attackBag = [];
+        for (const swordSlot of pattern.slots) {
+          swordSlot.status = 'ready';
+          swordSlot.respawnAge = 0;
+        }
+        pattern.activeIndex = -1;
+        pattern.state = 'waiting';
+        pattern.nextDelayMs = PHASE2_SWORD_NEXT_MS;
+        pattern.elapsed = 0;
+        return;
+      }
       if (slot) {
         slot.status = 'respawning';
         slot.respawnAge = 0;
@@ -3734,11 +3973,14 @@
       pattern.elapsed = 0;
     } else if (pattern.state === 'waiting' && pattern.elapsed >=
                phaseTwoSwordDuration(pattern.nextDelayMs, pattern, true)) {
-      if (pattern.successfulParries >= 8 && pattern.burstRemaining === 0) {
+      if (!pattern.finalClockwise && pattern.successfulParries >= 8 && pattern.burstRemaining === 0) {
         pattern.burstRemaining = 2;
       }
-      const next = chooseNextPhaseTwoSword(pattern);
-      if (next >= 0 && beginPhaseTwoSwordAttack(pattern, next) && pattern.successfulParries >= 8) {
+      const next = pattern.finalClockwise
+        ? pattern.clockwiseIndex
+        : chooseNextPhaseTwoSword(pattern);
+      if (next >= 0 && beginPhaseTwoSwordAttack(pattern, next) &&
+          !pattern.finalClockwise && pattern.successfulParries >= 8) {
         pattern.burstRemaining--;
       }
     }
@@ -4225,7 +4467,7 @@
             }
           },
         });
-        updatePhaseTwoLayout(phase2Avatar.layoutProgress);
+        if (!phase2SquareArenaLocked) updatePhaseTwoLayout(phase2Avatar.layoutProgress);
       }
       if (phase2Avatar && phase2Avatar.layoutProgress >= 1) {
         beginPhaseTwoCombat();
@@ -5314,6 +5556,47 @@
     }
   }
 
+  function renderPhaseTwoBossSlamCue(pattern) {
+    if (pattern.state !== 'bossSlam') return;
+    const flashMs = phaseTwoSwordDuration(PHASE2_SWORD_PARRY_FLASH_MS, pattern, false);
+    if (pattern.bossSlamFlashAge >= 0 && pattern.bossSlamFlashAge <= flashMs) {
+      renderPhaseTwoSwordFlash(
+        pattern.bossContactX,
+        pattern.bossContactY,
+        pattern.bossSlamFlashAge / flashMs
+      );
+    }
+    if (pattern.bossSlamImpactAge < 0) return;
+    const p = Math.min(1, pattern.bossSlamImpactAge / 260);
+    const snap = 1 - smoothstep(p);
+    const parried = pattern.bossSlamParried;
+    actx.save();
+    actx.globalCompositeOperation = 'screen';
+    actx.globalAlpha = snap * (parried ? 0.32 : 0.24);
+    actx.fillStyle = parried ? '#fff4c8' : '#f3201b';
+    actx.fillRect(0, 0, attackCanvas.width, attackCanvas.height);
+    actx.translate(pattern.bossContactX, pattern.bossContactY);
+    actx.globalAlpha = snap;
+    actx.strokeStyle = parried ? '#fff5ce' : '#ff3026';
+    actx.shadowColor = parried ? '#ffe9a6' : '#ed1712';
+    actx.shadowBlur = 22;
+    actx.lineWidth = parried ? 6 : 4;
+    actx.beginPath();
+    actx.ellipse(0, 0, 34 + p * 110, 10 + p * 32, 0, 0, Math.PI * 2);
+    actx.stroke();
+    for (let i = 0; i < 14; i++) {
+      const angle = -Math.PI + i * Math.PI * 2 / 14;
+      const inner = 22;
+      const outer = 58 + (i % 3) * 18 + p * 42;
+      actx.globalAlpha = snap * (i % 2 ? 0.58 : 0.88);
+      actx.beginPath();
+      actx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner * 0.42);
+      actx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer * 0.42);
+      actx.stroke();
+    }
+    actx.restore();
+  }
+
   function renderPhaseTwoSwordRingPattern() {
     const pattern = phase2SwordRingPattern;
     if (!pattern) return;
@@ -5329,7 +5612,8 @@
     const formP = forming ? smoothstep(Math.min(1, pattern.elapsed / formMs)) : 1;
     for (let i = 0; i < PHASE2_SWORD_DIRECTIONS.length; i++) {
       const slot = pattern.slots[i];
-      if (!slot || (slot.status === 'active' && pattern.state === 'impact')) continue;
+      if (!slot || slot.status === 'spent' ||
+          (slot.status === 'active' && pattern.state === 'impact')) continue;
       let slotP = 1;
       if (slot.status === 'respawning') {
         const respawnDelayMs = phaseTwoSwordDuration(PHASE2_SWORD_RESPAWN_DELAY_MS, pattern, false);
@@ -5383,6 +5667,7 @@
 
     renderPhaseTwoSwordGuard(pattern, geometry);
     renderPhaseTwoSwordImpactFrame(pattern);
+    renderPhaseTwoBossSlamCue(pattern);
   }
 
   // Clears and repaints the full-viewport attack canvas (pentagrams + beams).

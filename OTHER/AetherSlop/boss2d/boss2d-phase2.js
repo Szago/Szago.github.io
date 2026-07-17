@@ -52,6 +52,7 @@
       echoClock: 0,
       combatAnchor: null,
       dash: null,
+      combatSlam: null,
       avatar: {
         x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0,
         size: 250, baseSize: 250, alpha: 0, squash: 0, visible: false,
@@ -71,6 +72,7 @@
       state.echoClock = 0;
       state.combatAnchor = null;
       state.dash = null;
+      state.combatSlam = null;
       state.layoutProgress = 0;
       state.impact = 0;
       state.impactAge = Infinity;
@@ -176,6 +178,34 @@
       return true;
     }
 
+    function dashHome(boardRect, duration) {
+      if (!boardRect) return false;
+      const home = targetHover(boardRect);
+      return dashTo(home.x, home.y, duration);
+    }
+
+    function slamTo(contactX, contactY, duration) {
+      if (!state.active || !state.avatar.visible) return false;
+      const a = state.avatar;
+      const anchor = state.combatAnchor || { x: a.x, y: a.y };
+      const size = a.baseSize || a.size;
+      state.dash = null;
+      state.combatSlam = {
+        fromX: anchor.x,
+        fromY: anchor.y,
+        hoverX: contactX,
+        hoverY: Math.max(viewportSafeY(size), contactY - size * 0.92),
+        targetX: contactX,
+        targetY: contactY - size * AVATAR_CONTACT_Y,
+        elapsed: 0,
+        duration: Math.max(620, duration || 1100),
+        impacted: false,
+      };
+      state.echoes = state.echoes.filter((echo) => !echo.dash).slice(-2);
+      state.echoClock = DASH_ECHO_INTERVAL;
+      return true;
+    }
+
     function update(dt, boardRect, callbacks) {
       if (!state.active) return state;
       state.elapsed += dt;
@@ -247,10 +277,37 @@
         const impactY = Number.isFinite(state.slamY) ? state.slamY : targetImpactY(boardRect);
         const perchY = targetInsideTopY(boardRect);
         const minY = viewportSafeY(a.size);
+        const size = a.baseSize || a.size;
         if (!state.combatAnchor) {
           state.combatAnchor = { x: boardRect.left + boardRect.width / 2, y: perchY };
         }
-        if (state.dash) {
+        if (state.combatSlam) {
+          const slam = state.combatSlam;
+          slam.elapsed += dt;
+          const p = clamp01(slam.elapsed / slam.duration);
+          const windupEnd = 0.30;
+          const impactAt = 0.70;
+          if (p < windupEnd) {
+            const q = smoothstep(p / windupEnd);
+            state.combatAnchor.x = slam.fromX + (slam.hoverX - slam.fromX) * q;
+            state.combatAnchor.y = slam.fromY + (slam.hoverY - slam.fromY) * q;
+          } else if (p < impactAt) {
+            const q = easeInQuad((p - windupEnd) / (impactAt - windupEnd));
+            state.combatAnchor.x = slam.hoverX + (slam.targetX - slam.hoverX) * q;
+            state.combatAnchor.y = slam.hoverY + (slam.targetY - slam.hoverY) * q;
+          } else {
+            if (!slam.impacted) {
+              slam.impacted = true;
+              state.impact = 1;
+              state.impactAge = 0;
+              if (callbacks && callbacks.onSlam) callbacks.onSlam();
+            }
+            const q = smoothstep((p - impactAt) / (1 - impactAt));
+            state.combatAnchor.x = slam.targetX + Math.sin(q * Math.PI) * size * 0.035;
+            state.combatAnchor.y = slam.targetY - Math.sin(q * Math.PI) * size * 0.18;
+          }
+          if (p >= 1) state.combatSlam = null;
+        } else if (state.dash) {
           state.dash.elapsed += dt;
           const p = clamp01(state.dash.elapsed / state.dash.duration);
           const eased = p < 0.38
@@ -260,7 +317,7 @@
           state.combatAnchor.y = state.dash.fromY + (state.dash.toY - state.dash.fromY) * eased;
           if (p >= 1) state.dash = null;
         }
-        const dashWeight = state.dash ? 0.18 : 1;
+        const dashWeight = state.dash || state.combatSlam ? 0.18 : 1;
         a.x = state.combatAnchor.x
           + (Math.sin(t * 1.65) * 18 + Math.sin(t * 0.61) * 9) * dashWeight;
         const baseY = impactY + (state.combatAnchor.y - impactY) * floatP;
@@ -274,12 +331,13 @@
 
       a.vx = a.x - a.prevX;
       a.vy = a.y - a.prevY;
-      const echoInterval = state.dash ? DASH_ECHO_INTERVAL : ECHO_INTERVAL;
+      const movingFast = !!state.dash || !!state.combatSlam;
+      const echoInterval = movingFast ? DASH_ECHO_INTERVAL : ECHO_INTERVAL;
       state.echoClock += dt;
       let spawned = 0;
       while (state.echoClock >= echoInterval && spawned < 4) {
         state.echoClock -= echoInterval;
-        spawnEcho(!!state.dash, dt > 0 ? clamp01(state.echoClock / dt) : 0);
+        spawnEcho(movingFast, dt > 0 ? clamp01(state.echoClock / dt) : 0);
         spawned++;
       }
       for (const e of state.echoes) e.age += dt;
@@ -395,7 +453,7 @@
       const sy = 1 - a.squash * 0.55;
       ctx.globalAlpha = a.alpha;
       ctx.shadowColor = 'rgba(210, 210, 230, 0.42)';
-      ctx.shadowBlur = state.dash ? 8 : 18;
+      ctx.shadowBlur = state.dash || state.combatSlam ? 8 : 18;
       ctx.translate(a.x, a.y);
       ctx.scale(sx, sy);
       ctx.drawImage(sprite, -a.size / 2, -a.size / 2, a.size, a.size);
@@ -412,11 +470,14 @@
       reset,
       start,
       dashTo,
+      dashHome,
+      slamTo,
       update,
       render,
       get active() { return state.active; },
       get layoutProgress() { return state.layoutProgress; },
       get dashing() { return !!state.dash; },
+      get slamming() { return !!state.combatSlam; },
       get state() { return state; },
     };
   }
