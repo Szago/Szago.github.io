@@ -60,7 +60,7 @@ function retrieveCost() {
         const start = parseInt(document.getElementById('startLevelInput').value) || 0;
         const end = parseInt(document.getElementById('endLevelInput').value) || 0;
 
-        if (end > start && end <= 220) {
+        if (end > start && end <= 240) {
             const startTotal = calculateTotalCost(start);
             const endTotal = calculateTotalCost(end);
             const diff = endTotal - startTotal;
@@ -97,6 +97,6 @@ function retrieveCost() {
         });
         tableCont.innerHTML = html + `</table>`;
     } else {
-        tableCont.innerHTML = `<div class="empty-state">Enter valid levels (1-220)</div>`;
+        tableCont.innerHTML = `<div class="empty-state">Enter valid levels (1-240)</div>`;
     }
 }
