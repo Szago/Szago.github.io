@@ -392,6 +392,8 @@
   let phase2TileRuinDebugQueued = false;
   let phase2SwordRingPattern = null;
   let phase2SwordRingDebugQueued = false;
+  let phase2PitfallPattern = null;
+  let phase2PitfallDebugQueued = false;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
   let nextSlotId = 1;
@@ -442,6 +444,13 @@
   const PHASE2_BOSS_SLAM_MS = 1200;
   const PHASE2_BOSS_RETURN_DASH_MS = 430;
   const PHASE2_BOSS_SLAM_DAMAGE = 60;
+  const PHASE2_PITFALL_ENTRY_MS = 900;
+  const PHASE2_PITFALL_TRAVEL_BEATS = 4.8;
+  const PHASE2_PITFALL_SPAWN_BEATS = 2.15;
+  const PHASE2_PITFALL_HIT_DEPTH = 0.78;
+  const PHASE2_PITFALL_MOVE_SCALE = 0.50;
+  const PHASE2_PITFALL_TIME_SCALE = 0.75;
+  const PHASE2_PITFALL_DAMAGE = 85;
   const DEATH_SLOW_MS = 900;
   const DEATH_FADE_START = 90;
   const DEATH_FADE_END = 1080;
@@ -1202,6 +1211,16 @@
       swordRingBtn.blur();
     });
     debugPanel.appendChild(swordRingBtn);
+
+    const pitfallBtn = document.createElement('button');
+    pitfallBtn.type = 'button';
+    pitfallBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    pitfallBtn.textContent = 'PITFALL';
+    pitfallBtn.addEventListener('click', () => {
+      debugPhaseTwoPitfall();
+      pitfallBtn.blur();
+    });
+    debugPanel.appendChild(pitfallBtn);
 
     const tempoControls = document.createElement('div');
     tempoControls.className = 'aether-boss2d-debug-tempo';
@@ -2156,6 +2175,226 @@
     ctx.restore();
   }
 
+  function phaseTwoPitfallProjection(platform) {
+    const depth = platform.age / platform.duration;
+    const hitT = clamp01(depth / PHASE2_PITFALL_HIT_DEPTH);
+    const approach = easeInQuad(hitT);
+    const passed = clamp01((depth - PHASE2_PITFALL_HIT_DEPTH) / (1.16 - PHASE2_PITFALL_HIT_DEPTH));
+    const scale = depth <= PHASE2_PITFALL_HIT_DEPTH
+      ? 0.045 + approach * 0.955
+      : 1 + easeOutCubic(passed) * 0.78;
+    const inset = BORDER + PAD;
+    const fullWidth = canvas.width - inset * 2;
+    const fullHeight = canvas.height - inset * 2;
+    const vanishingY = canvas.height * 0.40;
+    const centerY = vanishingY + (canvas.height / 2 - vanishingY) * hitT;
+    const width = fullWidth * scale;
+    const height = fullHeight * scale;
+    return {
+      depth,
+      scale,
+      left: canvas.width / 2 - width / 2,
+      top: centerY - height / 2,
+      width,
+      height,
+      alpha: depth < 0.08 ? smoothstep(depth / 0.08) : 1 - smoothstep((depth - 1.02) / 0.14),
+    };
+  }
+
+  function tracePhaseTwoPitfallGap(gap, projection) {
+    for (let i = 0; i < gap.points.length; i++) {
+      const point = gap.points[i];
+      const x = projection.left + point.x * projection.width;
+      const y = projection.top + point.y * projection.height;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  function renderPhaseTwoPitfallPlatform(platform) {
+    const projection = phaseTwoPitfallProjection(platform);
+    if (projection.alpha <= 0.001) return;
+    const passed = Math.max(0, projection.depth - PHASE2_PITFALL_HIT_DEPTH);
+    const faceAlpha = 1 - smoothstep(passed / 0.075);
+    const hitFlash = platform.hit && platform.hitAge >= 0
+      ? 1 - smoothstep(platform.hitAge / 220)
+      : 0;
+    const safeFlash = platform.resolved && !platform.hit
+      ? 1 - smoothstep((platform.age / platform.duration - PHASE2_PITFALL_HIT_DEPTH) / 0.10)
+      : 0;
+    const thickness = Math.max(2, projection.scale * 9);
+    ctx.save();
+    ctx.globalAlpha = projection.alpha;
+
+    if (faceAlpha > 0.001) {
+      ctx.save();
+      ctx.globalAlpha *= faceAlpha;
+      ctx.fillStyle = hitFlash > 0
+        ? 'rgba(150, 12, 18, 0.96)'
+        : 'rgba(54, 8, 12, 0.94)';
+      ctx.fillRect(
+        projection.left,
+        projection.top + projection.height,
+        projection.width,
+        thickness
+      );
+
+      ctx.beginPath();
+      ctx.rect(projection.left, projection.top, projection.width, projection.height);
+      for (const gap of platform.gaps) tracePhaseTwoPitfallGap(gap, projection);
+      ctx.fillStyle = hitFlash > 0
+        ? 'rgba(42, 3, 6, 0.99)'
+        : 'rgba(25, 25, 29, 0.98)';
+      ctx.fill('evenodd');
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(projection.left, projection.top, projection.width, projection.height);
+      for (const gap of platform.gaps) tracePhaseTwoPitfallGap(gap, projection);
+      ctx.clip('evenodd');
+      ctx.globalAlpha *= 0.22 + projection.scale * 0.14;
+      ctx.strokeStyle = hitFlash > 0 ? '#ff2830' : '#77766f';
+      ctx.lineWidth = Math.max(0.5, projection.scale * 0.8);
+      const stripeGap = Math.max(8, 34 * projection.scale);
+      ctx.beginPath();
+      for (let y = projection.top - projection.width; y < projection.top + projection.height + projection.width; y += stripeGap) {
+        ctx.moveTo(projection.left, y);
+        ctx.lineTo(projection.left + projection.width, y + projection.width * 0.22);
+      }
+      ctx.stroke();
+      ctx.restore();
+      ctx.restore();
+    }
+
+    ctx.strokeStyle = hitFlash > 0
+      ? 'rgba(255, 42, 50, 0.98)'
+      : safeFlash > 0
+        ? 'rgba(225, 224, 210, ' + (0.55 + safeFlash * 0.4).toFixed(3) + ')'
+        : 'rgba(178, 176, 164, 0.82)';
+    ctx.lineWidth = Math.max(0.7, projection.scale * 1.5);
+    ctx.strokeRect(projection.left, projection.top, projection.width, projection.height);
+    for (const gap of platform.gaps) {
+      ctx.beginPath();
+      tracePhaseTwoPitfallGap(gap, projection);
+      ctx.strokeStyle = 'rgba(3, 2, 5, 0.94)';
+      ctx.lineWidth = Math.max(10, projection.scale * 26);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function renderPhaseTwoPitfall(sceneW, sceneH) {
+    const pattern = phase2PitfallPattern;
+    if (!pattern) return;
+    const entry = smoothstep(pattern.elapsed / PHASE2_PITFALL_ENTRY_MS);
+    const cx = sceneW / 2;
+    const cy = sceneH / 2;
+    ctx.save();
+    ctx.fillStyle = '#020104';
+    ctx.fillRect(0, 0, sceneW, sceneH);
+
+    const vanishingX = cx;
+    const vanishingY = sceneH * 0.40;
+    const innerWidth = sceneW - (BORDER + PAD) * 2;
+    const innerHeight = sceneH - (BORDER + PAD) * 2;
+    for (let group = 0; group < 3; group++) {
+      ctx.beginPath();
+      for (let i = group; i < 9; i += 3) {
+        const travel = (i / 9 + pattern.tunnelOffset / 1180) % 1;
+        const scale = 0.025 + easeInQuad(travel) * 0.955;
+        const width = innerWidth * scale;
+        const height = innerHeight * scale;
+        const ringY = vanishingY + (cy - vanishingY) * travel;
+        ctx.rect(cx - width / 2, ringY - height / 2, width, height);
+      }
+      ctx.strokeStyle = 'rgba(190, 188, 178, ' + (0.10 + group * 0.045).toFixed(3) + ')';
+      ctx.lineWidth = 0.7 + group * 0.35;
+      ctx.stroke();
+    }
+
+    ctx.beginPath();
+    for (let i = 0; i < 12; i++) {
+      const travel = (i / 12 + pattern.tunnelOffset / 920) % 1;
+      const side = i % 4;
+      const scale = 0.06 + easeInQuad(travel) * 0.82;
+      const width = (sceneW - (BORDER + PAD) * 2) * scale;
+      const height = (sceneH - (BORDER + PAD) * 2) * scale;
+      const ringY = vanishingY + (cy - vanishingY) * travel;
+      const left = cx - width / 2;
+      const right = cx + width / 2;
+      const top = ringY - height / 2;
+      const bottom = ringY + height / 2;
+      if (side === 0 || side === 2) {
+        const x = side === 0 ? left : right;
+        ctx.moveTo(x, top);
+        ctx.lineTo(x + (side === 0 ? -1 : 1) * (10 + travel * 26), top - 5);
+      } else {
+        const y = side === 1 ? top : bottom;
+        ctx.moveTo(left, y);
+        ctx.lineTo(left - 5, y + (side === 1 ? -1 : 1) * (10 + travel * 26));
+      }
+    }
+    ctx.strokeStyle = 'rgba(205, 202, 190, 0.20)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    const platforms = pattern.platforms.slice().sort((a, b) => a.age - b.age);
+    for (const platform of platforms) renderPhaseTwoPitfallPlatform(platform);
+    ctx.restore();
+
+    if (entry < 1) {
+      ctx.save();
+      for (let i = 0; i < 3; i++) {
+        const delayed = clamp01(entry * 1.35 - i * 0.16);
+        if (delayed <= 0) continue;
+        const scale = 0.02 + easeOutCubic(delayed) * 0.96;
+        const alpha = (1 - delayed) * (0.78 - i * 0.15);
+        ctx.strokeStyle = i === 0
+          ? 'rgba(190, 24, 31, ' + alpha.toFixed(3) + ')'
+          : 'rgba(214, 211, 198, ' + alpha.toFixed(3) + ')';
+        ctx.lineWidth = 1 + (1 - delayed) * (3 - i * 0.6);
+        ctx.strokeRect(
+          cx - innerWidth * scale / 2,
+          cy - innerHeight * scale / 2,
+          innerWidth * scale,
+          innerHeight * scale
+        );
+      }
+      ctx.restore();
+    }
+  }
+
+  function renderPhaseTwoPitfallImpact() {
+    const pattern = phase2PitfallPattern;
+    if (!pattern) return;
+    if (pattern.impactAge >= 0 && pattern.impactAge < 260) {
+      const p = clamp01(pattern.impactAge / 260);
+      ctx.save();
+      ctx.fillStyle = 'rgba(180, 8, 16, ' + ((1 - p) * 0.32).toFixed(3) + ')';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.translate(hero.x, hero.y);
+      ctx.strokeStyle = 'rgba(255, 50, 56, ' + (1 - p).toFixed(3) + ')';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 12; i++) {
+        const angle = i * Math.PI * 2 / 12;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(angle) * 18, Math.sin(angle) * 18);
+        ctx.lineTo(Math.cos(angle) * (32 + p * 44), Math.sin(angle) * (32 + p * 44));
+        ctx.stroke();
+      }
+      ctx.restore();
+    } else if (pattern.safeAge >= 0 && pattern.safeAge < 180) {
+      const p = clamp01(pattern.safeAge / 180);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(225, 224, 210, ' + ((1 - p) * 0.68).toFixed(3) + ')';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(hero.x, hero.y, 22 + p * 18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   function renderScene() {
     const sceneW = canvas ? canvas.width : BOARD;
     const sceneH = canvas ? canvas.height : BOARD;
@@ -2165,8 +2404,18 @@
     arenaPath(ctx, 0);
     ctx.clip();
 
+    const pitfallActive = phase === PHASE.SECOND && !!phase2PitfallPattern;
     const settledGrid = phase === PHASE.SECOND && phase2GridSpecial && phase2GridSpecial.settled;
-    if (settledGrid) {
+    if (pitfallActive) {
+      ctx.fillStyle = '#040406';
+      ctx.fillRect(0, 0, sceneW, sceneH);
+      if (!cobbledFloorPattern) cobbledFloorPattern = ctx.createPattern(cobbledFloorCanvas, 'repeat');
+      if (cobbledFloorPattern) {
+        ctx.fillStyle = cobbledFloorPattern;
+        ctx.fillRect(0, 0, sceneW, sceneH);
+      }
+      renderPhaseTwoPitfall(sceneW, sceneH);
+    } else if (settledGrid) {
       ctx.drawImage(phaseTwoGridFloorBuffer(phase2GridSpecial), 0, 0);
     } else {
       // The empty plane inside the current arena geometry, slowly paving over
@@ -2174,7 +2423,7 @@
       ctx.fillStyle = '#040406';
       ctx.fillRect(0, 0, sceneW, sceneH);
     }
-    if (!settledGrid && calcify > 0.001) {
+    if (!pitfallActive && !settledGrid && calcify > 0.001) {
       ctx.save();
       ctx.globalAlpha = calcify;
       if (!cobbledFloorPattern) cobbledFloorPattern = ctx.createPattern(cobbledFloorCanvas, 'repeat');
@@ -2207,7 +2456,7 @@
     if (phase === PHASE.PENTAGRAM || phase === PHASE.ACTIVE) renderPentagram();
 
     // Tentacles reach in from the dark edges once they have spawned.
-    if (tentacles.length) {
+    if (!pitfallActive && tentacles.length) {
       let growth = 1;
       let fade = 1;
       let retreat = 0;
@@ -2228,10 +2477,11 @@
     renderShockwave();
     ctx.restore();
 
-    if (phase === PHASE.SECOND && phase2GridSpecial && !phase2GridSpecial.settled) renderPhaseTwoGridFloor();
-    if (phase === PHASE.SECOND && phase2Cracks.length) renderPhaseTwoGroundCracks();
-    if (phase === PHASE.SECOND) renderPhaseTwoFinalTile();
+    if (!pitfallActive && phase === PHASE.SECOND && phase2GridSpecial && !phase2GridSpecial.settled) renderPhaseTwoGridFloor();
+    if (!pitfallActive && phase === PHASE.SECOND && phase2Cracks.length) renderPhaseTwoGroundCracks();
+    if (!pitfallActive && phase === PHASE.SECOND) renderPhaseTwoFinalTile();
     drawHero();
+    if (pitfallActive) renderPhaseTwoPitfallImpact();
     ctx.restore();
 
     // Bloody frame follows the arena transform and sits above its contents.
@@ -3291,6 +3541,8 @@
     phase2TileRuinDebugQueued = false;
     phase2SwordRingPattern = null;
     phase2SwordRingDebugQueued = false;
+    phase2PitfallPattern = null;
+    phase2PitfallDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -3709,6 +3961,8 @@
     phase2TileRuinPattern = null;
     phase2SwordRingPattern = null;
     phase2SwordRingDebugQueued = false;
+    phase2PitfallPattern = null;
+    phase2PitfallDebugQueued = false;
     keys.clear();
     dashPhaseTwoAvatarToBase();
     phase2GridSpecial = {
@@ -4239,9 +4493,13 @@
       if (!pattern.bossSlamReturning) {
         const duration = phaseTwoSwordDuration(PHASE2_BOSS_RETURN_DASH_MS, pattern, false);
         pattern.bossSlamReturning = phase2Avatar.dashHome(getBoardRect(), duration);
-        if (!pattern.bossSlamReturning) phase2SwordRingPattern = null;
+        if (!pattern.bossSlamReturning) {
+          phase2SwordRingPattern = null;
+          startPhaseTwoPitfallPattern();
+        }
       } else if (!phase2Avatar.dashing) {
         phase2SwordRingPattern = null;
+        startPhaseTwoPitfallPattern();
       }
       if (!phase2SwordRingPattern) keys.clear();
     }
@@ -4500,9 +4758,11 @@
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
     phase2SwordRingPattern = null;
+    phase2PitfallPattern = null;
     nextPhase2AttackBeat = phase2DebugClawQueued ? 0 : 2;
     if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
-    if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
+    if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
+    else if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
     else if (phase2GridDebugQueued) startPhaseTwoGridSpecial();
   }
 
@@ -4832,6 +5092,8 @@
       phase2TileRuinDebugQueued = false;
       phase2SwordRingPattern = null;
       phase2SwordRingDebugQueued = false;
+      phase2PitfallPattern = null;
+      phase2PitfallDebugQueued = false;
       phase2Attacks = [];
       phase2BurstActive = false;
       nextPhase2AttackBeat = beatIndex;
@@ -4848,6 +5110,8 @@
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
     phase2SwordRingPattern = null;
+    phase2PitfallPattern = null;
+    phase2PitfallDebugQueued = false;
     phase2Attacks = [];
     phase2BurstActive = false;
     phase2GridSpecial = null;
@@ -4880,10 +5144,325 @@
     if (phase2CombatStarted) beginDebugPhaseTwoSwordRing();
   }
 
+  function clipPhaseTwoPitfallPolygon(points) {
+    const boundaries = [
+      {
+        inside: (point) => point.x >= 0,
+        cross: (a, b) => ({ x: 0, y: a.y + (b.y - a.y) * (-a.x) / (b.x - a.x) }),
+      },
+      {
+        inside: (point) => point.x <= 1,
+        cross: (a, b) => ({ x: 1, y: a.y + (b.y - a.y) * (1 - a.x) / (b.x - a.x) }),
+      },
+      {
+        inside: (point) => point.y >= 0,
+        cross: (a, b) => ({ x: a.x + (b.x - a.x) * (-a.y) / (b.y - a.y), y: 0 }),
+      },
+      {
+        inside: (point) => point.y <= 1,
+        cross: (a, b) => ({ x: a.x + (b.x - a.x) * (1 - a.y) / (b.y - a.y), y: 1 }),
+      },
+    ];
+    let output = points;
+    for (const boundary of boundaries) {
+      const input = output;
+      output = [];
+      if (!input.length) break;
+      let previous = input[input.length - 1];
+      let previousInside = boundary.inside(previous);
+      for (const current of input) {
+        const currentInside = boundary.inside(current);
+        if (currentInside !== previousInside) output.push(boundary.cross(previous, current));
+        if (currentInside) output.push(current);
+        previous = current;
+        previousInside = currentInside;
+      }
+    }
+    return output.map((point) => ({ x: clamp01(point.x), y: clamp01(point.y) }));
+  }
+
+  function makePhaseTwoPitfallWedge(angle, random) {
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    const nx = -dy;
+    const ny = dx;
+    const edgeDistance = Math.min(
+      Math.abs(dx) > 0.0001 ? 0.5 / Math.abs(dx) : Infinity,
+      Math.abs(dy) > 0.0001 ? 0.5 / Math.abs(dy) : Infinity
+    );
+    const outerDistance = edgeDistance + 0.24;
+    const edgeWidth = 0.40 + random() * 0.04;
+    const outerHalfWidth = edgeWidth * 0.5 * outerDistance / edgeDistance;
+    const skew = (random() - 0.5) * 0.018;
+    const pointAt = (distance, halfWidth) => ({
+      left: {
+        x: 0.5 + dx * distance + nx * (halfWidth + skew),
+        y: 0.5 + dy * distance + ny * (halfWidth + skew),
+      },
+      right: {
+        x: 0.5 + dx * distance - nx * (halfWidth - skew),
+        y: 0.5 + dy * distance - ny * (halfWidth - skew),
+      },
+    });
+    const middle = pointAt(outerDistance * 0.58, outerHalfWidth * 0.54);
+    const outer = pointAt(outerDistance, outerHalfWidth);
+    const targetDistance = edgeDistance * 0.62;
+    const points = clipPhaseTwoPitfallPolygon([
+        { x: 0.5, y: 0.5 },
+        middle.left,
+        outer.left,
+        outer.right,
+        middle.right,
+      ]);
+    return {
+      points,
+      targetX: 0.5 + dx * targetDistance,
+      targetY: 0.5 + dy * targetDistance,
+      kind: 'wedge',
+    };
+  }
+
+  function makePhaseTwoPitfallQuarter(quadrant) {
+    const left = quadrant === 0 || quadrant === 3 ? 0 : 0.5;
+    const top = quadrant < 2 ? 0 : 0.5;
+    return {
+      points: [
+        { x: left, y: top },
+        { x: left + 0.5, y: top },
+        { x: left + 0.5, y: top + 0.5 },
+        { x: left, y: top + 0.5 },
+      ],
+      targetX: left + 0.25,
+      targetY: top + 0.25,
+      kind: 'quarter',
+    };
+  }
+
+  function makePhaseTwoPitfallCircle(position, random) {
+    const centers = [
+      { x: 0.5, y: 0.5 },
+      { x: 0.27, y: 0.27 },
+      { x: 0.73, y: 0.27 },
+      { x: 0.73, y: 0.73 },
+      { x: 0.27, y: 0.73 },
+    ];
+    const center = centers[position];
+    const radius = 0.17 + random() * 0.025;
+    const points = [];
+    for (let i = 0; i < 24; i++) {
+      const angle = i * Math.PI * 2 / 24;
+      points.push({
+        x: center.x + Math.cos(angle) * radius,
+        y: center.y + Math.sin(angle) * radius,
+      });
+    }
+    return {
+      points,
+      targetX: center.x,
+      targetY: center.y,
+      kind: 'circle',
+    };
+  }
+
+  function phaseTwoPitfallHeroPosition() {
+    const left = BORDER + PAD;
+    const top = BORDER + PAD;
+    const width = Math.max(1, canvas.width - (BORDER + PAD) * 2);
+    const height = Math.max(1, canvas.height - (BORDER + PAD) * 2);
+    return {
+      x: clamp01((hero.x - left) / width),
+      y: clamp01((hero.y - top) / height),
+      halfX: HERO_W * 0.36 / width,
+      halfY: HERO_H * 0.36 / height,
+    };
+  }
+
+  function phaseTwoPitfallHeroInGap(platform) {
+    const p = phaseTwoPitfallHeroPosition();
+    const samples = [
+      { x: p.x, y: p.y },
+      { x: p.x - p.halfX, y: p.y - p.halfY },
+      { x: p.x + p.halfX, y: p.y - p.halfY },
+      { x: p.x + p.halfX, y: p.y + p.halfY },
+      { x: p.x - p.halfX, y: p.y + p.halfY },
+    ];
+    return platform.gaps.some((gap) => samples.every((sample) => pointInPoly(sample.x, sample.y, gap.points)));
+  }
+
+  function phaseTwoPitfallHeroOnShadowEdge(platform) {
+    const depth = platform.age / platform.duration;
+    if (platform.resolved || depth < 0.10 || depth > PHASE2_PITFALL_HIT_DEPTH) return false;
+    const projection = phaseTwoPitfallProjection(platform);
+    const threshold = HERO_W * 0.22 + Math.max(10, projection.scale * 26) * 0.5;
+    for (const gap of platform.gaps) {
+      for (let i = 0; i < gap.points.length; i++) {
+        const a = gap.points[i];
+        const b = gap.points[(i + 1) % gap.points.length];
+        const ax = projection.left + a.x * projection.width;
+        const ay = projection.top + a.y * projection.height;
+        const bx = projection.left + b.x * projection.width;
+        const by = projection.top + b.y * projection.height;
+        if (distToSeg(hero.x, hero.y, ax, ay, bx, by) <= threshold) return true;
+      }
+    }
+    return false;
+  }
+
+  function makePhaseTwoPitfallPlatform(pattern) {
+    const random = pattern.random;
+    let gap = null;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const shapeRoll = random();
+      const candidate = shapeRoll < 0.48
+        ? makePhaseTwoPitfallWedge(random() * Math.PI * 2, random)
+        : shapeRoll < 0.74
+          ? makePhaseTwoPitfallQuarter(Math.floor(random() * 4))
+          : makePhaseTwoPitfallCircle(Math.floor(random() * 5), random);
+      gap = candidate;
+      if (Math.hypot(candidate.targetX - pattern.nextGapX, candidate.targetY - pattern.nextGapY) <= 0.39) break;
+    }
+    pattern.nextGapX = gap.targetX;
+    pattern.nextGapY = gap.targetY;
+    return {
+      id: pattern.nextId++,
+      age: 0,
+      duration: beatMs * PHASE2_PITFALL_TRAVEL_BEATS,
+      gaps: [gap],
+      seed: random() * 1000,
+      resolved: false,
+      hit: false,
+      hitAge: -1,
+    };
+  }
+
+  function startPhaseTwoPitfallPattern() {
+    if (!canvas || phase2PitfallPattern) return false;
+    if (!phase2SquareArenaLocked) restorePhaseTwoSquareArena();
+    phase2PitfallDebugQueued = false;
+    phase2GridDebugQueued = false;
+    phase2DebugClawQueued = false;
+    phase2ClawPatternStopped = true;
+    phase2TileRuinPattern = null;
+    phase2TileRuinDebugQueued = false;
+    phase2SwordRingPattern = null;
+    phase2SwordRingDebugQueued = false;
+    phase2Attacks = [];
+    phase2BurstActive = false;
+    phase2GridSpecial = null;
+    phase2Cracks = [];
+    phase2CrackCacheDirty = true;
+    nextPhase2AttackBeat = Infinity;
+    hero.x = canvas.width / 2;
+    hero.y = canvas.height / 2;
+    heroMove.x = 0;
+    heroMove.y = 0;
+    keys.clear();
+    const seed = (Math.random() * 0xffffffff) >>> 0;
+    phase2PitfallPattern = {
+      elapsed: 0,
+      spawnClock: beatMs * PHASE2_PITFALL_SPAWN_BEATS,
+      platforms: [],
+      nextId: 1,
+      nextGapX: 0.5,
+      nextGapY: 0.5,
+      tunnelOffset: 0,
+      impactAge: -1,
+      safeAge: -1,
+      seed,
+      random: mulberry32(seed),
+    };
+    return true;
+  }
+
+  function updatePhaseTwoPitfallMovement(dt) {
+    let dx = 0;
+    let dy = 0;
+    if (keys.has('KeyA') || keys.has('ArrowLeft')) dx -= 1;
+    if (keys.has('KeyD') || keys.has('ArrowRight')) dx += 1;
+    if (keys.has('KeyW') || keys.has('ArrowUp')) dy -= 1;
+    if (keys.has('KeyS') || keys.has('ArrowDown')) dy += 1;
+    const length = Math.hypot(dx, dy);
+    if (!length) {
+      heroMove.x = 0;
+      heroMove.y = 0;
+      return;
+    }
+    heroMove.x = dx / length;
+    heroMove.y = dy / length;
+    const speed = MOVE_SPEED * (bpm / BASE_BPM) * PHASE2_PITFALL_MOVE_SCALE;
+    hero.x += heroMove.x * speed * dt;
+    hero.y += heroMove.y * speed * dt;
+    clampHero();
+  }
+
+  function updatePhaseTwoPitfallPattern(dt) {
+    const pattern = phase2PitfallPattern;
+    if (!pattern) return;
+    const fallDt = dt * PHASE2_PITFALL_TIME_SCALE;
+    pattern.elapsed += fallDt;
+    pattern.tunnelOffset += fallDt * (bpm / PHASE2_BPM_MIN);
+    if (pattern.impactAge >= 0) pattern.impactAge += dt;
+    if (pattern.safeAge >= 0) pattern.safeAge += dt;
+    if (pattern.elapsed >= PHASE2_PITFALL_ENTRY_MS * 0.58) {
+      pattern.spawnClock += fallDt;
+      const interval = beatMs * PHASE2_PITFALL_SPAWN_BEATS;
+      while (pattern.spawnClock >= interval && pattern.platforms.length < 5) {
+        pattern.spawnClock -= interval;
+        pattern.platforms.push(makePhaseTwoPitfallPlatform(pattern));
+      }
+    }
+    let shadowEdges = 0;
+    for (const platform of pattern.platforms) {
+      platform.age += fallDt;
+      if (platform.hitAge >= 0) platform.hitAge += dt;
+      if (phaseTwoPitfallHeroOnShadowEdge(platform)) shadowEdges++;
+      const depth = platform.age / platform.duration;
+      if (!platform.resolved && depth >= PHASE2_PITFALL_HIT_DEPTH) {
+        platform.resolved = true;
+        if (phaseTwoPitfallHeroInGap(platform)) {
+          pattern.safeAge = 0;
+        } else {
+          platform.hit = true;
+          platform.hitAge = 0;
+          pattern.impactAge = 0;
+          hp = Math.max(0, hp - PHASE2_PITFALL_DAMAGE * (bpm / PHASE2_BPM_MIN));
+          if (hp <= 0) die();
+        }
+      }
+    }
+    if (shadowEdges > 0) {
+      vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadowEdges * dt / beatMs);
+    }
+    pattern.platforms = pattern.platforms.filter((platform) => platform.age / platform.duration < 1.16);
+  }
+
+  function beginDebugPhaseTwoPitfall() {
+    if (!phase2CombatStarted || !canvas) return false;
+    phase2PitfallPattern = null;
+    const started = startPhaseTwoPitfallPattern();
+    if (started && phase2Avatar && typeof phase2Avatar.dashHome === 'function') {
+      phase2Avatar.dashHome(getBoardRect(), PHASE2_BOSS_RETURN_DASH_MS);
+    }
+    return started;
+  }
+
+  function debugPhaseTwoPitfall() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    phase2PitfallDebugQueued = true;
+    if (!phase2AvatarStarted) skipPhaseTwoTransition();
+    if (phase2CombatStarted) beginDebugPhaseTwoPitfall();
+  }
+
   function updateSecondPhase(dt) {
     for (const a of fadingAttacks) a.fadeTime += dt;
     fadingAttacks = fadingAttacks.filter((a) => a.fadeTime < a.fadeDuration);
-    if (phase2SwordRingPattern || (phase2GridSpecial && phase2GridSpecial.struck)) {
+    if (phase2PitfallPattern) {
+      updatePhaseTwoPitfallMovement(dt);
+    } else if (phase2SwordRingPattern || (phase2GridSpecial && phase2GridSpecial.struck)) {
       heroMove.x = 0;
       heroMove.y = 0;
       if (phase2GridSpecial && phase2GridSpecial.struck) updatePhaseTwoGridHop(dt);
@@ -4907,6 +5486,11 @@
         beginPhaseTwoCombat();
         if (phase2DebugClawQueued && phase2Attacks.length === 0) onPhaseTwoBeat(beatIndex);
         updatePhaseTwoTempo(dt);
+        if (phase2PitfallPattern) {
+          updatePhaseTwoPitfallPattern(dt);
+          updateCombat(dt);
+          return;
+        }
         updatePhaseTwoGridSpecial(dt);
         updatePhaseTwoAttacks(dt);
         if (phase2ClawPatternStopped && phase2GridSpecial && phase2GridSpecial.settled &&
@@ -8264,6 +8848,8 @@
     phase2TileRuinDebugQueued = false;
     phase2SwordRingPattern = null;
     phase2SwordRingDebugQueued = false;
+    phase2PitfallPattern = null;
+    phase2PitfallDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
