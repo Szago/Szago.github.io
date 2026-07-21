@@ -403,16 +403,16 @@
   // hero's health, VP the virtue points earned by braving an attack's shadow.
   // Damage and VP both accrue per beat spent inside the relevant hitbox.
   const WRATH_MAX = 200;
-  const HP_MAX = 500;                // testing cap
+  const HP_MAX = 1000;                // testing cap
   const VP_MAX = 1000;               // testing cap
-  const DAMAGE_PER_BEAT = 40;        // HP lost per beat per overlapping live skill
-  const VP_PER_BEAT = 200;           // VP gained per beat per overlapping shadow
+  const DAMAGE_PER_BEAT = 50;        // HP lost per beat per overlapping live skill
+  const VP_PER_BEAT = 175;           // VP gained per beat per overlapping shadow
   const ATTACK_WRATH_GAIN = 10;      // wrath (BPM) the cultist gains when struck
-  const ATTACK_HEAL_FRAC = 0.10;     // fraction of max HP the hero recovers on a strike
+  const ATTACK_HEAL_FRAC = 0.05;     // fraction of max HP the hero recovers on a strike
   const ENTROPY_MAX = 1000;
   const PHASE2_BPM_MIN = 150;
   const PHASE2_BPM_MAX = 250;
-  const ENTROPY_PER_STRIKE = 100;
+  const ENTROPY_PER_STRIKE = 50;
   const PHASE2_CRACK_BEATS = 5;
   const PHASE2_CRACK_CLOSE_MS = 420;
   const PHASE2_CLAW_TELEGRAPH_BEATS = 2.15;
@@ -438,8 +438,8 @@
   const PHASE2_SWORD_RESPAWN_DELAY_MS = 430;
   const PHASE2_SWORD_RESPAWN_FORM_MS = 180;
   const PHASE2_SWORD_RING_DAMAGE = 100;
-  const PHASE2_SWORD_PARRY_HEAL = 12;
-  const PHASE2_SWORD_PARRY_VP = VP_MAX * 0.10;
+  const PHASE2_SWORD_PARRY_HEAL = 10;
+  const PHASE2_SWORD_PARRY_VP = VP_MAX * 0.05;
   const PHASE2_SWORD_FINAL_PARRIES = 20;
   const PHASE2_BOSS_SLAM_MS = 1200;
   const PHASE2_BOSS_RETURN_DASH_MS = 430;
@@ -448,8 +448,9 @@
   const PHASE2_PITFALL_TRAVEL_BEATS = 4.8;
   const PHASE2_PITFALL_SPAWN_BEATS = 2.15;
   const PHASE2_PITFALL_HIT_DEPTH = 0.78;
-  const PHASE2_PITFALL_MOVE_SCALE = 0.50;
+  const PHASE2_PITFALL_MOVE_SCALE = 0.30;
   const PHASE2_PITFALL_TIME_SCALE = 0.75;
+  const PHASE2_PITFALL_APPROACH_SCALE = 1.20;
   const PHASE2_PITFALL_DAMAGE = 85;
   const DEATH_SLOW_MS = 900;
   const DEATH_FADE_START = 90;
@@ -2180,6 +2181,9 @@
     const hitT = clamp01(depth / PHASE2_PITFALL_HIT_DEPTH);
     const approach = easeInQuad(hitT);
     const passed = clamp01((depth - PHASE2_PITFALL_HIT_DEPTH) / (1.16 - PHASE2_PITFALL_HIT_DEPTH));
+    const arrivalAlpha = 0.10 + smoothstep(hitT) * 0.90;
+    const spawnFade = smoothstep(depth / 0.055);
+    const exitFade = 1 - smoothstep((depth - 1.02) / 0.14);
     const scale = depth <= PHASE2_PITFALL_HIT_DEPTH
       ? 0.045 + approach * 0.955
       : 1 + easeOutCubic(passed) * 0.78;
@@ -2197,7 +2201,7 @@
       top: centerY - height / 2,
       width,
       height,
-      alpha: depth < 0.08 ? smoothstep(depth / 0.08) : 1 - smoothstep((depth - 1.02) / 0.14),
+      alpha: spawnFade * arrivalAlpha * exitFade,
     };
   }
 
@@ -5293,7 +5297,7 @@
     const depth = platform.age / platform.duration;
     if (platform.resolved || depth < 0.10 || depth > PHASE2_PITFALL_HIT_DEPTH) return false;
     const projection = phaseTwoPitfallProjection(platform);
-    const threshold = HERO_W * 0.22 + Math.max(10, projection.scale * 26) * 0.5;
+    const threshold = Math.max(5, projection.scale * 9);
     for (const gap of platform.gaps) {
       for (let i = 0; i < gap.points.length; i++) {
         const a = gap.points[i];
@@ -5404,16 +5408,17 @@
     if (pattern.impactAge >= 0) pattern.impactAge += dt;
     if (pattern.safeAge >= 0) pattern.safeAge += dt;
     if (pattern.elapsed >= PHASE2_PITFALL_ENTRY_MS * 0.58) {
-      pattern.spawnClock += fallDt;
       const interval = beatMs * PHASE2_PITFALL_SPAWN_BEATS;
-      while (pattern.spawnClock >= interval && pattern.platforms.length < 5) {
+      pattern.spawnClock = Math.min(interval, pattern.spawnClock + fallDt);
+      const incoming = pattern.platforms.some((platform) => !platform.resolved);
+      if (!incoming && pattern.spawnClock >= interval && pattern.platforms.length < 5) {
         pattern.spawnClock -= interval;
         pattern.platforms.push(makePhaseTwoPitfallPlatform(pattern));
       }
     }
     let shadowEdges = 0;
     for (const platform of pattern.platforms) {
-      platform.age += fallDt;
+      platform.age += fallDt * PHASE2_PITFALL_APPROACH_SCALE;
       if (platform.hitAge >= 0) platform.hitAge += dt;
       if (phaseTwoPitfallHeroOnShadowEdge(platform)) shadowEdges++;
       const depth = platform.age / platform.duration;
