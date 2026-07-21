@@ -394,6 +394,7 @@
   let phase2SwordRingDebugQueued = false;
   let phase2PitfallPattern = null;
   let phase2PitfallDebugQueued = false;
+  let phase2HexDebugQueued = false;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
   let nextSlotId = 1;
@@ -452,6 +453,18 @@
   const PHASE2_PITFALL_TIME_SCALE = 0.75;
   const PHASE2_PITFALL_APPROACH_SCALE = 1.20;
   const PHASE2_PITFALL_DAMAGE = 85;
+  const PHASE2_PITFALL_DODGES_TO_HEX = 20;
+  const PHASE2_HEX_RAM_MS = 1050;
+  const PHASE2_HEX_BOTTOM_PADDING = 5;
+  const PHASE2_HEX_CRATER_RADIUS = 21;
+  const PHASE2_HEX_ORBIT_RADIUS = 50;
+  const PHASE2_HEX_ANGULAR_SPEED = 0.0035;
+  const PHASE2_HEX_WALL_TRAVEL_BEATS = 6.75;
+  const PHASE2_HEX_WALL_SPAWN_BEATS = 2.35;
+  const PHASE2_HEX_WALL_THICKNESS = 21;
+  const PHASE2_HEX_WALL_SHADOW_SCALE = 1.5;
+  const PHASE2_HEX_WALL_GAP = 1.16;
+  const PHASE2_HEX_WALL_DAMAGE = 75;
   const DEATH_SLOW_MS = 900;
   const DEATH_FADE_START = 90;
   const DEATH_FADE_END = 1080;
@@ -512,6 +525,7 @@
   function resetPhaseTwoLayout() {
     if (!overlay) return;
     phase2SquareArenaLocked = false;
+    overlay.classList.remove('hex-arena-active');
     overlay.classList.remove('avatar-phase-two');
     overlay.style.removeProperty('--phase2-stage-w');
     overlay.style.removeProperty('--phase2-stage-h');
@@ -589,9 +603,10 @@
     hero.y = worldHero.y;
   }
 
-  function restorePhaseTwoSquareArena() {
-    if (!overlay || !canvas || phase2SquareArenaLocked) return;
+  function restorePhaseTwoSquareArena(force) {
+    if (!overlay || !canvas || (phase2SquareArenaLocked && !force)) return;
     phase2SquareArenaLocked = true;
+    overlay.classList.remove('hex-arena-active');
     phase2GridSpecial = null;
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
@@ -1222,6 +1237,16 @@
       pitfallBtn.blur();
     });
     debugPanel.appendChild(pitfallBtn);
+
+    const hexFallBtn = document.createElement('button');
+    hexFallBtn.type = 'button';
+    hexFallBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    hexFallBtn.textContent = 'HEX FALL';
+    hexFallBtn.addEventListener('click', () => {
+      debugPhaseTwoHexFall();
+      hexFallBtn.blur();
+    });
+    debugPanel.appendChild(hexFallBtn);
 
     const tempoControls = document.createElement('div');
     tempoControls.className = 'aether-boss2d-debug-tempo';
@@ -2287,18 +2312,139 @@
     ctx.restore();
   }
 
+  function renderPhaseTwoHexWall(wall) {
+    const progress = clamp01(phaseTwoHexWallProgress(wall));
+    const radius = phaseTwoHexWallRadius(wall);
+    const outer = Math.max(1, radius + wall.thickness / 2);
+    const inner = Math.max(1, radius - wall.thickness / 2);
+    const halfGap = phaseTwoHexWallGapWidth(wall, radius) / 2;
+    const start = wall.gapAngle + halfGap;
+    const end = wall.gapAngle + Math.PI * 2 - halfGap;
+    const alpha = smoothstep(progress / 0.11) * (1 - smoothstep((progress - 0.96) / 0.10));
+    if (alpha <= 0.001) return;
+    const hitFlash = wall.hit && wall.impactAge >= 0 ? 1 - smoothstep(wall.impactAge / 220) : 0;
+    const center = phaseTwoHexCenter();
+    const cx = center.x;
+    const cy = center.y;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const shadowInner = Math.max(1, inner - wall.thickness * PHASE2_HEX_WALL_SHADOW_SCALE);
+    ctx.beginPath();
+    ctx.arc(cx, cy, inner, start, end);
+    ctx.arc(cx, cy, shadowInner, end, start, true);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(24, 20, 28, 0.62)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(112, 106, 119, 0.28)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, outer, start, end);
+    ctx.arc(cx, cy, inner, end, start, true);
+    ctx.closePath();
+    ctx.fillStyle = hitFlash > 0 ? 'rgba(72, 2, 7, 0.98)' : 'rgba(19, 17, 21, 0.98)';
+    ctx.fill();
+    ctx.strokeStyle = hitFlash > 0 ? 'rgba(255, 38, 44, 0.96)' : 'rgba(126, 12, 24, 0.82)';
+    ctx.lineWidth = Math.max(1.2, wall.thickness * 0.055);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(164, 161, 151, 0.20)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for (let i = 1; i < 4; i++) {
+      const textureRadius = inner + wall.thickness * i / 4;
+      ctx.arc(cx, cy, textureRadius, start + 0.03, end - 0.03);
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(220, 216, 201, 0.78)';
+    ctx.lineWidth = 1.5;
+    for (const angle of [wall.gapAngle - halfGap, wall.gapAngle + halfGap]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+      ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function tracePhaseTwoHexCrater(radius, seed) {
+    const count = 28;
+    const center = phaseTwoHexCenter();
+    for (let i = 0; i < count; i++) {
+      const angle = i * Math.PI * 2 / count;
+      const jitter = 0.91 + 0.07 * Math.sin(seed + i * 2.71) + 0.035 * Math.sin(seed * 0.43 + i * 5.13);
+      const x = center.x + Math.cos(angle) * radius * jitter;
+      const y = center.y + Math.sin(angle) * radius * jitter;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  function renderPhaseTwoHexCrater(pattern) {
+    const ram = pattern.ram;
+    const growth = pattern.mode === 'hex'
+      ? 1
+      : ram && ram.impacted
+        ? easeOutCubic(clamp01(ram.shockAge / 460))
+        : 0;
+    if (growth <= 0.001) return;
+    const radius = PHASE2_HEX_CRATER_RADIUS * growth;
+    ctx.save();
+    ctx.beginPath();
+    tracePhaseTwoHexCrater(radius, pattern.seed);
+    ctx.fillStyle = '#000000';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.92)';
+    ctx.shadowBlur = 16;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(89, 86, 80, 0.90)';
+    ctx.lineWidth = 8;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(207, 203, 190, 0.82)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function renderPhaseTwoHexShockwave(pattern) {
+    const ram = pattern.ram;
+    if (!ram || !ram.impacted || ram.shockAge < 0 || ram.shockAge >= 720) return;
+    const progress = clamp01(ram.shockAge / 720);
+    const radius = 16 + easeOutCubic(progress) * Math.min(canvas.width, canvas.height) * 0.57;
+    const center = phaseTwoHexCenter();
+    ctx.save();
+    ctx.fillStyle = 'rgba(238, 236, 222, ' + ((1 - smoothstep(progress / 0.24)) * 0.24).toFixed(3) + ')';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < 3; i++) {
+      const delayed = clamp01(progress * 1.3 - i * 0.13);
+      if (delayed <= 0) continue;
+      ctx.strokeStyle = i === 0
+        ? 'rgba(255, 245, 226, ' + ((1 - delayed) * 0.90).toFixed(3) + ')'
+        : 'rgba(168, 12, 22, ' + ((1 - delayed) * 0.70).toFixed(3) + ')';
+      ctx.lineWidth = Math.max(1, (1 - delayed) * (8 - i * 1.5));
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius * (0.76 + i * 0.14), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   function renderPhaseTwoPitfall(sceneW, sceneH) {
     const pattern = phase2PitfallPattern;
     if (!pattern) return;
     const entry = smoothstep(pattern.elapsed / PHASE2_PITFALL_ENTRY_MS);
-    const cx = sceneW / 2;
-    const cy = sceneH / 2;
+    const circularFall = pattern.mode === 'hex' || (pattern.ram && pattern.ram.impacted);
+    const hexCenter = phaseTwoHexCenter();
+    const cx = circularFall ? hexCenter.x : sceneW / 2;
+    const cy = circularFall ? hexCenter.y : sceneH / 2;
     ctx.save();
     ctx.fillStyle = '#020104';
     ctx.fillRect(0, 0, sceneW, sceneH);
 
     const vanishingX = cx;
-    const vanishingY = sceneH * 0.40;
+    const vanishingY = circularFall ? cy : sceneH * 0.40;
     const innerWidth = sceneW - (BORDER + PAD) * 2;
     const innerHeight = sceneH - (BORDER + PAD) * 2;
     for (let group = 0; group < 3; group++) {
@@ -2308,8 +2454,13 @@
         const scale = 0.025 + easeInQuad(travel) * 0.955;
         const width = innerWidth * scale;
         const height = innerHeight * scale;
-        const ringY = vanishingY + (cy - vanishingY) * travel;
-        ctx.rect(cx - width / 2, ringY - height / 2, width, height);
+        const ringY = circularFall ? cy : vanishingY + (cy - vanishingY) * travel;
+        if (circularFall) {
+          ctx.moveTo(cx + width / 2, ringY);
+          ctx.ellipse(cx, ringY, width / 2, height / 2, 0, 0, Math.PI * 2);
+        } else {
+          ctx.rect(cx - width / 2, ringY - height / 2, width, height);
+        }
       }
       ctx.strokeStyle = 'rgba(190, 188, 178, ' + (0.10 + group * 0.045).toFixed(3) + ')';
       ctx.lineWidth = 0.7 + group * 0.35;
@@ -2344,6 +2495,14 @@
 
     const platforms = pattern.platforms.slice().sort((a, b) => a.age - b.age);
     for (const platform of platforms) renderPhaseTwoPitfallPlatform(platform);
+    if (pattern.mode === 'hex' && pattern.hex) {
+      const walls = pattern.hex.walls.slice().sort((a, b) => a.age - b.age);
+      for (const wall of walls) renderPhaseTwoHexWall(wall);
+    }
+    if (circularFall) {
+      renderPhaseTwoHexCrater(pattern);
+      renderPhaseTwoHexShockwave(pattern);
+    }
     ctx.restore();
 
     if (entry < 1) {
@@ -3547,6 +3706,7 @@
     phase2SwordRingDebugQueued = false;
     phase2PitfallPattern = null;
     phase2PitfallDebugQueued = false;
+    phase2HexDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -3849,7 +4009,7 @@
 
   function debugAdjustBpm(delta) {
     if (!active) return;
-    if (phase === PHASE.SECOND && phase2CombatStarted) {
+    if (phase === PHASE.SECOND) {
       const target = Math.max(PHASE2_BPM_MIN, Math.min(PHASE2_BPM_MAX, phaseTwoBpm() + delta));
       entropy = (target - PHASE2_BPM_MIN) / (PHASE2_BPM_MAX - PHASE2_BPM_MIN) * ENTROPY_MAX;
       bpm = phaseTwoBpm();
@@ -3967,6 +4127,7 @@
     phase2SwordRingDebugQueued = false;
     phase2PitfallPattern = null;
     phase2PitfallDebugQueued = false;
+    phase2HexDebugQueued = false;
     keys.clear();
     dashPhaseTwoAvatarToBase();
     phase2GridSpecial = {
@@ -4744,7 +4905,6 @@
   function beginPhaseTwoCombat() {
     if (phase2CombatStarted) return;
     phase2CombatStarted = true;
-    entropy = 0;
     bpm = phaseTwoBpm();
     beatMs = 60000 / bpm;
     beatPhase = 0;
@@ -5098,6 +5258,7 @@
       phase2SwordRingDebugQueued = false;
       phase2PitfallPattern = null;
       phase2PitfallDebugQueued = false;
+      phase2HexDebugQueued = false;
       phase2Attacks = [];
       phase2BurstActive = false;
       nextPhase2AttackBeat = beatIndex;
@@ -5116,6 +5277,7 @@
     phase2SwordRingPattern = null;
     phase2PitfallPattern = null;
     phase2PitfallDebugQueued = false;
+    phase2HexDebugQueued = false;
     phase2Attacks = [];
     phase2BurstActive = false;
     phase2GridSpecial = null;
@@ -5341,7 +5503,7 @@
 
   function startPhaseTwoPitfallPattern() {
     if (!canvas || phase2PitfallPattern) return false;
-    if (!phase2SquareArenaLocked) restorePhaseTwoSquareArena();
+    restorePhaseTwoSquareArena(true);
     phase2PitfallDebugQueued = false;
     phase2GridDebugQueued = false;
     phase2DebugClawQueued = false;
@@ -5363,9 +5525,13 @@
     keys.clear();
     const seed = (Math.random() * 0xffffffff) >>> 0;
     phase2PitfallPattern = {
+      mode: 'dropper',
       elapsed: 0,
       spawnClock: beatMs * PHASE2_PITFALL_SPAWN_BEATS,
       platforms: [],
+      dodgedPlanes: 0,
+      ram: null,
+      hex: null,
       nextId: 1,
       nextGapX: 0.5,
       nextGapY: 0.5,
@@ -5378,7 +5544,101 @@
     return true;
   }
 
+  function phaseTwoHexNormalizeAngle(angle) {
+    const full = Math.PI * 2;
+    return ((angle % full) + full) % full;
+  }
+
+  function phaseTwoHexAngleDistance(a, b) {
+    const difference = Math.abs(phaseTwoHexNormalizeAngle(a) - phaseTwoHexNormalizeAngle(b));
+    return Math.min(difference, Math.PI * 2 - difference);
+  }
+
+  function phaseTwoHexCenter() {
+    return {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+    };
+  }
+
+  function expandPhaseTwoHexArenaToViewport() {
+    const board = getBoardRect();
+    const centerY = board.top + board.height / 2;
+    const targetSide = Math.max(BOARD, Math.round((window.innerHeight - PHASE2_HEX_BOTTOM_PADDING - centerY) * 2));
+    const growth = targetSide - board.height;
+    const rowLeft = parseFloat(overlay.style.getPropertyValue('--phase2-row-left'));
+    const rowTop = parseFloat(overlay.style.getPropertyValue('--phase2-row-top'));
+    if (Number.isFinite(rowLeft)) {
+      overlay.style.setProperty('--phase2-row-left', (rowLeft - growth / 2).toFixed(1) + 'px');
+    }
+    if (Number.isFinite(rowTop)) {
+      overlay.style.setProperty('--phase2-row-top', (rowTop - growth / 2).toFixed(1) + 'px');
+    }
+    overlay.style.setProperty('--phase2-stage-w', targetSide + 'px');
+    overlay.style.setProperty('--phase2-stage-h', targetSide + 'px');
+    overlay.style.setProperty('--phase2-vbar-h', targetSide + 'px');
+    overlay.classList.add('hex-arena-active');
+    phase2LayoutSignature = 'hex|' + targetSide;
+
+    const coordinateShift = (targetSide - canvas.width) / 2;
+    if (canvas.width !== targetSide || canvas.height !== targetSide) {
+      hero.x += coordinateShift;
+      hero.y += coordinateShift;
+      canvas.width = targetSide;
+      canvas.height = targetSide;
+      ctx.imageSmoothingEnabled = false;
+      frameBoardRect = null;
+    }
+    Object.assign(arena, {
+      x: targetSide / 2,
+      y: targetSide / 2,
+      width: BOARD,
+      height: BOARD,
+      rotation: 0,
+      shape: 'rect',
+      from: null,
+      target: null,
+      transitionTime: 0,
+      transitionDuration: 0,
+    });
+    return targetSide;
+  }
+
+  function positionPhaseTwoHexHero(pattern) {
+    if (!pattern || !pattern.hex) return;
+    const angle = pattern.hex.heroAngle;
+    const center = phaseTwoHexCenter();
+    hero.x = center.x + Math.cos(angle) * pattern.hex.orbitRadius;
+    hero.y = center.y + Math.sin(angle) * pattern.hex.orbitRadius;
+  }
+
+  function updatePhaseTwoHexMovement(pattern, dt) {
+    let direction = 0;
+    if (keys.has('KeyA') || keys.has('ArrowLeft')) direction -= 1;
+    if (keys.has('KeyD') || keys.has('ArrowRight')) direction += 1;
+    heroMove.x = 0;
+    heroMove.y = 0;
+    if (direction) {
+      pattern.hex.heroAngle = phaseTwoHexNormalizeAngle(
+        pattern.hex.heroAngle + direction * PHASE2_HEX_ANGULAR_SPEED * (bpm / PHASE2_BPM_MIN) * dt
+      );
+      heroMove.x = -Math.sin(pattern.hex.heroAngle) * direction;
+      heroMove.y = Math.cos(pattern.hex.heroAngle) * direction;
+    }
+    positionPhaseTwoHexHero(pattern);
+  }
+
   function updatePhaseTwoPitfallMovement(dt) {
+    const pattern = phase2PitfallPattern;
+    if (pattern && pattern.mode === 'hex' && pattern.hex) {
+      updatePhaseTwoHexMovement(pattern, dt);
+      return;
+    }
+    if (pattern && pattern.mode === 'ram') {
+      heroMove.x = 0;
+      heroMove.y = 0;
+      return;
+    }
     let dx = 0;
     let dy = 0;
     if (keys.has('KeyA') || keys.has('ArrowLeft')) dx -= 1;
@@ -5399,6 +5659,217 @@
     clampHero();
   }
 
+  function phaseTwoHexWallProgress(wall) {
+    return wall.ageBeats / wall.travelBeats;
+  }
+
+  function phaseTwoHexWallRadius(wall) {
+    const progress = clamp01(phaseTwoHexWallProgress(wall));
+    const outerRadius = canvas.width * 0.56;
+    const innerRadius = PHASE2_HEX_CRATER_RADIUS * 0.52;
+    return outerRadius + (innerRadius - outerRadius) * easeInQuad(progress);
+  }
+
+  function phaseTwoHexWallGapWidth(wall, radius) {
+    const outerRadius = canvas.width * 0.56;
+    const approach = 1 - clamp01(
+      (radius - PHASE2_HEX_ORBIT_RADIUS) / Math.max(1, outerRadius - PHASE2_HEX_ORBIT_RADIUS)
+    );
+    return wall.gapWidth * (1 + smoothstep(approach) * 0.20);
+  }
+
+  function phaseTwoHexHeroTouchesWallShadow(wall, shadowInnerEdge, shadowOuterEdge, gapWidth) {
+    const center = phaseTwoHexCenter();
+    const halfWidth = HERO_W / 2;
+    const halfHeight = HERO_H / 2;
+    const samplePadding = HERO_SCALE * Math.SQRT1_2;
+    const heroCenterRadius = Math.hypot(hero.x - center.x, hero.y - center.y);
+    const hitboxRadius = Math.hypot(halfWidth, halfHeight);
+    if (
+      heroCenterRadius + hitboxRadius < shadowInnerEdge - samplePadding ||
+      heroCenterRadius - hitboxRadius > shadowOuterEdge + samplePadding
+    ) return false;
+    for (let offsetY = -halfHeight; offsetY <= halfHeight; offsetY += HERO_SCALE) {
+      for (let offsetX = -halfWidth; offsetX <= halfWidth; offsetX += HERO_SCALE) {
+        const dx = hero.x + offsetX - center.x;
+        const dy = hero.y + offsetY - center.y;
+        const sampleRadius = Math.hypot(dx, dy);
+        if (
+          sampleRadius < shadowInnerEdge - samplePadding ||
+          sampleRadius > shadowOuterEdge + samplePadding
+        ) continue;
+        const sampleAngle = Math.atan2(dy, dx);
+        const angularPadding = Math.atan2(samplePadding, Math.max(1, sampleRadius));
+        if (
+          phaseTwoHexAngleDistance(sampleAngle, wall.gapAngle) >
+          Math.max(0, gapWidth / 2 - angularPadding)
+        ) return true;
+      }
+    }
+    return false;
+  }
+
+  function makePhaseTwoHexWall(pattern) {
+    const hex = pattern.hex;
+    const interval = beatMs * PHASE2_HEX_WALL_SPAWN_BEATS;
+    const reachable = Math.min(
+      Math.PI * 0.85,
+      PHASE2_HEX_ANGULAR_SPEED * (bpm / PHASE2_BPM_MIN) * interval * 0.92
+    );
+    const minimumShift = Math.min(0.62, reachable * 0.42);
+    const shiftMagnitude = minimumShift + pattern.random() * (reachable - minimumShift);
+    const shift = (pattern.random() < 0.5 ? -1 : 1) * shiftMagnitude;
+    const gapAngle = phaseTwoHexNormalizeAngle(hex.nextGapAngle + shift);
+    hex.nextGapAngle = gapAngle;
+    return {
+      ageBeats: 0,
+      travelBeats: PHASE2_HEX_WALL_TRAVEL_BEATS,
+      gapAngle,
+      gapWidth: PHASE2_HEX_WALL_GAP * (0.92 + pattern.random() * 0.16),
+      thickness: PHASE2_HEX_WALL_THICKNESS * (0.90 + pattern.random() * 0.18),
+      previousRadius: canvas.width * 0.56,
+      resolved: false,
+      hit: false,
+      impactAge: -1,
+    };
+  }
+
+  function startPhaseTwoHexMode(pattern) {
+    if (!pattern || pattern.mode === 'hex') return;
+    const ram = pattern.ram;
+    const heroAngle = ram && Number.isFinite(ram.heroAngle) ? ram.heroAngle : Math.PI / 2;
+    pattern.mode = 'hex';
+    pattern.platforms = [];
+    pattern.hex = {
+      elapsed: 0,
+      heroAngle,
+      orbitRadius: PHASE2_HEX_ORBIT_RADIUS,
+      walls: [],
+      spawnBeats: 0,
+      nextGapAngle: heroAngle,
+    };
+    pattern.ram = null;
+    keys.clear();
+    positionPhaseTwoHexHero(pattern);
+  }
+
+  function resolvePhaseTwoHexRamImpact(pattern) {
+    if (!pattern || pattern.mode !== 'ram' || !pattern.ram || pattern.ram.impacted) return;
+    const ram = pattern.ram;
+    ram.impacted = true;
+    ram.shockAge = 0;
+    const arenaSize = expandPhaseTwoHexArenaToViewport();
+    const center = phaseTwoHexCenter();
+    const dx = hero.x - center.x;
+    const dy = hero.y - center.y;
+    ram.heroAngle = Math.hypot(dx, dy) > 1 ? Math.atan2(dy, dx) : Math.PI / 2;
+    ram.heroFromX = hero.x;
+    ram.heroFromY = hero.y;
+    ram.heroTargetX = center.x + Math.cos(ram.heroAngle) * PHASE2_HEX_ORBIT_RADIUS;
+    ram.heroTargetY = center.y + Math.sin(ram.heroAngle) * PHASE2_HEX_ORBIT_RADIUS;
+    setArena({
+      x: center.x,
+      y: center.y,
+      width: arenaSize,
+      height: arenaSize,
+      rotation: 0,
+      shape: 'ellipse',
+    }, 520);
+  }
+
+  function beginPhaseTwoHexRam(pattern) {
+    if (!pattern || pattern.mode !== 'dropper' || !phase2Avatar) return false;
+    pattern.mode = 'ram';
+    pattern.platforms = pattern.platforms.filter((platform) => platform.resolved);
+    pattern.ram = {
+      elapsed: 0,
+      impacted: false,
+      shockAge: -1,
+      returning: false,
+      returnStarted: false,
+    };
+    keys.clear();
+    heroMove.x = 0;
+    heroMove.y = 0;
+    const board = getBoardRect();
+    const center = phaseTwoHexCenter();
+    const started = phase2Avatar.slamTo(
+      board.left + center.x * board.width / canvas.width,
+      board.top + center.y * board.height / canvas.height,
+      PHASE2_HEX_RAM_MS
+    );
+    if (!started) resolvePhaseTwoHexRamImpact(pattern);
+    return true;
+  }
+
+  function updatePhaseTwoHexRam(pattern, dt, fallDt) {
+    const ram = pattern.ram;
+    if (!ram) return;
+    ram.elapsed += dt;
+    pattern.platforms.forEach((platform) => { platform.age += fallDt * PHASE2_PITFALL_APPROACH_SCALE; });
+    pattern.platforms = pattern.platforms.filter((platform) => platform.age / platform.duration < 1.16);
+    if (!ram.impacted && ram.elapsed >= PHASE2_HEX_RAM_MS * 0.74) {
+      resolvePhaseTwoHexRamImpact(pattern);
+    }
+    if (!ram.impacted) return;
+    ram.shockAge += dt;
+    const push = smoothstep(ram.shockAge / 460);
+    hero.x = ram.heroFromX + (ram.heroTargetX - ram.heroFromX) * push;
+    hero.y = ram.heroFromY + (ram.heroTargetY - ram.heroFromY) * push;
+    if (!ram.returnStarted && phase2Avatar && !phase2Avatar.slamming && ram.shockAge >= 180) {
+      ram.returnStarted = true;
+      ram.returning = phase2Avatar.dashHome(getBoardRect(), PHASE2_BOSS_RETURN_DASH_MS);
+    }
+    if (ram.returnStarted && (!ram.returning || !phase2Avatar.dashing) && ram.shockAge >= 620) {
+      startPhaseTwoHexMode(pattern);
+    }
+  }
+
+  function updatePhaseTwoHexPattern(pattern, dt) {
+    const hex = pattern.hex;
+    if (!hex) return;
+    hex.elapsed += dt;
+    hex.spawnBeats += dt / beatMs;
+    while (hex.spawnBeats >= PHASE2_HEX_WALL_SPAWN_BEATS && hex.walls.length < 5) {
+      hex.spawnBeats -= PHASE2_HEX_WALL_SPAWN_BEATS;
+      hex.walls.push(makePhaseTwoHexWall(pattern));
+    }
+    let shadowWalls = 0;
+    for (const wall of hex.walls) {
+      wall.ageBeats += dt / beatMs;
+      if (wall.impactAge >= 0) wall.impactAge += dt;
+      const radius = phaseTwoHexWallRadius(wall);
+      const previousInnerEdge = wall.previousRadius - wall.thickness / 2;
+      const innerEdge = radius - wall.thickness / 2;
+      const shadowInnerEdge = innerEdge - wall.thickness * PHASE2_HEX_WALL_SHADOW_SCALE;
+      const gapWidth = phaseTwoHexWallGapWidth(wall, radius);
+      if (
+        !wall.resolved &&
+        phaseTwoHexHeroTouchesWallShadow(wall, shadowInnerEdge, innerEdge, gapWidth)
+      ) {
+        shadowWalls++;
+      }
+      if (!wall.resolved && previousInnerEdge > hex.orbitRadius && innerEdge <= hex.orbitRadius) {
+        wall.resolved = true;
+        const safe = phaseTwoHexAngleDistance(hex.heroAngle, wall.gapAngle) <= gapWidth / 2;
+        if (safe) {
+          pattern.safeAge = 0;
+        } else {
+          wall.hit = true;
+          wall.impactAge = 0;
+          pattern.impactAge = 0;
+          hp = Math.max(0, hp - PHASE2_HEX_WALL_DAMAGE * (bpm / PHASE2_BPM_MIN));
+          if (hp <= 0) die();
+        }
+      }
+      wall.previousRadius = radius;
+    }
+    if (shadowWalls > 0) {
+      vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadowWalls * dt / beatMs);
+    }
+    hex.walls = hex.walls.filter((wall) => phaseTwoHexWallProgress(wall) < 1.06);
+  }
+
   function updatePhaseTwoPitfallPattern(dt) {
     const pattern = phase2PitfallPattern;
     if (!pattern) return;
@@ -5407,6 +5878,14 @@
     pattern.tunnelOffset += fallDt * (bpm / PHASE2_BPM_MIN);
     if (pattern.impactAge >= 0) pattern.impactAge += dt;
     if (pattern.safeAge >= 0) pattern.safeAge += dt;
+    if (pattern.mode === 'ram') {
+      updatePhaseTwoHexRam(pattern, dt, fallDt);
+      return;
+    }
+    if (pattern.mode === 'hex') {
+      updatePhaseTwoHexPattern(pattern, dt);
+      return;
+    }
     if (pattern.elapsed >= PHASE2_PITFALL_ENTRY_MS * 0.58) {
       const interval = beatMs * PHASE2_PITFALL_SPAWN_BEATS;
       pattern.spawnClock = Math.min(interval, pattern.spawnClock + fallDt);
@@ -5426,6 +5905,10 @@
         platform.resolved = true;
         if (phaseTwoPitfallHeroInGap(platform)) {
           pattern.safeAge = 0;
+          pattern.dodgedPlanes++;
+          if (pattern.dodgedPlanes >= PHASE2_PITFALL_DODGES_TO_HEX) {
+            beginPhaseTwoHexRam(pattern);
+          }
         } else {
           platform.hit = true;
           platform.hitAge = 0;
@@ -5445,7 +5928,11 @@
     if (!phase2CombatStarted || !canvas) return false;
     phase2PitfallPattern = null;
     const started = startPhaseTwoPitfallPattern();
-    if (started && phase2Avatar && typeof phase2Avatar.dashHome === 'function') {
+    const launchHex = started && phase2HexDebugQueued;
+    phase2HexDebugQueued = false;
+    if (launchHex) {
+      beginPhaseTwoHexRam(phase2PitfallPattern);
+    } else if (started && phase2Avatar && typeof phase2Avatar.dashHome === 'function') {
       phase2Avatar.dashHome(getBoardRect(), PHASE2_BOSS_RETURN_DASH_MS);
     }
     return started;
@@ -5457,6 +5944,18 @@
       if (phase !== PHASE.ACTIVE) skipToActive();
       startSecondPhase();
     }
+    phase2PitfallDebugQueued = true;
+    if (!phase2AvatarStarted) skipPhaseTwoTransition();
+    if (phase2CombatStarted) beginDebugPhaseTwoPitfall();
+  }
+
+  function debugPhaseTwoHexFall() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    phase2HexDebugQueued = true;
     phase2PitfallDebugQueued = true;
     if (!phase2AvatarStarted) skipPhaseTwoTransition();
     if (phase2CombatStarted) beginDebugPhaseTwoPitfall();
@@ -5478,6 +5977,9 @@
       if (phase2Avatar) {
         phase2Avatar.update(dt, getBoardRect(), {
           onSlam: () => {
+            if (phase2PitfallPattern && phase2PitfallPattern.mode === 'ram') {
+              resolvePhaseTwoHexRamImpact(phase2PitfallPattern);
+            }
             if (overlay) {
               overlay.classList.remove('avatar-slammed');
               void overlay.offsetWidth;
@@ -8855,6 +9357,7 @@
     phase2SwordRingDebugQueued = false;
     phase2PitfallPattern = null;
     phase2PitfallDebugQueued = false;
+    phase2HexDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
