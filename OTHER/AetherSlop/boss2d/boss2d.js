@@ -466,6 +466,15 @@
   const PHASE2_HEX_WALL_SHADOW_SCALE = 1.5;
   const PHASE2_HEX_WALL_GAP = 1.16;
   const PHASE2_HEX_WALL_DAMAGE = 50;
+  const PHASE2_HEX_BULLET_SLOTS = 4;
+  const PHASE2_HEX_SPIRAL_SLOTS = 3;
+  const PHASE2_HEX_SPIRAL_WALL_COUNT = 7;
+  const PHASE2_HEX_CORRIDOR_SLOTS = 2;
+  const PHASE2_HEX_ORB_TRAVEL_BEATS = 7;
+  const PHASE2_HEX_ORB_SPAWN_BEATS = 0.32;
+  const PHASE2_HEX_ORB_RADIUS = 12;
+  const PHASE2_HEX_ORB_SHADOW_SCALE = 3;
+  const PHASE2_HEX_ORB_DAMAGE = 32;
   const DEATH_SLOW_MS = 900;
   const DEATH_FADE_START = 90;
   const DEATH_FADE_END = 1080;
@@ -2381,6 +2390,42 @@
     ctx.restore();
   }
 
+  function renderPhaseTwoHexOrb(orb) {
+    const progress = clamp01(orb.ageBeats / orb.travelBeats);
+    const position = phaseTwoHexOrbPosition(orb);
+    const fade = smoothstep(progress / 0.10) * (1 - smoothstep((progress - 0.94) / 0.08));
+    if (fade <= 0.001) return;
+    const facing = orb.angle + Math.PI;
+    const shadowOuter = orb.radius * PHASE2_HEX_ORB_SHADOW_SCALE;
+    const shadowInner = orb.radius;
+    ctx.save();
+    ctx.globalAlpha = fade;
+
+    ctx.beginPath();
+    ctx.arc(position.x, position.y, shadowOuter, facing - Math.PI / 2, facing + Math.PI / 2);
+    ctx.arc(position.x, position.y, shadowInner, facing + Math.PI / 2, facing - Math.PI / 2, true);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(27, 23, 32, 0.68)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(122, 116, 132, 0.30)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(position.x, position.y, orb.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#050407';
+    ctx.fill();
+    ctx.strokeStyle = orb.hit ? 'rgba(255, 82, 82, 0.98)' : 'rgba(190, 18, 30, 0.92)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(position.x - orb.radius * 0.18, position.y - orb.radius * 0.16, orb.radius * 0.42, 0, Math.PI * 1.45);
+    ctx.strokeStyle = 'rgba(120, 112, 126, 0.20)';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function tracePhaseTwoHexCrater(radius, seed) {
     const count = 28;
     const center = phaseTwoHexCenter();
@@ -2508,8 +2553,9 @@
     const platforms = pattern.platforms.slice().sort((a, b) => a.age - b.age);
     for (const platform of platforms) renderPhaseTwoPitfallPlatform(platform);
     if (pattern.mode === 'hex' && pattern.hex) {
-      const walls = pattern.hex.walls.slice().sort((a, b) => a.age - b.age);
+      const walls = pattern.hex.walls.slice().sort((a, b) => a.ageBeats - b.ageBeats);
       for (const wall of walls) renderPhaseTwoHexWall(wall);
+      for (const orb of pattern.hex.orbs) renderPhaseTwoHexOrb(orb);
     }
     if (circularFall) {
       renderPhaseTwoHexCrater(pattern);
@@ -5690,6 +5736,12 @@
     return wall.gapWidth * (1 + smoothstep(approach) * 0.20);
   }
 
+  function phaseTwoHexWallGapAngle(wall) {
+    if (wall.kind !== 'spiral') return wall.gapAngle;
+    const progress = clamp01(phaseTwoHexWallProgress(wall));
+    return phaseTwoHexNormalizeAngle(wall.gapAngle + wall.spiralTwist * smoothstep(progress));
+  }
+
   function phaseTwoHexWallSegments(wall, radius) {
     if (wall.kind === 'split') {
       const sector = Math.PI / 3;
@@ -5701,9 +5753,10 @@
       return segments;
     }
     const halfGap = phaseTwoHexWallGapWidth(wall, radius) / 2;
+    const gapAngle = phaseTwoHexWallGapAngle(wall);
     return [{
-      start: wall.gapAngle + halfGap,
-      end: wall.gapAngle + Math.PI * 2 - halfGap,
+      start: gapAngle + halfGap,
+      end: gapAngle + Math.PI * 2 - halfGap,
     }];
   }
 
@@ -5714,7 +5767,7 @@
       );
       return sectorIndex % 2 === wall.splitParity;
     }
-    return phaseTwoHexAngleDistance(angle, wall.gapAngle) > gapWidth / 2;
+    return phaseTwoHexAngleDistance(angle, phaseTwoHexWallGapAngle(wall)) > gapWidth / 2;
   }
 
   function phaseTwoHexHeroTouchesWallShadow(wall, shadowInnerEdge, shadowOuterEdge, gapWidth) {
@@ -5724,6 +5777,7 @@
     const samplePadding = HERO_SCALE * Math.SQRT1_2;
     const heroCenterRadius = Math.hypot(hero.x - center.x, hero.y - center.y);
     const hitboxRadius = Math.hypot(halfWidth, halfHeight);
+    const gapAngle = phaseTwoHexWallGapAngle(wall);
     if (
       heroCenterRadius + hitboxRadius < shadowInnerEdge - samplePadding ||
       heroCenterRadius - hitboxRadius > shadowOuterEdge + samplePadding
@@ -5746,9 +5800,50 @@
             phaseTwoHexAngleInsideWall(wall, sampleAngle + angularPadding, gapWidth)
           ) return true;
         } else if (
-          phaseTwoHexAngleDistance(sampleAngle, wall.gapAngle) >
+          phaseTwoHexAngleDistance(sampleAngle, gapAngle) >
           Math.max(0, gapWidth / 2 - angularPadding)
         ) return true;
+      }
+    }
+    return false;
+  }
+
+  function phaseTwoHexOrbPosition(orb) {
+    const progress = clamp01(orb.ageBeats / orb.travelBeats);
+    const center = phaseTwoHexCenter();
+    const radius = orb.startRadius * (1 - easeInQuad(progress));
+    return {
+      x: center.x + Math.cos(orb.angle) * radius,
+      y: center.y + Math.sin(orb.angle) * radius,
+    };
+  }
+
+  function phaseTwoHexPointSegmentDistance(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared <= 0.0001) return Math.hypot(px - x1, py - y1);
+    const t = clamp01(((px - x1) * dx + (py - y1) * dy) / lengthSquared);
+    return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t));
+  }
+
+  function phaseTwoHexHeroTouchesOrbShadow(orb, position) {
+    const halfWidth = HERO_W / 2;
+    const halfHeight = HERO_H / 2;
+    const outer = orb.radius * PHASE2_HEX_ORB_SHADOW_SCALE;
+    const facing = orb.angle + Math.PI;
+    const facingX = Math.cos(facing);
+    const facingY = Math.sin(facing);
+    const nearestX = Math.max(hero.x - halfWidth, Math.min(position.x, hero.x + halfWidth));
+    const nearestY = Math.max(hero.y - halfHeight, Math.min(position.y, hero.y + halfHeight));
+    if (Math.hypot(nearestX - position.x, nearestY - position.y) > outer + HERO_SCALE) return false;
+    for (let offsetY = -halfHeight; offsetY <= halfHeight; offsetY += HERO_SCALE) {
+      for (let offsetX = -halfWidth; offsetX <= halfWidth; offsetX += HERO_SCALE) {
+        const dx = hero.x + offsetX - position.x;
+        const dy = hero.y + offsetY - position.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance < orb.radius - HERO_SCALE || distance > outer + HERO_SCALE) continue;
+        if (dx * facingX + dy * facingY >= -HERO_SCALE) return true;
       }
     }
     return false;
@@ -5800,6 +5895,99 @@
     return [first, second];
   }
 
+  function makePhaseTwoHexOrb(pattern, options) {
+    const settings = options || {};
+    const angle = Number.isFinite(settings.angle) ? settings.angle : pattern.random() * Math.PI * 2;
+    const orb = {
+      ageBeats: Number.isFinite(settings.ageBeats) ? settings.ageBeats : 0,
+      travelBeats: PHASE2_HEX_ORB_TRAVEL_BEATS,
+      startRadius: canvas.width * (0.54 + pattern.random() * 0.08),
+      angle,
+      radius: PHASE2_HEX_ORB_RADIUS * (0.88 + pattern.random() * 0.22),
+      hit: false,
+    };
+    const position = phaseTwoHexOrbPosition(orb);
+    orb.previousX = position.x;
+    orb.previousY = position.y;
+    return orb;
+  }
+
+  function makePhaseTwoHexSpiralWalls(pattern) {
+    const direction = pattern.random() < 0.5 ? -1 : 1;
+    const baseAngle = pattern.hex.heroAngle;
+    const sequenceSpan = (PHASE2_HEX_SPIRAL_SLOTS - 1) * PHASE2_HEX_WALL_SPAWN_BEATS;
+    const wallStepBeats = sequenceSpan / (PHASE2_HEX_SPIRAL_WALL_COUNT - 1);
+    const walls = [];
+    for (let i = 0; i < PHASE2_HEX_SPIRAL_WALL_COUNT; i++) {
+      const wall = makePhaseTwoHexWall(pattern);
+      Object.assign(wall, {
+        kind: 'spiral',
+        ageBeats: -i * wallStepBeats,
+        gapAngle: phaseTwoHexNormalizeAngle(baseAngle + direction * i * 0.48),
+        gapWidth: PHASE2_HEX_WALL_GAP * 0.94,
+        spiralTwist: direction * 0.42,
+        thickness: PHASE2_HEX_WALL_THICKNESS * 0.72,
+        damageScale: 0.32,
+      });
+      walls.push(wall);
+    }
+    pattern.hex.nextGapAngle = phaseTwoHexNormalizeAngle(
+      baseAngle + direction * (PHASE2_HEX_SPIRAL_WALL_COUNT * 0.48 + 0.42)
+    );
+    return walls;
+  }
+
+  function makePhaseTwoHexCorridorWalls(pattern) {
+    const direction = pattern.random() < 0.5 ? -1 : 1;
+    const gapAngle = phaseTwoHexNormalizeAngle(pattern.hex.heroAngle + direction * 0.30);
+    const walls = [];
+    for (let i = 0; i < PHASE2_HEX_CORRIDOR_SLOTS; i++) {
+      const wall = makePhaseTwoHexWall(pattern);
+      Object.assign(wall, {
+        kind: 'corridor',
+        ageBeats: -i * PHASE2_HEX_WALL_SPAWN_BEATS,
+        gapAngle: phaseTwoHexNormalizeAngle(gapAngle + direction * i * 0.08),
+        gapWidth: 0.62,
+      });
+      walls.push(wall);
+    }
+    pattern.hex.nextGapAngle = phaseTwoHexNormalizeAngle(
+      gapAngle + direction * PHASE2_HEX_CORRIDOR_SLOTS * 0.08
+    );
+    return walls;
+  }
+
+  function startPhaseTwoHexSpecialPattern(pattern) {
+    const hex = pattern.hex;
+    const types = ['bullet', 'spiral', 'corridor'];
+    const type = types[hex.specialPatternIndex % types.length];
+    hex.specialPatternIndex++;
+    if (type === 'bullet') {
+      const durationBeats = PHASE2_HEX_BULLET_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
+      const initialOrbCount = 12;
+      const angleOffset = pattern.random() * Math.PI * 2;
+      for (let i = 0; i < initialOrbCount; i++) {
+        hex.orbs.push(makePhaseTwoHexOrb(pattern, {
+          angle: angleOffset + i * Math.PI * 2 / initialOrbCount + (pattern.random() - 0.5) * 0.18,
+          ageBeats: i / (initialOrbCount - 1) * PHASE2_HEX_ORB_TRAVEL_BEATS * 0.82,
+        }));
+      }
+      hex.bulletPattern = {
+        ageBeats: 0,
+        durationBeats,
+        spawnUntilBeats: durationBeats - PHASE2_HEX_ORB_TRAVEL_BEATS,
+        spawnBeats: 0,
+      };
+      return durationBeats;
+    }
+    if (type === 'spiral') {
+      hex.walls.push(...makePhaseTwoHexSpiralWalls(pattern));
+      return PHASE2_HEX_SPIRAL_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
+    }
+    hex.walls.push(...makePhaseTwoHexCorridorWalls(pattern));
+    return PHASE2_HEX_CORRIDOR_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
+  }
+
   function startPhaseTwoHexMode(pattern) {
     if (!pattern || pattern.mode === 'hex') return;
     const ram = pattern.ram;
@@ -5815,6 +6003,10 @@
       nextSpawnBeats: PHASE2_HEX_WALL_SPAWN_BEATS,
       nextGapAngle: heroAngle,
       wallsUntilSplit: 2 + Math.floor(pattern.random() * 2),
+      wallsUntilSpecial: 2,
+      specialPatternIndex: 0,
+      bulletPattern: null,
+      orbs: [],
     };
     pattern.ram = null;
     keys.clear();
@@ -5893,21 +6085,80 @@
     }
   }
 
+  function updatePhaseTwoHexBulletPattern(pattern, dt) {
+    const hex = pattern.hex;
+    const bulletPattern = hex.bulletPattern;
+    const beatStep = dt / beatMs;
+    if (bulletPattern) {
+      bulletPattern.ageBeats += beatStep;
+      bulletPattern.spawnBeats += beatStep;
+      while (
+        bulletPattern.ageBeats <= bulletPattern.spawnUntilBeats &&
+        bulletPattern.spawnBeats >= PHASE2_HEX_ORB_SPAWN_BEATS
+      ) {
+        bulletPattern.spawnBeats -= PHASE2_HEX_ORB_SPAWN_BEATS;
+        hex.orbs.push(makePhaseTwoHexOrb(pattern));
+      }
+    }
+
+    let shadowOrbs = 0;
+    for (const orb of hex.orbs) {
+      orb.ageBeats += beatStep;
+      const position = phaseTwoHexOrbPosition(orb);
+      const active = orb.ageBeats >= 0 && orb.ageBeats <= orb.travelBeats;
+      if (active && !orb.hit) {
+        const hitDistance = phaseTwoHexPointSegmentDistance(
+          hero.x,
+          hero.y,
+          orb.previousX,
+          orb.previousY,
+          position.x,
+          position.y
+        );
+        if (hitDistance <= orb.radius) {
+          orb.hit = true;
+          pattern.impactAge = 0;
+          hp = Math.max(0, hp - PHASE2_HEX_ORB_DAMAGE * (bpm / PHASE2_BPM_MIN));
+          if (hp <= 0) die();
+        }
+      }
+      if (active && phaseTwoHexHeroTouchesOrbShadow(orb, position)) shadowOrbs++;
+      orb.previousX = position.x;
+      orb.previousY = position.y;
+    }
+    hex.orbs = hex.orbs.filter((orb) => orb.ageBeats / orb.travelBeats < 1.04);
+    if (
+      bulletPattern &&
+      bulletPattern.ageBeats >= bulletPattern.durationBeats &&
+      hex.orbs.length === 0
+    ) hex.bulletPattern = null;
+    return shadowOrbs;
+  }
+
   function updatePhaseTwoHexPattern(pattern, dt) {
     const hex = pattern.hex;
     if (!hex) return;
     hex.elapsed += dt;
     hex.spawnBeats += dt / beatMs;
-    while (hex.spawnBeats >= hex.nextSpawnBeats && hex.walls.length < 5) {
+    while (hex.spawnBeats >= hex.nextSpawnBeats && hex.walls.length < 16) {
+      if (hex.wallsUntilSpecial <= 0) {
+        hex.spawnBeats -= hex.nextSpawnBeats;
+        hex.nextSpawnBeats = startPhaseTwoHexSpecialPattern(pattern);
+        hex.wallsUntilSpecial = 1 + Math.floor(pattern.random() * 2);
+        hex.wallsUntilSplit = Math.max(1, hex.wallsUntilSplit);
+        continue;
+      }
       if (hex.wallsUntilSplit <= 0 && hex.walls.length > 3) break;
       hex.spawnBeats -= hex.nextSpawnBeats;
       if (hex.wallsUntilSplit <= 0) {
         hex.walls.push(...makePhaseTwoHexSplitPair(pattern));
         hex.wallsUntilSplit = 2 + Math.floor(pattern.random() * 3);
+        hex.wallsUntilSpecial -= 2;
         hex.nextSpawnBeats = PHASE2_HEX_SPLIT_FOLLOWUP_BEATS + PHASE2_HEX_WALL_SPAWN_BEATS;
       } else {
         hex.walls.push(makePhaseTwoHexWall(pattern));
         hex.wallsUntilSplit--;
+        hex.wallsUntilSpecial--;
         hex.nextSpawnBeats = PHASE2_HEX_WALL_SPAWN_BEATS;
       }
     }
@@ -5935,14 +6186,16 @@
           wall.hit = true;
           wall.impactAge = 0;
           pattern.impactAge = 0;
-          hp = Math.max(0, hp - PHASE2_HEX_WALL_DAMAGE * (bpm / PHASE2_BPM_MIN));
+          const damageScale = Number.isFinite(wall.damageScale) ? wall.damageScale : 1;
+          hp = Math.max(0, hp - PHASE2_HEX_WALL_DAMAGE * damageScale * (bpm / PHASE2_BPM_MIN));
           if (hp <= 0) die();
         }
       }
       wall.previousRadius = radius;
     }
-    if (shadowWalls > 0) {
-      vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadowWalls * dt / beatMs);
+    const shadowOrbs = updatePhaseTwoHexBulletPattern(pattern, dt);
+    if (shadowWalls + shadowOrbs > 0) {
+      vp = Math.min(VP_MAX, vp + VP_PER_BEAT * (shadowWalls + shadowOrbs) * dt / beatMs);
     }
     hex.walls = hex.walls.filter((wall) => phaseTwoHexWallProgress(wall) < 1.06);
   }
