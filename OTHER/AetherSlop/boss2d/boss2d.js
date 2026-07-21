@@ -461,10 +461,11 @@
   const PHASE2_HEX_ANGULAR_SPEED = 0.0035;
   const PHASE2_HEX_WALL_TRAVEL_BEATS = 6.75;
   const PHASE2_HEX_WALL_SPAWN_BEATS = 2.35;
+  const PHASE2_HEX_SPLIT_FOLLOWUP_BEATS = 1.15;
   const PHASE2_HEX_WALL_THICKNESS = 21;
   const PHASE2_HEX_WALL_SHADOW_SCALE = 1.5;
   const PHASE2_HEX_WALL_GAP = 1.16;
-  const PHASE2_HEX_WALL_DAMAGE = 75;
+  const PHASE2_HEX_WALL_DAMAGE = 50;
   const DEATH_SLOW_MS = 900;
   const DEATH_FADE_START = 90;
   const DEATH_FADE_END = 1080;
@@ -2317,9 +2318,7 @@
     const radius = phaseTwoHexWallRadius(wall);
     const outer = Math.max(1, radius + wall.thickness / 2);
     const inner = Math.max(1, radius - wall.thickness / 2);
-    const halfGap = phaseTwoHexWallGapWidth(wall, radius) / 2;
-    const start = wall.gapAngle + halfGap;
-    const end = wall.gapAngle + Math.PI * 2 - halfGap;
+    const segments = phaseTwoHexWallSegments(wall, radius);
     const alpha = smoothstep(progress / 0.11) * (1 - smoothstep((progress - 0.96) / 0.10));
     if (alpha <= 0.001) return;
     const hitFlash = wall.hit && wall.impactAge >= 0 ? 1 - smoothstep(wall.impactAge / 220) : 0;
@@ -2330,9 +2329,12 @@
     ctx.globalAlpha = alpha;
     const shadowInner = Math.max(1, inner - wall.thickness * PHASE2_HEX_WALL_SHADOW_SCALE);
     ctx.beginPath();
-    ctx.arc(cx, cy, inner, start, end);
-    ctx.arc(cx, cy, shadowInner, end, start, true);
-    ctx.closePath();
+    for (const segment of segments) {
+      ctx.moveTo(cx + Math.cos(segment.start) * inner, cy + Math.sin(segment.start) * inner);
+      ctx.arc(cx, cy, inner, segment.start, segment.end);
+      ctx.arc(cx, cy, shadowInner, segment.end, segment.start, true);
+      ctx.closePath();
+    }
     ctx.fillStyle = 'rgba(24, 20, 28, 0.62)';
     ctx.fill();
     ctx.strokeStyle = 'rgba(112, 106, 119, 0.28)';
@@ -2340,9 +2342,12 @@
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(cx, cy, outer, start, end);
-    ctx.arc(cx, cy, inner, end, start, true);
-    ctx.closePath();
+    for (const segment of segments) {
+      ctx.moveTo(cx + Math.cos(segment.start) * outer, cy + Math.sin(segment.start) * outer);
+      ctx.arc(cx, cy, outer, segment.start, segment.end);
+      ctx.arc(cx, cy, inner, segment.end, segment.start, true);
+      ctx.closePath();
+    }
     ctx.fillStyle = hitFlash > 0 ? 'rgba(72, 2, 7, 0.98)' : 'rgba(19, 17, 21, 0.98)';
     ctx.fill();
     ctx.strokeStyle = hitFlash > 0 ? 'rgba(255, 38, 44, 0.96)' : 'rgba(126, 12, 24, 0.82)';
@@ -2352,19 +2357,26 @@
     ctx.strokeStyle = 'rgba(164, 161, 151, 0.20)';
     ctx.lineWidth = 0.8;
     ctx.beginPath();
-    for (let i = 1; i < 4; i++) {
-      const textureRadius = inner + wall.thickness * i / 4;
-      ctx.arc(cx, cy, textureRadius, start + 0.03, end - 0.03);
+    for (const segment of segments) {
+      for (let i = 1; i < 4; i++) {
+        const textureRadius = inner + wall.thickness * i / 4;
+        const start = segment.start + 0.03;
+        const end = segment.end - 0.03;
+        ctx.moveTo(cx + Math.cos(start) * textureRadius, cy + Math.sin(start) * textureRadius);
+        ctx.arc(cx, cy, textureRadius, start, end);
+      }
     }
     ctx.stroke();
 
     ctx.strokeStyle = 'rgba(220, 216, 201, 0.78)';
     ctx.lineWidth = 1.5;
-    for (const angle of [wall.gapAngle - halfGap, wall.gapAngle + halfGap]) {
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
-      ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
-      ctx.stroke();
+    for (const segment of segments) {
+      for (const angle of [segment.start, segment.end]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
+        ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }
@@ -5678,6 +5690,33 @@
     return wall.gapWidth * (1 + smoothstep(approach) * 0.20);
   }
 
+  function phaseTwoHexWallSegments(wall, radius) {
+    if (wall.kind === 'split') {
+      const sector = Math.PI / 3;
+      const segments = [];
+      for (let i = 0; i < 3; i++) {
+        const start = wall.patternAngle + (i * 2 + wall.splitParity) * sector;
+        segments.push({ start, end: start + sector });
+      }
+      return segments;
+    }
+    const halfGap = phaseTwoHexWallGapWidth(wall, radius) / 2;
+    return [{
+      start: wall.gapAngle + halfGap,
+      end: wall.gapAngle + Math.PI * 2 - halfGap,
+    }];
+  }
+
+  function phaseTwoHexAngleInsideWall(wall, angle, gapWidth) {
+    if (wall.kind === 'split') {
+      const sectorIndex = Math.floor(
+        phaseTwoHexNormalizeAngle(angle - wall.patternAngle) / (Math.PI / 3)
+      );
+      return sectorIndex % 2 === wall.splitParity;
+    }
+    return phaseTwoHexAngleDistance(angle, wall.gapAngle) > gapWidth / 2;
+  }
+
   function phaseTwoHexHeroTouchesWallShadow(wall, shadowInnerEdge, shadowOuterEdge, gapWidth) {
     const center = phaseTwoHexCenter();
     const halfWidth = HERO_W / 2;
@@ -5700,7 +5739,13 @@
         ) continue;
         const sampleAngle = Math.atan2(dy, dx);
         const angularPadding = Math.atan2(samplePadding, Math.max(1, sampleRadius));
-        if (
+        if (wall.kind === 'split') {
+          if (
+            phaseTwoHexAngleInsideWall(wall, sampleAngle, gapWidth) ||
+            phaseTwoHexAngleInsideWall(wall, sampleAngle - angularPadding, gapWidth) ||
+            phaseTwoHexAngleInsideWall(wall, sampleAngle + angularPadding, gapWidth)
+          ) return true;
+        } else if (
           phaseTwoHexAngleDistance(sampleAngle, wall.gapAngle) >
           Math.max(0, gapWidth / 2 - angularPadding)
         ) return true;
@@ -5734,6 +5779,27 @@
     };
   }
 
+  function makePhaseTwoHexSplitPair(pattern) {
+    const sector = Math.PI / 3;
+    const patternAngle = phaseTwoHexNormalizeAngle(pattern.hex.heroAngle - sector * 1.5);
+    const first = makePhaseTwoHexWall(pattern);
+    Object.assign(first, {
+      kind: 'split',
+      patternAngle,
+      splitParity: 0,
+    });
+    const second = {
+      ...first,
+      ageBeats: -PHASE2_HEX_SPLIT_FOLLOWUP_BEATS,
+      splitParity: 1,
+      previousRadius: canvas.width * 0.56,
+      resolved: false,
+      hit: false,
+      impactAge: -1,
+    };
+    return [first, second];
+  }
+
   function startPhaseTwoHexMode(pattern) {
     if (!pattern || pattern.mode === 'hex') return;
     const ram = pattern.ram;
@@ -5746,7 +5812,9 @@
       orbitRadius: PHASE2_HEX_ORBIT_RADIUS,
       walls: [],
       spawnBeats: 0,
+      nextSpawnBeats: PHASE2_HEX_WALL_SPAWN_BEATS,
       nextGapAngle: heroAngle,
+      wallsUntilSplit: 2 + Math.floor(pattern.random() * 2),
     };
     pattern.ram = null;
     keys.clear();
@@ -5830,9 +5898,18 @@
     if (!hex) return;
     hex.elapsed += dt;
     hex.spawnBeats += dt / beatMs;
-    while (hex.spawnBeats >= PHASE2_HEX_WALL_SPAWN_BEATS && hex.walls.length < 5) {
-      hex.spawnBeats -= PHASE2_HEX_WALL_SPAWN_BEATS;
-      hex.walls.push(makePhaseTwoHexWall(pattern));
+    while (hex.spawnBeats >= hex.nextSpawnBeats && hex.walls.length < 5) {
+      if (hex.wallsUntilSplit <= 0 && hex.walls.length > 3) break;
+      hex.spawnBeats -= hex.nextSpawnBeats;
+      if (hex.wallsUntilSplit <= 0) {
+        hex.walls.push(...makePhaseTwoHexSplitPair(pattern));
+        hex.wallsUntilSplit = 2 + Math.floor(pattern.random() * 3);
+        hex.nextSpawnBeats = PHASE2_HEX_SPLIT_FOLLOWUP_BEATS + PHASE2_HEX_WALL_SPAWN_BEATS;
+      } else {
+        hex.walls.push(makePhaseTwoHexWall(pattern));
+        hex.wallsUntilSplit--;
+        hex.nextSpawnBeats = PHASE2_HEX_WALL_SPAWN_BEATS;
+      }
     }
     let shadowWalls = 0;
     for (const wall of hex.walls) {
@@ -5851,7 +5928,7 @@
       }
       if (!wall.resolved && previousInnerEdge > hex.orbitRadius && innerEdge <= hex.orbitRadius) {
         wall.resolved = true;
-        const safe = phaseTwoHexAngleDistance(hex.heroAngle, wall.gapAngle) <= gapWidth / 2;
+        const safe = !phaseTwoHexAngleInsideWall(wall, hex.heroAngle, gapWidth);
         if (safe) {
           pattern.safeAge = 0;
         } else {
