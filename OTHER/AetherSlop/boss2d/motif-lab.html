@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Rift Motif Lab</title>
+  <style>
+    :root {
+      --ink: #f4dfe2;
+      --dim: #9f7f89;
+      --red: #ff493f;
+      --red-dark: #6e1017;
+      --violet: #b96cff;
+      --panel: #10090e;
+      --panel-2: #180b13;
+      --line: #3d202c;
+      --black: #030103;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-height: 100%; background: var(--black); }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 26px;
+      color: var(--ink);
+      background:
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px),
+        radial-gradient(circle at 50% 15%, #26070f 0, #090307 47%, #020102 100%);
+      background-size: 4px 4px, 4px 4px, auto;
+      font: 13px/1.55 Consolas, "Courier New", monospace;
+    }
+
+    button, select, input { font: inherit; }
+
+    button, select, input[type="number"] {
+      color: var(--ink);
+      background: #0b060a;
+      border: 1px solid var(--line);
+      border-radius: 0;
+    }
+
+    button {
+      min-height: 38px;
+      padding: 8px 12px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+    }
+
+    button:hover { border-color: var(--red); color: #fff; }
+    button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+
+    .lab {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      border: 2px solid #54121c;
+      box-shadow: 0 0 0 4px #080307, 0 0 55px rgba(152, 12, 28, .2);
+      background: rgba(5, 2, 5, .94);
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 22px;
+      align-items: end;
+      padding: 22px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(90deg, rgba(100, 8, 22, .28), transparent);
+    }
+
+    h1 { margin: 0 0 6px; color: #fff; font-size: clamp(22px, 4vw, 38px); line-height: 1; letter-spacing: -.05em; }
+    h1 span { color: var(--red); text-shadow: 2px 2px 0 #521018; }
+    header p { max-width: 680px; margin: 0; color: var(--dim); }
+
+    .tempo-readout { color: var(--red); text-align: right; font-size: 12px; text-transform: uppercase; letter-spacing: .1em; }
+    .tempo-readout strong { display: block; color: #fff; font-size: 26px; line-height: 1.1; }
+
+    .transport {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      align-items: center;
+      padding: 14px 22px;
+      border-bottom: 1px solid var(--line);
+      background: #090408;
+    }
+
+    .play { min-width: 132px; color: #fff; border-color: var(--red); background: #5b1118; }
+    .play.is-playing { color: #0b0204; background: var(--red); }
+    .status { margin-left: auto; color: var(--dim); }
+    .status::before { content: "■"; margin-right: 8px; color: #552431; }
+    .status.live::before { color: var(--red); text-shadow: 0 0 9px var(--red); }
+
+    .scope-wrap { position: relative; height: 90px; border-bottom: 1px solid var(--line); overflow: hidden; background: #020102; }
+    #scope { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+    .scope-label { position: absolute; right: 12px; bottom: 7px; color: #5f3c47; font-size: 10px; letter-spacing: .12em; pointer-events: none; }
+
+    main { padding: 22px; }
+    h2 { margin: 0 0 13px; color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .15em; }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(155px, 1fr));
+      gap: 10px;
+      margin-bottom: 23px;
+    }
+
+    .control { padding: 11px; border: 1px solid var(--line); background: var(--panel); }
+    .control label { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--dim); text-transform: uppercase; font-size: 11px; letter-spacing: .06em; }
+    .control output { color: var(--ink); }
+    .control select, .control input[type="number"] { width: 100%; height: 32px; padding: 4px 7px; }
+    .length-control { display: grid; grid-template-columns: 34px 1fr 34px; gap: 5px; }
+    .length-control button { min-height: 32px; padding: 2px; }
+    .length-control input { text-align: center; }
+    input[type="range"] { width: 100%; height: 7px; accent-color: var(--red); cursor: pointer; }
+
+    .sequencer-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: baseline; }
+    .sequencer-head p { margin: 0; color: var(--dim); font-size: 11px; }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+      gap: 7px;
+      margin: 9px 0 22px;
+    }
+
+    .step {
+      position: relative;
+      min-width: 0;
+      padding: 9px 7px 8px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--panel-2), #090508);
+      transition: border-color .04s, transform .04s, background .04s;
+    }
+
+    .step.inactive { display: none; }
+    .step.current { border-color: var(--red); background: #351016; transform: translateY(-3px); box-shadow: 0 3px 0 #8b1b22; }
+    .step-number { display: block; margin-bottom: 6px; color: #74404d; font-size: 10px; }
+    .note-button { width: 100%; min-height: 36px; padding: 5px; color: #fff; border-color: #552635; background: #0a0509; text-align: left; }
+    .note-button::after { content: "▦"; float: right; color: var(--red); }
+    .note-button.is-rest { color: var(--dim); }
+    .step-actions { display: flex; gap: 4px; margin-top: 6px; }
+    .step-actions button { min-width: 0; min-height: 28px; flex: 1; padding: 3px; color: var(--dim); font-size: 10px; }
+    .step-actions button.on { color: #fff; border-color: var(--violet); background: #35134d; }
+    .step-actions .audition { flex: 0 0 30px; color: var(--red); }
+
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 18px; border-top: 1px solid var(--line); }
+    .actions select { min-height: 38px; padding: 7px 10px; }
+    .actions .danger { color: #ffbbb6; border-color: #781822; }
+
+    details { margin-top: 18px; border: 1px solid var(--line); background: var(--panel); }
+    summary { padding: 11px; color: var(--dim); cursor: pointer; text-transform: uppercase; letter-spacing: .08em; }
+    pre { max-height: 250px; margin: 0; padding: 14px; overflow: auto; border-top: 1px solid var(--line); color: #d9b8ff; background: #060307; white-space: pre-wrap; }
+
+    [hidden] { display: none !important; }
+
+    .note-picker-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: rgba(0, 0, 0, .84);
+      backdrop-filter: blur(3px);
+    }
+
+    .note-picker {
+      width: min(1100px, 96vw);
+      max-height: min(760px, 92vh);
+      display: flex;
+      flex-direction: column;
+      border: 2px solid var(--red-dark);
+      background: #080408;
+      box-shadow: 0 0 45px rgba(255, 35, 45, .2);
+    }
+
+    .note-picker-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--line);
+      background: #16070d;
+    }
+
+    .note-picker-head strong { color: #fff; text-transform: uppercase; letter-spacing: .1em; }
+    .note-picker-head span { color: var(--dim); }
+    .note-picker-head button { margin-left: auto; }
+    .note-picker-scroll { padding: 13px; overflow: auto; }
+    .rest-choice { width: 100%; margin-bottom: 10px; color: var(--dim); border-style: dashed; }
+    .octave-row { display: grid; grid-template-columns: 54px 1fr; gap: 8px; align-items: stretch; margin-bottom: 8px; }
+    .octave-label { display: grid; place-items: center; color: #7e5260; border: 1px solid var(--line); font-size: 10px; text-align: center; }
+    .octave-notes { min-width: 780px; display: grid; grid-template-columns: repeat(12, minmax(58px, 1fr)); gap: 5px; }
+    .note-choice { display: grid; grid-template-columns: 1fr 27px; border: 1px solid var(--line); background: #0f080d; }
+    .note-choice.selected { border-color: var(--violet); background: #28103a; }
+    .note-choice button { min-width: 0; min-height: 36px; padding: 4px; border: 0; background: transparent; }
+    .note-choice .choose-note { color: #fff; text-align: left; }
+    .note-choice .preview-note { color: var(--red); border-left: 1px solid var(--line); }
+    .note-picker-help { margin: 5px 0 0; color: var(--dim); font-size: 10px; }
+
+    footer { padding: 0 22px 21px; color: #745863; font-size: 11px; }
+
+    @media (max-width: 900px) {
+      body { padding: 10px; }
+      .controls { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+      .steps { grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); }
+    }
+
+    @media (max-width: 520px) {
+      header { grid-template-columns: 1fr; }
+      .tempo-readout { text-align: left; }
+      .controls { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: repeat(2, minmax(105px, 1fr)); }
+      .status { width: 100%; margin-left: 0; }
+      .note-picker-overlay { padding: 8px; }
+      .note-picker { width: 100%; max-height: 96vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="lab">
+    <header>
+      <div>
+        <h1>RIFT <span>MOTIF</span> LAB</h1>
+        <p>A browser-native chiptune sketchpad. Every note length is derived from BPM, so the loop can follow the fight without stretching an audio file.</p>
+      </div>
+      <div class="tempo-readout"><strong id="tempoBig">150 BPM</strong><span id="loopInfo">10 steps · 5 beats · 2.00s</span></div>
+    </header>
+
+    <div class="transport">
+      <button class="play" id="playButton" type="button">▶ Play loop</button>
+      <button id="onceButton" type="button">Play once</button>
+      <button id="panicButton" type="button">Stop</button>
+      <span class="status" id="status">Ready — press Space to play</span>
+    </div>
+
+    <div class="scope-wrap">
+      <canvas id="scope" aria-label="Audio waveform"></canvas>
+      <span class="scope-label">LIVE SIGNAL</span>
+    </div>
+
+    <main>
+      <h2>Timing</h2>
+      <div class="controls">
+        <div class="control">
+          <label for="bpm">Combat BPM <output id="bpmOut">150</output></label>
+          <input id="bpm" type="range" min="60" max="250" value="150" step="1">
+        </div>
+        <div class="control">
+          <label for="division">Notes per beat</label>
+          <select id="division"><option value="1">1 — quarter notes</option><option value="2" selected>2 — eighth notes</option><option value="4">4 — sixteenth notes</option></select>
+        </div>
+        <div class="control">
+          <label for="length">Motif length <output id="lengthOut">10 steps</output></label>
+          <div class="length-control">
+            <button id="removeStep" type="button" title="Remove last step">−</button>
+            <input id="length" type="number" min="1" max="512" value="10" step="1" inputmode="numeric">
+            <button id="addStep" type="button" title="Add one step">+</button>
+          </div>
+        </div>
+        <div class="control">
+          <label for="gate">Note length <output id="gateOut">72%</output></label>
+          <input id="gate" type="range" min="20" max="100" value="72" step="1">
+        </div>
+      </div>
+
+      <h2>Sound chip</h2>
+      <div class="controls">
+        <div class="control">
+          <label for="voice">Lead voice</label>
+          <select id="voice">
+            <optgroup label="Single chip waves">
+              <option value="pulse06">Pulse 6.25% — needle</option>
+              <option value="pulse12">Pulse 12.5% — thin</option>
+              <option value="pulse18">Pulse 18.75% — razor</option>
+              <option value="pulse25" selected>Pulse 25% — harsh</option>
+              <option value="pulse37">Pulse 37.5% — crooked</option>
+              <option value="square">Square 50% — full</option>
+              <option value="triangle">Triangle — hollow</option>
+              <option value="sawtooth">Sawtooth — corroded</option>
+            </optgroup>
+            <optgroup label="Layered voices">
+              <option value="dualPulse">Dual pulse — detuned</option>
+              <option value="octavePulse">Octave pulse — towering</option>
+              <option value="fifthPulse">Tritone pulse — hostile</option>
+              <option value="metalSquare">Metal square — clang</option>
+              <option value="warblePulse">Warble pulse — unstable</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="control">
+          <label for="transpose">Transpose <output id="transposeOut">+0</output></label>
+          <input id="transpose" type="range" min="-12" max="12" value="0" step="1">
+        </div>
+        <div class="control">
+          <label for="bits">Bit depth <output id="bitsOut">6-bit</output></label>
+          <input id="bits" type="range" min="3" max="12" value="6" step="1">
+        </div>
+        <div class="control">
+          <label for="drive">Overdrive <output id="driveOut">32%</output></label>
+          <input id="drive" type="range" min="0" max="100" value="32" step="1">
+        </div>
+        <div class="control">
+          <label for="cutoff">Dark filter <output id="cutoffOut">2600 Hz</output></label>
+          <input id="cutoff" type="range" min="500" max="8000" value="2600" step="50">
+        </div>
+        <div class="control">
+          <label for="bass">Triangle shadow <output id="bassOut">24%</output></label>
+          <input id="bass" type="range" min="0" max="60" value="24" step="1">
+        </div>
+        <div class="control">
+          <label for="noise">Noise strike <output id="noiseOut">11%</output></label>
+          <input id="noise" type="range" min="0" max="40" value="11" step="1">
+        </div>
+        <div class="control">
+          <label for="echo">Echo <output id="echoOut">18%</output></label>
+          <input id="echo" type="range" min="0" max="55" value="18" step="1">
+        </div>
+      </div>
+
+      <div class="sequencer-head">
+        <h2>Motif</h2>
+        <p>ACC = louder note + noise hit · speaker button auditions one step</p>
+      </div>
+      <div class="steps" id="steps" aria-label="Motif steps"></div>
+
+      <div class="actions">
+        <select id="preset" aria-label="Motif preset">
+          <option value="grave">Grave Signal</option>
+          <option value="rift">Rift Pursuit</option>
+          <option value="crown">Broken Crown</option>
+          <option value="megalovania">Megalovania — opening reference</option>
+          <option value="trueHero">True Hero — opening reference</option>
+        </select>
+        <button id="loadPreset" type="button">Load preset</button>
+        <button id="randomize" type="button">Dark randomize</button>
+        <button id="copyJson" type="button">Copy JSON</button>
+        <button id="copyJs" type="button">Copy JS config</button>
+        <button class="danger" id="reset" type="button">Reset sound</button>
+      </div>
+
+      <details>
+        <summary>Integration preview</summary>
+        <pre id="configPreview"></pre>
+      </details>
+    </main>
+
+    <footer>No samples, generated songs, libraries, or server required. This page synthesizes every sound in real time with the Web Audio API.</footer>
+  </div>
+
+  <div class="note-picker-overlay" id="notePickerOverlay" hidden>
+    <section class="note-picker" role="dialog" aria-modal="true" aria-labelledby="notePickerTitle">
+      <div class="note-picker-head">
+        <strong id="notePickerTitle">Choose note</strong>
+        <span id="notePickerStep">Step 01</span>
+        <button id="closeNotePicker" type="button">Close</button>
+      </div>
+      <div class="note-picker-scroll">
+        <button class="rest-choice" id="chooseRest" type="button">— Set this step to rest —</button>
+        <div id="noteGrid"></div>
+        <p class="note-picker-help">Click a note name to select it. Use ♪ to preview without closing this menu.</p>
+      </div>
+    </section>
+  </div>
+
+  <script src="motif-lab.js"></script>
+</body>
+</html>
