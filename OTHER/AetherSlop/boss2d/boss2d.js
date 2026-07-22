@@ -388,6 +388,11 @@
   let phase2PlayerHits = 0;
   let phase2PostGridCycles = 0;
   let phase2ClawPatternStopped = false;
+  let phase2ClawRushMode = false;
+  let phase2RushEyes = [];
+  let phase2RushOrbs = [];
+  let phase2RushEyeBurstPending = false;
+  let phase2RushDebugQueued = false;
   let phase2TileRuinPattern = null;
   let phase2TileRuinDebugQueued = false;
   let phase2SwordRingPattern = null;
@@ -420,6 +425,14 @@
   const PHASE2_CLAW_HOLD_BEATS = 0.58;
   const PHASE2_CLAW_FIRE_BEATS = 0.42;
   const PHASE2_CLAW_REST_BEATS = 1;
+  const PHASE2_CLAW_RUSH_TIME_SCALE = 0.62;
+  const PHASE2_CLAW_RUSH_WIDTH_SCALE = 0.62;
+  const PHASE2_RUSH_EYE_COUNT = 6;
+  const PHASE2_RUSH_EYE_FIRE_BEATS = 4.5;
+  const PHASE2_RUSH_ORB_SPEED_PER_BEAT = 70;
+  const PHASE2_RUSH_ORB_RADIUS = 9;
+  const PHASE2_RUSH_ORB_SHADOW_RADIUS = 21;
+  const PHASE2_RUSH_ORB_DAMAGE = 75;
   const PHASE2_GRID_CHANNEL_BEATS = 3;
   const PHASE2_GRID_RECALL_MS = 460;
   const PHASE2_GRID_IMPACT_MS = 220;
@@ -1226,6 +1239,16 @@
       shadowClawBtn.blur();
     });
     debugPanel.appendChild(shadowClawBtn);
+
+    const rushClawBtn = document.createElement('button');
+    rushClawBtn.type = 'button';
+    rushClawBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    rushClawBtn.textContent = 'RUSH CLAWS';
+    rushClawBtn.addEventListener('click', () => {
+      debugPhaseTwoRush();
+      rushClawBtn.blur();
+    });
+    debugPanel.appendChild(rushClawBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -2657,6 +2680,7 @@
 
   function renderPhaseTwoHexCrater(pattern) {
     const ram = pattern.ram;
+    if (ram && ram.exitToSquare) return;
     const growth = pattern.mode === 'hex'
       ? 1
       : ram && ram.impacted
@@ -2708,8 +2732,10 @@
     const pattern = phase2PitfallPattern;
     if (!pattern) return;
     const entry = smoothstep(pattern.elapsed / PHASE2_PITFALL_ENTRY_MS);
-    const circularFall = pattern.mode === 'hex' || (pattern.ram && pattern.ram.impacted);
+    const circularFall = pattern.mode === 'hex' ||
+      !!(pattern.ram && (pattern.ram.impacted || pattern.ram.exitToSquare));
     const whirlpoolCast = !!(pattern.hex && pattern.hex.whirlpool);
+    const settledSquare = !!(pattern.ram && pattern.ram.exitToSquare && pattern.ram.impacted);
     const hexCenter = phaseTwoHexCenter();
     const cx = circularFall ? hexCenter.x : sceneW / 2;
     const cy = circularFall ? hexCenter.y : sceneH / 2;
@@ -2721,7 +2747,7 @@
     const vanishingY = circularFall ? cy : sceneH * 0.40;
     const innerWidth = sceneW - (BORDER + PAD) * 2;
     const innerHeight = sceneH - (BORDER + PAD) * 2;
-    if (!whirlpoolCast) {
+    if (!whirlpoolCast && !settledSquare) {
       for (let group = 0; group < 3; group++) {
         ctx.beginPath();
         for (let i = group; i < 9; i += 3) {
@@ -2771,7 +2797,8 @@
 
     const platforms = pattern.platforms.slice().sort((a, b) => a.age - b.age);
     for (const platform of platforms) renderPhaseTwoPitfallPlatform(platform);
-    if (pattern.mode === 'hex' && pattern.hex) {
+    const exitingHex = !!(pattern.ram && pattern.ram.exitToSquare && !pattern.ram.impacted);
+    if ((pattern.mode === 'hex' || exitingHex) && pattern.hex) {
       renderPhaseTwoHexWhirlpool(pattern);
       const walls = pattern.hex.walls.slice().sort((a, b) => a.ageBeats - b.ageBeats);
       for (const wall of walls) renderPhaseTwoHexWall(wall);
@@ -3980,6 +4007,11 @@
     phase2PlayerHits = 0;
     phase2PostGridCycles = 0;
     phase2ClawPatternStopped = false;
+    phase2ClawRushMode = false;
+    phase2RushEyes = [];
+    phase2RushOrbs = [];
+    phase2RushEyeBurstPending = false;
+    phase2RushDebugQueued = false;
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
     phase2SwordRingPattern = null;
@@ -4181,6 +4213,11 @@
     phase2PlayerHits = 0;
     phase2PostGridCycles = 0;
     phase2ClawPatternStopped = false;
+    phase2ClawRushMode = false;
+    phase2RushEyes = [];
+    phase2RushOrbs = [];
+    phase2RushEyeBurstPending = false;
+    phase2RushDebugQueued = false;
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
     phase2SwordRingPattern = null;
@@ -5200,13 +5237,18 @@
     phase2PlayerHits = 0;
     phase2PostGridCycles = 0;
     phase2ClawPatternStopped = false;
+    phase2ClawRushMode = false;
+    phase2RushEyes = [];
+    phase2RushOrbs = [];
+    phase2RushEyeBurstPending = false;
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
     phase2SwordRingPattern = null;
     phase2PitfallPattern = null;
     nextPhase2AttackBeat = phase2DebugClawQueued ? 0 : 2;
     if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
-    if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
+    if (phase2RushDebugQueued) beginDebugPhaseTwoRush();
+    else if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
     else if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
     else if (phase2GridDebugQueued) startPhaseTwoGridSpecial();
   }
@@ -5324,16 +5366,119 @@
     }
   }
 
+  function phaseTwoRushEyePosition(eye, board) {
+    const leftSide = eye.slot < PHASE2_RUSH_EYE_COUNT / 2;
+    const row = eye.slot % (PHASE2_RUSH_EYE_COUNT / 2);
+    const drift = Math.sin(eye.ageBeats * 1.7 + eye.seed) * 5;
+    const sideOffset = 124 + (row === 1 ? 42 : 0);
+    return {
+      x: Math.max(72, Math.min(window.innerWidth - 72,
+        leftSide ? board.left - sideOffset : board.right + sideOffset)),
+      y: Math.max(64, Math.min(window.innerHeight - 64,
+        board.top + board.height * (0.19 + row * 0.31) + drift)),
+      angle: leftSide ? 0 : Math.PI,
+      upward: leftSide ? -1 : 1,
+    };
+  }
+
+  function spawnPhaseTwoRushEye() {
+    if (!phase2ClawRushMode || phase2RushEyes.length >= PHASE2_RUSH_EYE_COUNT) return false;
+    const slot = phase2RushEyes.length;
+    phase2RushEyes.push({
+      slot,
+      ageBeats: 0,
+      shotClockBeats: PHASE2_RUSH_EYE_FIRE_BEATS * 0.45 - slot * 0.08,
+      seed: Math.random() * Math.PI * 2,
+    });
+    return true;
+  }
+
+  function spawnPhaseTwoRushOrb(eye, board) {
+    const eyePosition = phaseTwoRushEyePosition(eye, board);
+    const heroPosition = worldPointToViewport(hero.x, hero.y, board);
+    const dx = heroPosition.x - eyePosition.x;
+    const dy = heroPosition.y - eyePosition.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    phase2RushOrbs.push({
+      x: eyePosition.x,
+      y: eyePosition.y,
+      previousX: eyePosition.x,
+      previousY: eyePosition.y,
+      directionX: dx / distance,
+      directionY: dy / distance,
+      ageBeats: 0,
+      seed: Math.random() * Math.PI * 2,
+      hit: false,
+    });
+  }
+
+  function updatePhaseTwoRushEyes(dt) {
+    if (!phase2ClawRushMode || !canvas) return;
+    const beatStep = dt / beatMs;
+    const board = getBoardRect();
+    for (const eye of phase2RushEyes) {
+      eye.ageBeats += beatStep;
+      eye.shotClockBeats += beatStep;
+      while (eye.shotClockBeats >= PHASE2_RUSH_EYE_FIRE_BEATS) {
+        eye.shotClockBeats -= PHASE2_RUSH_EYE_FIRE_BEATS;
+        spawnPhaseTwoRushOrb(eye, board);
+      }
+    }
+    const heroPosition = worldPointToViewport(hero.x, hero.y, board);
+    const heroRadius = Math.max(
+      HERO_W * board.width / Math.max(1, canvas.width),
+      HERO_H * board.height / Math.max(1, canvas.height)
+    ) * 0.46;
+    const travel = PHASE2_RUSH_ORB_SPEED_PER_BEAT * beatStep;
+    let shadowOrbs = 0;
+    for (const orb of phase2RushOrbs) {
+      orb.ageBeats += beatStep;
+      orb.previousX = orb.x;
+      orb.previousY = orb.y;
+      orb.x += orb.directionX * travel;
+      orb.y += orb.directionY * travel;
+      const heroDistance = phaseTwoHexPointSegmentDistance(
+        heroPosition.x,
+        heroPosition.y,
+        orb.previousX,
+        orb.previousY,
+        orb.x,
+        orb.y
+      );
+      if (!orb.hit && heroDistance <= PHASE2_RUSH_ORB_SHADOW_RADIUS) {
+        shadowOrbs++;
+      }
+      if (
+        !orb.hit &&
+        heroDistance <= PHASE2_RUSH_ORB_RADIUS + heroRadius
+      ) {
+        orb.hit = true;
+        hp = Math.max(0, hp - PHASE2_RUSH_ORB_DAMAGE * (bpm / PHASE2_BPM_MIN));
+        if (hp <= 0) die();
+      }
+    }
+    if (shadowOrbs > 0) {
+      vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadowOrbs * beatStep);
+    }
+    phase2RushOrbs = phase2RushOrbs.filter((orb) => (
+      !orb.hit &&
+      orb.x >= -40 && orb.x <= window.innerWidth + 40 &&
+      orb.y >= -40 && orb.y <= window.innerHeight + 40
+    ));
+  }
+
   function spawnPhaseTwoShadowClaw(board) {
     if (!board || !board.width || !phase2Avatar || !phase2Avatar.state) return false;
+    const timeScale = phase2ClawRushMode ? PHASE2_CLAW_RUSH_TIME_SCALE : 1;
+    const widthScale = phase2ClawRushMode ? PHASE2_CLAW_RUSH_WIDTH_SCALE : 1;
     const makeClaw = (turnSign, waitBeats) => ({
       type: 'shadowClaw',
       state: waitBeats > 0 ? 'waiting' : 'telegraph',
       waitTime: 0,
       waitBeats,
       x0: 0, y0: 0, c1x: 0, c1y: 0, c2x: 0, c2y: 0, x1: 0, y1: 0,
-      width: Math.max(52, Math.min(78, Math.min(board.width, board.height) * 0.10)),
-      startWidth: 9,
+      width: Math.max(52, Math.min(78, Math.min(board.width, board.height) * 0.10)) * widthScale,
+      startWidth: 9 * widthScale,
       turnSign,
       pathSteps: 56,
       pathPoints: [],
@@ -5344,12 +5489,14 @@
       targetY: 0,
       baseStep: 16,
       stretch: 0,
-      stretchBeats: PHASE2_CLAW_TELEGRAPH_BEATS,
-      holdBeats: PHASE2_CLAW_HOLD_BEATS,
+      stretchBeats: PHASE2_CLAW_TELEGRAPH_BEATS * timeScale,
+      holdBeats: PHASE2_CLAW_HOLD_BEATS * timeScale,
       holdTime: 0,
       fire: 0,
-      fireBeats: PHASE2_CLAW_FIRE_BEATS,
-      restBeats: PHASE2_CLAW_REST_BEATS,
+      fireBeats: PHASE2_CLAW_FIRE_BEATS * timeScale,
+      restBeats: PHASE2_CLAW_REST_BEATS * timeScale,
+      cutsTerrain: !phase2ClawRushMode,
+      rushMode: phase2ClawRushMode,
       crackSpawned: false,
       seed: Math.random() * 1000,
       board: null,
@@ -5357,10 +5504,11 @@
     const claws = [];
     for (let i = 0; i < phase2BurstSize; i++) {
       const turnSign = (i + phase2BurstsAtSize) % 2 === 0 ? -1 : 1;
-      claws.push(makeClaw(turnSign, i * 0.42));
+      claws.push(makeClaw(turnSign, i * 0.42 * timeScale));
     }
     if (!retargetPhaseTwoShadowClaw(claws[0], board)) return false;
     phase2Attacks.push(...claws);
+    if (phase2ClawRushMode) phase2RushEyeBurstPending = true;
     phase2BurstActive = true;
     return true;
   }
@@ -5370,6 +5518,23 @@
     const board = getBoardRect();
     const avatar = phase2Avatar.state && phase2Avatar.state.avatar;
     if (!board.width || !board.height || !avatar) return;
+    if (phase2ClawRushMode) {
+      const margin = Math.max(42, avatar.size * 0.32);
+      const corners = [
+        { id: 'screen-top-left', x: margin, y: margin },
+        { id: 'screen-top-right', x: window.innerWidth - margin, y: margin },
+        { id: 'screen-bottom-right', x: window.innerWidth - margin, y: window.innerHeight - margin },
+        { id: 'screen-bottom-left', x: margin, y: window.innerHeight - margin },
+      ];
+      const currentIndex = corners.findIndex((corner) => corner.id === phase2DashZone);
+      const choices = currentIndex < 0
+        ? [corners[0], corners[1]]
+        : [corners[(currentIndex + 1) % corners.length], corners[(currentIndex + 3) % corners.length]];
+      const target = choices[Math.floor(Math.random() * choices.length)];
+      phase2DashZone = target.id;
+      phase2Avatar.dashTo(target.x, target.y, 300);
+      return;
+    }
     const insetX = Math.min(board.width * 0.14, avatar.size * 0.24);
     const insetY = Math.min(board.height * 0.14, avatar.size * 0.24);
     const x0 = board.left + insetX;
@@ -5440,7 +5605,7 @@
         if (a.holdTime >= beatMs * a.holdBeats) {
           a.state = 'fire';
           a.fire = 0;
-          leavePhaseTwoCrack(a);
+          if (a.cutsTerrain !== false) leavePhaseTwoCrack(a);
         }
       } else if (a.state === 'fire') {
         a.fire += dt / (beatMs * a.fireBeats);
@@ -5454,6 +5619,10 @@
     phase2Attacks = phase2Attacks.filter((a) => a.state !== 'done');
     if (phase2BurstActive && phase2Attacks.length === 0) {
       phase2BurstActive = false;
+      if (phase2RushEyeBurstPending) {
+        spawnPhaseTwoRushEye();
+        phase2RushEyeBurstPending = false;
+      }
       phase2BurstsAtSize++;
       let completedCycle = false;
       if (phase2BurstsAtSize >= phase2BurstSize) {
@@ -5531,6 +5700,11 @@
     }
     phase2DebugClawQueued = true;
     if (phase2CombatStarted) {
+      phase2RushDebugQueued = false;
+      phase2ClawRushMode = false;
+      phase2RushEyes = [];
+      phase2RushOrbs = [];
+      phase2RushEyeBurstPending = false;
       phase2GridDebugQueued = false;
       phase2ClawPatternStopped = false;
       phase2TileRuinPattern = null;
@@ -5547,8 +5721,69 @@
     }
   }
 
+  function beginDebugPhaseTwoRush() {
+    if (!phase2CombatStarted || !canvas) return false;
+    phase2RushDebugQueued = false;
+    phase2GridDebugQueued = false;
+    phase2DebugClawQueued = false;
+    phase2TileRuinPattern = null;
+    phase2TileRuinDebugQueued = false;
+    phase2SwordRingPattern = null;
+    phase2SwordRingDebugQueued = false;
+    phase2PitfallPattern = null;
+    phase2PitfallDebugQueued = false;
+    phase2HexDebugQueued = false;
+    phase2GridSpecial = null;
+    phase2Attacks = [];
+    phase2Cracks = [];
+    phase2CrackCacheDirty = true;
+    phase2BurstActive = false;
+    phase2BurstSize = 1;
+    phase2BurstsAtSize = 0;
+    phase2DashZone = 'top';
+    phase2ClawPatternStopped = false;
+    phase2ClawRushMode = true;
+    phase2RushEyes = [];
+    phase2RushOrbs = [];
+    phase2RushEyeBurstPending = false;
+    restorePhaseTwoSquareArena(true);
+    hero.x = canvas.width / 2;
+    hero.y = canvas.height / 2;
+    heroMove.x = 0;
+    heroMove.y = 0;
+    keys.clear();
+    nextPhase2AttackBeat = beatIndex + 1;
+    if (phase2Avatar && typeof phase2Avatar.dashHome === 'function') {
+      phase2Avatar.dashHome(getBoardRect(), PHASE2_BOSS_RETURN_DASH_MS);
+    }
+    return true;
+  }
+
+  function debugPhaseTwoRush() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    if (!phase2AvatarStarted && phase2Ritual) {
+      phase2Ritual.beams = [];
+      phase2Ritual.pentFade = 0;
+      phase2Ritual.cocoon.hits = P2_COCOON_HITS;
+      phase2Ritual.cocoon.p = 1;
+      phase2Ritual.cocoon.alpha = 1;
+      startAvatarPhaseTwo();
+    }
+    phase2RushDebugQueued = true;
+    if (phase2CombatStarted) beginDebugPhaseTwoRush();
+  }
+
   function beginDebugPhaseTwoSwordRing() {
     if (!phase2CombatStarted || !canvas) return false;
+    phase2RushDebugQueued = false;
+    phase2ClawRushMode = false;
+    phase2RushEyes = [];
+    phase2RushOrbs = [];
+    phase2RushEyeBurstPending = false;
     phase2SwordRingDebugQueued = false;
     phase2GridDebugQueued = false;
     phase2DebugClawQueued = false;
@@ -5785,6 +6020,9 @@
   function startPhaseTwoPitfallPattern() {
     if (!canvas || phase2PitfallPattern) return false;
     restorePhaseTwoSquareArena(true);
+    phase2ClawRushMode = false;
+    phase2RushEyes = [];
+    phase2RushOrbs = [];
     phase2PitfallDebugQueued = false;
     phase2GridDebugQueued = false;
     phase2DebugClawQueued = false;
@@ -6351,8 +6589,75 @@
     positionPhaseTwoHexHero(pattern);
   }
 
+  function resolvePhaseTwoHexExitImpact(pattern) {
+    if (!pattern || pattern.mode !== 'ram' || !pattern.ram || pattern.ram.impacted) return;
+    const ram = pattern.ram;
+    ram.impacted = true;
+    ram.shockAge = 0;
+    pattern.hex = null;
+    pattern.platforms = [];
+    pattern.elapsed = PHASE2_PITFALL_ENTRY_MS;
+    restorePhaseTwoSquareArena(true);
+    keys.clear();
+    heroMove.x = 0;
+    heroMove.y = 0;
+  }
+
+  function finishPhaseTwoHexExit(pattern) {
+    if (phase2PitfallPattern !== pattern) return;
+    phase2PitfallPattern = null;
+    phase2Attacks = [];
+    phase2BurstActive = false;
+    phase2BurstSize = 1;
+    phase2BurstsAtSize = 0;
+    phase2DashZone = 'top';
+    phase2ClawPatternStopped = false;
+    phase2ClawRushMode = true;
+    phase2RushEyes = [];
+    phase2RushOrbs = [];
+    phase2RushEyeBurstPending = false;
+    phase2RushDebugQueued = false;
+    nextPhase2AttackBeat = beatIndex + 1;
+    keys.clear();
+  }
+
+  function beginPhaseTwoHexExit(pattern) {
+    if (!pattern || pattern.mode !== 'hex' || !pattern.hex) return false;
+    pattern.mode = 'ram';
+    pattern.hex.walls = [];
+    pattern.hex.orbs = [];
+    pattern.hex.bulletPattern = null;
+    pattern.ram = {
+      elapsed: 0,
+      impacted: false,
+      shockAge: -1,
+      returning: false,
+      returnStarted: false,
+      exitToSquare: true,
+    };
+    phase2ClawPatternStopped = true;
+    phase2Attacks = [];
+    phase2BurstActive = false;
+    keys.clear();
+    heroMove.x = 0;
+    heroMove.y = 0;
+    const board = getBoardRect();
+    const center = phaseTwoHexCenter();
+    const targetX = board.left + center.x * board.width / canvas.width;
+    const targetY = board.top + center.y * board.height / canvas.height;
+    const started = phase2Avatar && typeof phase2Avatar.slamTo === 'function'
+      ? phase2Avatar.slamTo(targetX, targetY, PHASE2_HEX_RAM_MS)
+      : false;
+    if (!started) resolvePhaseTwoHexExitImpact(pattern);
+    return true;
+  }
+
   function resolvePhaseTwoHexRamImpact(pattern) {
     if (!pattern || pattern.mode !== 'ram' || !pattern.ram || pattern.ram.impacted) return;
+    if (pattern.ram.exitToSquare) {
+      resolvePhaseTwoHexExitImpact(pattern);
+      return;
+    }
     const ram = pattern.ram;
     ram.impacted = true;
     ram.shockAge = 0;
@@ -6410,6 +6715,19 @@
       resolvePhaseTwoHexRamImpact(pattern);
     }
     if (!ram.impacted) return;
+    if (ram.exitToSquare) {
+      ram.shockAge += dt;
+      if (!ram.returnStarted && (!phase2Avatar || !phase2Avatar.slamming) && ram.shockAge >= 180) {
+        ram.returnStarted = true;
+        ram.returning = !!phase2Avatar &&
+          phase2Avatar.dashHome(getBoardRect(), PHASE2_BOSS_RETURN_DASH_MS);
+      }
+      if (ram.returnStarted && (!ram.returning || !phase2Avatar || !phase2Avatar.dashing) &&
+          ram.shockAge >= 620) {
+        finishPhaseTwoHexExit(pattern);
+      }
+      return;
+    }
     ram.shockAge += dt;
     const push = smoothstep(ram.shockAge / 460);
     hero.x = ram.heroFromX + (ram.heroTargetX - ram.heroFromX) * push;
@@ -6488,6 +6806,8 @@
       transitionAgeBeats: -1,
       transitionFrom: 0,
       spinAngle: hex.heroAngle,
+      playerHits: 0,
+      exitTriggered: false,
     };
     if (phase2Avatar && phase2Avatar.state) {
       phase2Avatar.state.impact = 1;
@@ -6499,9 +6819,19 @@
   function registerPhaseTwoHexPlayerHit() {
     const pattern = phase2PitfallPattern;
     const hex = pattern && pattern.mode === 'hex' ? pattern.hex : null;
-    if (!hex || hex.whirlpool) return;
-    hex.playerHits++;
-    if (hex.playerHits >= 2) startPhaseTwoHexWhirlpoolCast(pattern);
+    if (!hex) return;
+    if (!hex.whirlpool) {
+      hex.playerHits++;
+      if (hex.playerHits >= 2) startPhaseTwoHexWhirlpoolCast(pattern);
+      return;
+    }
+    const whirlpool = hex.whirlpool;
+    if (!whirlpool.active || whirlpool.exitTriggered) return;
+    whirlpool.playerHits++;
+    if (whirlpool.playerHits >= 2) {
+      whirlpool.exitTriggered = true;
+      beginPhaseTwoHexExit(pattern);
+    }
   }
 
   function phaseTwoHexPatternPassed(pattern) {
@@ -6751,6 +7081,7 @@
         }
         updatePhaseTwoGridSpecial(dt);
         updatePhaseTwoAttacks(dt);
+        updatePhaseTwoRushEyes(dt);
         if (phase2ClawPatternStopped && phase2GridSpecial && phase2GridSpecial.settled &&
             !phase2TileRuinPattern && phase2Avatar && !phase2Avatar.dashing) {
           startPhaseTwoTileRuinPattern();
@@ -7946,6 +8277,105 @@
     renderPhaseTwoBossSlamCue(pattern);
   }
 
+  function renderPhaseTwoRushEye(eye, board) {
+    const appear = smoothstep(Math.min(1, eye.ageBeats / 0.55));
+    if (appear <= 0.001) return;
+    const position = phaseTwoRushEyePosition(eye, board);
+    const pulse = 0.5 + 0.5 * Math.sin(eye.ageBeats * Math.PI * 2 + eye.seed);
+    actx.save();
+    actx.translate(position.x, position.y);
+    actx.rotate(position.angle);
+    actx.scale(appear, appear);
+    actx.lineCap = 'round';
+    for (let i = 0; i < 4; i++) {
+      const rootY = (i - 1.5) * 4.5;
+      const reach = 49 + i * 6 + pulse * 4;
+      const lift = position.upward * (25 + i * 9);
+      actx.beginPath();
+      actx.moveTo(-13, rootY);
+      actx.bezierCurveTo(
+        -25,
+        rootY + position.upward * (7 + i * 2),
+        -reach * 0.72,
+        rootY + lift * 0.74 + Math.sin(eye.ageBeats * 2.2 + eye.seed + i) * 3,
+        -reach,
+        rootY + lift
+      );
+      actx.strokeStyle = 'rgba(2, 1, 3, 0.98)';
+      actx.lineWidth = 9;
+      actx.stroke();
+      actx.strokeStyle = 'rgba(184, 20, 28, 0.9)';
+      actx.lineWidth = 1.5;
+      actx.stroke();
+    }
+    actx.beginPath();
+    actx.ellipse(0, 0, 20, 13, 0, 0, Math.PI * 2);
+    actx.fillStyle = '#09070a';
+    actx.fill();
+    actx.strokeStyle = '#c51a23';
+    actx.lineWidth = 2.5;
+    actx.stroke();
+    actx.beginPath();
+    actx.ellipse(1.5, 0, 13.5, 8.4, 0, 0, Math.PI * 2);
+    actx.fillStyle = 'rgba(205, 202, 190, 0.94)';
+    actx.fill();
+    actx.beginPath();
+    actx.ellipse(4, 0, 4.2 + pulse * 0.45, 7, 0, 0, Math.PI * 2);
+    actx.fillStyle = '#ed1824';
+    actx.fill();
+    actx.restore();
+  }
+
+  function renderPhaseTwoRushEyes() {
+    if (!phase2ClawRushMode || !phase2RushEyes.length) return;
+    const board = getBoardRect();
+    for (const eye of phase2RushEyes) renderPhaseTwoRushEye(eye, board);
+    for (const orb of phase2RushOrbs) {
+      const tail = 12 + Math.sin(orb.ageBeats * 4 + orb.seed) * 2;
+      const auraAlpha = 0.31 + Math.sin(orb.ageBeats * 3.1 + orb.seed) * 0.03;
+      actx.save();
+      actx.lineCap = 'round';
+      actx.beginPath();
+      actx.arc(orb.x, orb.y, PHASE2_RUSH_ORB_SHADOW_RADIUS, 0, Math.PI * 2);
+      actx.fillStyle = 'rgba(20, 16, 21, ' + auraAlpha.toFixed(3) + ')';
+      actx.fill();
+      actx.strokeStyle = 'rgba(66, 56, 64, 0.30)';
+      actx.lineWidth = 1.5;
+      actx.stroke();
+      actx.beginPath();
+      actx.arc(orb.x, orb.y, PHASE2_RUSH_ORB_SHADOW_RADIUS * 0.72, 0, Math.PI * 2);
+      actx.fillStyle = 'rgba(5, 3, 7, 0.24)';
+      actx.fill();
+      actx.beginPath();
+      actx.moveTo(
+        orb.x - orb.directionX * tail,
+        orb.y - orb.directionY * tail
+      );
+      actx.lineTo(orb.x, orb.y);
+      actx.strokeStyle = 'rgba(95, 12, 18, 0.42)';
+      actx.lineWidth = PHASE2_RUSH_ORB_RADIUS * 0.7;
+      actx.stroke();
+      actx.beginPath();
+      actx.arc(orb.x, orb.y, PHASE2_RUSH_ORB_RADIUS, 0, Math.PI * 2);
+      actx.fillStyle = '#030204';
+      actx.fill();
+      actx.strokeStyle = '#d51d25';
+      actx.lineWidth = 2;
+      actx.stroke();
+      actx.beginPath();
+      actx.arc(
+        orb.x - orb.directionX * 2,
+        orb.y - orb.directionY * 2,
+        PHASE2_RUSH_ORB_RADIUS * 0.34,
+        0,
+        Math.PI * 2
+      );
+      actx.fillStyle = 'rgba(95, 91, 88, 0.20)';
+      actx.fill();
+      actx.restore();
+    }
+  }
+
   // Clears and repaints the full-viewport attack canvas (pentagrams + beams).
   function renderAttackLayer() {
     if (!actx) return;
@@ -7965,6 +8395,7 @@
       renderPhaseTwoGridChannel();
       renderPhaseTwoTileRuinPattern();
       renderSecondPhaseRitual();
+      renderPhaseTwoRushEyes();
       for (const a of phase2Attacks) {
         if (a.type === 'shadowClaw') renderAttack(a, 'front');
       }
@@ -8112,12 +8543,16 @@
       const armed = a.state === 'armed';
       const pulse = armed ? 0.88 + Math.sin(clock * 0.035) * 0.12 : 1;
       const visibility = foreground ? 1 : 1.24;
-      fillJaggedClaw(a, endAt, 1.10, 0, true, 'rgba(24, 25, 28, ' + (0.18 * pulse * visibility).toFixed(3) + ')', startAt, taperAtEnd);
-      fillJaggedClaw(a, endAt, 0.94, 1, true, 'rgba(12, 13, 15, ' + (0.30 * pulse * visibility).toFixed(3) + ')', startAt, taperAtEnd);
+      const outerAlpha = a.rushMode ? 0.28 : 0.18;
+      const bodyAlpha = a.rushMode ? 0.52 : 0.30;
+      const textureAlpha = a.rushMode ? 0.20 : 0.14;
+      const outlineAlpha = a.rushMode ? 0.78 : (foreground ? 0.48 : 0.62);
+      fillJaggedClaw(a, endAt, 1.10, 0, true, 'rgba(24, 25, 28, ' + (outerAlpha * pulse * visibility).toFixed(3) + ')', startAt, taperAtEnd);
+      fillJaggedClaw(a, endAt, 0.94, 1, true, 'rgba(12, 13, 15, ' + (bodyAlpha * pulse * visibility).toFixed(3) + ')', startAt, taperAtEnd);
       if (!reducedDetail) {
-        fillJaggedClaw(a, endAt, 0.72, 2, true, 'rgba(50, 51, 54, ' + (0.14 * pulse * visibility).toFixed(3) + ')', startAt, taperAtEnd);
+        fillJaggedClaw(a, endAt, 0.72, 2, true, 'rgba(50, 51, 54, ' + (textureAlpha * pulse * visibility).toFixed(3) + ')', startAt, taperAtEnd);
       }
-      strokeJaggedClaw(a, endAt, 1.10, 0, true, 'rgba(128, 18, 20, ' + ((foreground ? 0.48 : 0.62) * pulse).toFixed(3) + ')', startAt, taperAtEnd);
+      strokeJaggedClaw(a, endAt, 1.10, 0, true, 'rgba(128, 18, 20, ' + (outlineAlpha * pulse).toFixed(3) + ')', startAt, taperAtEnd);
       const texturePasses = reducedDetail ? 1 : 3;
       for (let i = 0; i < texturePasses; i++) strokeClawTexture(a, i, 0.035 * pulse, endAt, startAt);
     } else if (a.state === 'fire') {
@@ -10102,6 +10537,11 @@
     phase2PlayerHits = 0;
     phase2PostGridCycles = 0;
     phase2ClawPatternStopped = false;
+    phase2ClawRushMode = false;
+    phase2RushEyes = [];
+    phase2RushOrbs = [];
+    phase2RushEyeBurstPending = false;
+    phase2RushDebugQueued = false;
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
     phase2SwordRingPattern = null;
