@@ -478,11 +478,16 @@
   const PHASE2_HEX_ORB_SHADOW_LENGTH = 2;
   const PHASE2_HEX_ORB_DAMAGE = 32;
   const PHASE2_HEX_ORB_VP_SCALE = 0.75;
-  const PHASE2_HEX_CORRIDOR_POINT_WALLS = 8;
-  const PHASE2_HEX_CORRIDOR_POINT_WAVES = 3;
-  const PHASE2_HEX_CORRIDOR_POINT_SETS = 3;
-  const PHASE2_HEX_CORRIDOR_POINT_ARC = 0.12;
-  const PHASE2_HEX_CORRIDOR_POINT_TURN = 0.25;
+  const PHASE2_HEX_CORRIDOR_CONTROL_COUNT = 8;
+  const PHASE2_HEX_CORRIDOR_TURNS = 3;
+  const PHASE2_HEX_CORRIDOR_RAILS = 5;
+  const PHASE2_HEX_CORRIDOR_LENGTH_SCALE = 1.5;
+  const PHASE2_HEX_CORRIDOR_WALL_ANGLE = 2 * Math.atan2(
+    PHASE2_HEX_WALL_THICKNESS / 2,
+    PHASE2_HEX_ORBIT_RADIUS
+  );
+  const PHASE2_HEX_CORRIDOR_TURN = 0.38;
+  const PHASE2_HEX_CORRIDOR_SHADOW_WIDTH = 6;
   const PHASE2_HEX_ZIGZAG_SLOTS = 4;
   const PHASE2_HEX_WHIRLPOOL_CAST_BEATS = 2.5;
   const PHASE2_HEX_WHIRLPOOL_SWITCH_BEATS = 2.4;
@@ -2338,6 +2343,7 @@
   }
 
   function renderPhaseTwoHexWall(wall) {
+    if (wall.kind === 'corridor-stream') return;
     const progress = clamp01(phaseTwoHexWallProgress(wall));
     const radius = phaseTwoHexWallRadius(wall);
     const outer = Math.max(1, radius + wall.thickness / 2);
@@ -2351,21 +2357,19 @@
     const cy = center.y;
     ctx.save();
     ctx.globalAlpha = alpha;
-    if (wall.kind !== 'corridor-points') {
-      const shadowInner = Math.max(1, inner - wall.thickness * PHASE2_HEX_WALL_SHADOW_SCALE);
-      ctx.beginPath();
-      for (const segment of segments) {
-        ctx.moveTo(cx + Math.cos(segment.start) * inner, cy + Math.sin(segment.start) * inner);
-        ctx.arc(cx, cy, inner, segment.start, segment.end);
-        ctx.arc(cx, cy, shadowInner, segment.end, segment.start, true);
-        ctx.closePath();
-      }
-      ctx.fillStyle = 'rgba(24, 20, 28, 0.62)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(112, 106, 119, 0.28)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
+    const shadowInner = Math.max(1, inner - wall.thickness * PHASE2_HEX_WALL_SHADOW_SCALE);
+    ctx.beginPath();
+    for (const segment of segments) {
+      ctx.moveTo(cx + Math.cos(segment.start) * inner, cy + Math.sin(segment.start) * inner);
+      ctx.arc(cx, cy, inner, segment.start, segment.end);
+      ctx.arc(cx, cy, shadowInner, segment.end, segment.start, true);
+      ctx.closePath();
     }
+    ctx.fillStyle = 'rgba(24, 20, 28, 0.62)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(112, 106, 119, 0.28)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
 
     ctx.beginPath();
     for (const segment of segments) {
@@ -2407,9 +2411,30 @@
     ctx.restore();
   }
 
-  function renderPhaseTwoHexCorridorPointConnections(walls) {
+  function makePhaseTwoHexSmoothWallPath(pathPoints) {
+    const path = new Path2D();
+    if (pathPoints.length < 2) return path;
+    path.moveTo(pathPoints[0].x, pathPoints[0].y);
+    for (let i = 0; i < pathPoints.length - 1; i++) {
+      const previous = pathPoints[Math.max(0, i - 1)];
+      const current = pathPoints[i];
+      const next = pathPoints[i + 1];
+      const following = pathPoints[Math.min(pathPoints.length - 1, i + 2)];
+      path.bezierCurveTo(
+        current.x + (next.x - previous.x) / 6,
+        current.y + (next.y - previous.y) / 6,
+        next.x - (following.x - current.x) / 6,
+        next.y - (following.y - current.y) / 6,
+        next.x,
+        next.y
+      );
+    }
+    return path;
+  }
+
+  function renderPhaseTwoHexCorridorStreams(walls) {
     const pointWalls = walls
-      .filter((wall) => wall.kind === 'corridor-points')
+      .filter((wall) => wall.kind === 'corridor-stream')
       .map((wall) => {
         const progress = clamp01(phaseTwoHexWallProgress(wall));
         return {
@@ -2422,9 +2447,9 @@
       .filter((point) => point.alpha > 0.001);
     const waveGroups = new Map();
     for (const point of pointWalls) {
-      const waveId = point.wall.corridorPointWaveId;
-      if (!waveGroups.has(waveId)) waveGroups.set(waveId, []);
-      waveGroups.get(waveId).push(point);
+      const streamId = point.wall.corridorStreamId;
+      if (!waveGroups.has(streamId)) waveGroups.set(streamId, []);
+      waveGroups.get(streamId).push(point);
     }
     const center = phaseTwoHexCenter();
     ctx.save();
@@ -2433,30 +2458,48 @@
     for (const points of waveGroups.values()) {
       if (points.length < 2) continue;
       points.sort((a, b) => a.radius - b.radius);
-      const lineWidth = points[0].wall.thickness * 0.72;
+      const lineWidth = points[0].wall.thickness;
+      const hitFlash = points.reduce((flash, point) => {
+        if (!point.wall.hit || point.wall.impactAge < 0) return flash;
+        return Math.max(flash, 1 - smoothstep(point.wall.impactAge / 220));
+      }, 0);
       ctx.globalAlpha = points.reduce((sum, point) => sum + point.alpha, 0) / points.length;
-      for (let setIndex = 0; setIndex < PHASE2_HEX_CORRIDOR_POINT_SETS; setIndex++) {
-        const setOffset = setIndex * Math.PI * 2 / PHASE2_HEX_CORRIDOR_POINT_SETS;
-        for (const side of [-1, 1]) {
-          ctx.beginPath();
-          for (let i = 0; i < points.length; i++) {
-            const point = points[i];
-            const halfGap = phaseTwoHexWallGapWidth(point.wall, point.radius) / 2;
-            const angle = phaseTwoHexWallGapAngle(point.wall) + setOffset + side * halfGap;
-            const x = center.x + Math.cos(angle) * point.radius;
-            const y = center.y + Math.sin(angle) * point.radius;
-            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-          }
-          ctx.strokeStyle = 'rgba(126, 12, 24, 0.88)';
-          ctx.lineWidth = lineWidth + 3;
-          ctx.stroke();
-          ctx.strokeStyle = 'rgba(19, 17, 21, 0.99)';
-          ctx.lineWidth = lineWidth;
-          ctx.stroke();
-          ctx.strokeStyle = 'rgba(164, 161, 151, 0.13)';
-          ctx.lineWidth = 0.8;
-          ctx.stroke();
-        }
+      for (let railIndex = 0; railIndex < PHASE2_HEX_CORRIDOR_RAILS; railIndex++) {
+        const railOffset = railIndex * Math.PI * 2 / PHASE2_HEX_CORRIDOR_RAILS;
+        const pathPoints = points.map((point) => {
+          const angle = phaseTwoHexWallGapAngle(point.wall) + railOffset;
+          return {
+            x: center.x + Math.cos(angle) * point.radius,
+            y: center.y + Math.sin(angle) * point.radius,
+            radius: point.radius,
+          };
+        });
+        const shadowOffset = lineWidth / 2 + PHASE2_HEX_CORRIDOR_SHADOW_WIDTH / 2;
+        const shadowPoints = pathPoints.map((point) => {
+          const scale = Math.max(0, point.radius - shadowOffset) / Math.max(1, point.radius);
+          return {
+            x: center.x + (point.x - center.x) * scale,
+            y: center.y + (point.y - center.y) * scale,
+          };
+        });
+        const shadowPath = makePhaseTwoHexSmoothWallPath(shadowPoints);
+        ctx.strokeStyle = 'rgba(46, 42, 50, 0.72)';
+        ctx.lineWidth = PHASE2_HEX_CORRIDOR_SHADOW_WIDTH;
+        ctx.stroke(shadowPath);
+        const wallPath = makePhaseTwoHexSmoothWallPath(pathPoints);
+        ctx.strokeStyle = hitFlash > 0
+          ? 'rgba(255, 38, 44, 0.96)'
+          : 'rgba(126, 12, 24, 0.88)';
+        ctx.lineWidth = lineWidth + 3;
+        ctx.stroke(wallPath);
+        ctx.strokeStyle = hitFlash > 0
+          ? 'rgba(72, 2, 7, 0.98)'
+          : 'rgba(19, 17, 21, 0.99)';
+        ctx.lineWidth = lineWidth;
+        ctx.stroke(wallPath);
+        ctx.strokeStyle = 'rgba(164, 161, 151, 0.13)';
+        ctx.lineWidth = 0.8;
+        ctx.stroke(wallPath);
       }
     }
     ctx.restore();
@@ -2732,7 +2775,7 @@
       renderPhaseTwoHexWhirlpool(pattern);
       const walls = pattern.hex.walls.slice().sort((a, b) => a.ageBeats - b.ageBeats);
       for (const wall of walls) renderPhaseTwoHexWall(wall);
-      renderPhaseTwoHexCorridorPointConnections(walls);
+      renderPhaseTwoHexCorridorStreams(walls);
       for (const orb of pattern.hex.orbs) renderPhaseTwoHexOrb(orb);
     }
     if (circularFall) {
@@ -5917,14 +5960,14 @@
   function phaseTwoHexWallRadius(wall) {
     const progress = clamp01(phaseTwoHexWallProgress(wall));
     const outerRadius = canvas.width * 0.56;
-    const innerRadius = wall.kind === 'corridor-points'
+    const innerRadius = wall.kind === 'corridor-stream'
       ? PHASE2_HEX_CRATER_RADIUS + wall.thickness / 2
       : PHASE2_HEX_CRATER_RADIUS * 0.52;
     return outerRadius + (innerRadius - outerRadius) * easeInQuad(progress);
   }
 
   function phaseTwoHexWallGapWidth(wall, radius) {
-    if (wall.kind === 'corridor-points') return wall.gapWidth;
+    if (wall.kind === 'corridor-stream') return wall.gapWidth;
     const outerRadius = canvas.width * 0.56;
     const approach = 1 - clamp01(
       (radius - PHASE2_HEX_ORBIT_RADIUS) / Math.max(1, outerRadius - PHASE2_HEX_ORBIT_RADIUS)
@@ -5950,21 +5993,6 @@
     }
     const halfGap = phaseTwoHexWallGapWidth(wall, radius) / 2;
     const gapAngle = phaseTwoHexWallGapAngle(wall);
-    if (wall.kind === 'corridor-points') {
-      const halfPoint = PHASE2_HEX_CORRIDOR_POINT_ARC / 2;
-      const segments = [];
-      for (let setIndex = 0; setIndex < PHASE2_HEX_CORRIDOR_POINT_SETS; setIndex++) {
-        const setAngle = gapAngle + setIndex * Math.PI * 2 / PHASE2_HEX_CORRIDOR_POINT_SETS;
-        for (const side of [-1, 1]) {
-          const pointAngle = setAngle + side * halfGap;
-          segments.push({
-            start: pointAngle - halfPoint,
-            end: pointAngle + halfPoint,
-          });
-        }
-      }
-      return segments;
-    }
     return [{
       start: gapAngle + halfGap,
       end: gapAngle + Math.PI * 2 - halfGap,
@@ -5978,16 +6006,12 @@
       );
       return sectorIndex % 2 === wall.splitParity;
     }
-    if (wall.kind === 'corridor-points') {
+    if (wall.kind === 'corridor-stream') {
       const gapAngle = phaseTwoHexWallGapAngle(wall);
-      const halfGap = gapWidth / 2;
-      const halfPoint = PHASE2_HEX_CORRIDOR_POINT_ARC / 2;
-      for (let setIndex = 0; setIndex < PHASE2_HEX_CORRIDOR_POINT_SETS; setIndex++) {
-        const setAngle = gapAngle + setIndex * Math.PI * 2 / PHASE2_HEX_CORRIDOR_POINT_SETS;
-        if (
-          phaseTwoHexAngleDistance(angle, setAngle - halfGap) <= halfPoint ||
-          phaseTwoHexAngleDistance(angle, setAngle + halfGap) <= halfPoint
-        ) return true;
+      const halfWall = PHASE2_HEX_CORRIDOR_WALL_ANGLE / 2;
+      for (let railIndex = 0; railIndex < PHASE2_HEX_CORRIDOR_RAILS; railIndex++) {
+        const railAngle = gapAngle + railIndex * Math.PI * 2 / PHASE2_HEX_CORRIDOR_RAILS;
+        if (phaseTwoHexAngleDistance(angle, railAngle) <= halfWall) return true;
       }
       return false;
     }
@@ -6204,38 +6228,42 @@
     return walls;
   }
 
-  function makePhaseTwoHexCorridorPointWalls(pattern) {
+  function makePhaseTwoHexCorridorStream(pattern) {
     const firstDirection = pattern.random() < 0.5 ? -1 : 1;
-    const sequenceSpan = (PHASE2_HEX_CORRIDOR_SLOTS - 1) * PHASE2_HEX_WALL_SPAWN_BEATS;
-    const wallStepBeats = sequenceSpan / (PHASE2_HEX_CORRIDOR_POINT_WALLS - 1);
-    const waveStepBeats = PHASE2_HEX_CORRIDOR_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
-    const sequenceId = pattern.hex.nextCorridorPointSequenceId++;
+    const turnSpanBeats = (PHASE2_HEX_CORRIDOR_SLOTS - 1) *
+      PHASE2_HEX_WALL_SPAWN_BEATS * PHASE2_HEX_CORRIDOR_LENGTH_SCALE;
+    const wallStepBeats = turnSpanBeats / (PHASE2_HEX_CORRIDOR_CONTROL_COUNT - 1);
+    const streamId = pattern.hex.nextCorridorStreamId++;
     const walls = [];
-    let finalGapAngle = pattern.hex.heroAngle;
-    for (let waveIndex = 0; waveIndex < PHASE2_HEX_CORRIDOR_POINT_WAVES; waveIndex++) {
-      const direction = firstDirection * (waveIndex % 2 === 0 ? 1 : -1);
-      const gapAngle = phaseTwoHexNormalizeAngle(pattern.hex.heroAngle + direction * 0.30);
-      for (let i = 0; i < PHASE2_HEX_CORRIDOR_POINT_WALLS; i++) {
+    let turnStartAngle = phaseTwoHexNormalizeAngle(
+      pattern.hex.heroAngle + firstDirection * 0.30
+    );
+    for (let turnIndex = 0; turnIndex < PHASE2_HEX_CORRIDOR_TURNS; turnIndex++) {
+      const direction = firstDirection * (turnIndex % 2 === 0 ? 1 : -1);
+      const firstControl = turnIndex === 0 ? 0 : 1;
+      for (let i = firstControl; i < PHASE2_HEX_CORRIDOR_CONTROL_COUNT; i++) {
+        const controlIndex = turnIndex * (PHASE2_HEX_CORRIDOR_CONTROL_COUNT - 1) + i;
         const wall = makePhaseTwoHexWall(pattern);
         Object.assign(wall, {
-          kind: 'corridor-points',
-          corridorPointWaveId: sequenceId * PHASE2_HEX_CORRIDOR_POINT_WAVES + waveIndex,
-          ageBeats: -waveIndex * waveStepBeats - i * wallStepBeats,
+          kind: 'corridor-stream',
+          corridorStreamId: streamId,
+          ageBeats: -controlIndex * wallStepBeats,
           gapAngle: phaseTwoHexNormalizeAngle(
-            gapAngle + direction * i * PHASE2_HEX_CORRIDOR_POINT_TURN
+            turnStartAngle + direction * i * PHASE2_HEX_CORRIDOR_TURN
           ),
-          gapWidth: Math.PI / PHASE2_HEX_CORRIDOR_POINT_SETS,
+          gapWidth: Math.PI * 2 / PHASE2_HEX_CORRIDOR_RAILS,
           damageScale: 0.6,
           patternEnd: false,
         });
         walls.push(wall);
       }
-      finalGapAngle = phaseTwoHexNormalizeAngle(
-        gapAngle + direction * PHASE2_HEX_CORRIDOR_POINT_WALLS * PHASE2_HEX_CORRIDOR_POINT_TURN
+      turnStartAngle = phaseTwoHexNormalizeAngle(
+        turnStartAngle + direction *
+          (PHASE2_HEX_CORRIDOR_CONTROL_COUNT - 1) * PHASE2_HEX_CORRIDOR_TURN
       );
     }
     walls[walls.length - 1].patternEnd = true;
-    pattern.hex.nextGapAngle = finalGapAngle;
+    pattern.hex.nextGapAngle = turnStartAngle;
     return walls;
   }
 
@@ -6260,7 +6288,7 @@
 
   function startPhaseTwoHexSpecialPattern(pattern) {
     const hex = pattern.hex;
-    const types = ['bullet', 'spiral', 'corridor', 'corridor-points', 'zigzag'];
+    const types = ['bullet', 'spiral', 'corridor', 'corridor-stream', 'zigzag'];
     const type = types[hex.specialPatternIndex % types.length];
     hex.specialPatternIndex++;
     if (type === 'bullet') {
@@ -6285,10 +6313,11 @@
       hex.walls.push(...makePhaseTwoHexCorridorWalls(pattern));
       return PHASE2_HEX_CORRIDOR_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
     }
-    if (type === 'corridor-points') {
-      hex.walls.push(...makePhaseTwoHexCorridorPointWalls(pattern));
-      return PHASE2_HEX_CORRIDOR_POINT_WAVES *
-        PHASE2_HEX_CORRIDOR_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
+    if (type === 'corridor-stream') {
+      hex.walls.push(...makePhaseTwoHexCorridorStream(pattern));
+      return PHASE2_HEX_CORRIDOR_TURNS *
+        (PHASE2_HEX_CORRIDOR_SLOTS - 1) * PHASE2_HEX_WALL_SPAWN_BEATS *
+        PHASE2_HEX_CORRIDOR_LENGTH_SCALE + PHASE2_HEX_WALL_SPAWN_BEATS;
     }
     hex.walls.push(...makePhaseTwoHexZigzagWalls(pattern));
     return PHASE2_HEX_ZIGZAG_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
@@ -6308,7 +6337,7 @@
       spawnBeats: 0,
       nextSpawnBeats: PHASE2_HEX_WALL_SPAWN_BEATS,
       nextGapAngle: heroAngle,
-      nextCorridorPointSequenceId: 1,
+      nextCorridorStreamId: 1,
       wallsUntilSplit: 2 + Math.floor(pattern.random() * 2),
       wallsUntilSpecial: 2,
       specialPatternIndex: 0,
@@ -6555,10 +6584,12 @@
       const radius = phaseTwoHexWallRadius(wall);
       const previousInnerEdge = wall.previousRadius - wall.thickness / 2;
       const innerEdge = radius - wall.thickness / 2;
-      const shadowInnerEdge = innerEdge - wall.thickness * PHASE2_HEX_WALL_SHADOW_SCALE;
+      const shadowDepth = wall.kind === 'corridor-stream'
+        ? PHASE2_HEX_CORRIDOR_SHADOW_WIDTH
+        : wall.thickness * PHASE2_HEX_WALL_SHADOW_SCALE;
+      const shadowInnerEdge = innerEdge - shadowDepth;
       const gapWidth = phaseTwoHexWallGapWidth(wall, radius);
       if (
-        wall.kind !== 'corridor-points' &&
         !wall.resolved &&
         phaseTwoHexHeroTouchesWallShadow(wall, shadowInnerEdge, innerEdge, gapWidth)
       ) {
