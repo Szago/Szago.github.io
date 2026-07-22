@@ -456,6 +456,7 @@
   const PHASE2_PITFALL_DODGES_TO_HEX = 20;
   const PHASE2_HEX_RAM_MS = 1050;
   const PHASE2_HEX_BOTTOM_PADDING = 5;
+  const PHASE2_HEX_BAR_LIFT = 18;
   const PHASE2_HEX_CRATER_RADIUS = 21;
   const PHASE2_HEX_ORBIT_RADIUS = 50;
   const PHASE2_HEX_ANGULAR_SPEED = 0.0035;
@@ -477,6 +478,15 @@
   const PHASE2_HEX_ORB_SHADOW_LENGTH = 2;
   const PHASE2_HEX_ORB_DAMAGE = 32;
   const PHASE2_HEX_ORB_VP_SCALE = 0.75;
+  const PHASE2_HEX_CORRIDOR_POINT_WALLS = 8;
+  const PHASE2_HEX_CORRIDOR_POINT_WAVES = 3;
+  const PHASE2_HEX_CORRIDOR_POINT_SETS = 3;
+  const PHASE2_HEX_CORRIDOR_POINT_ARC = 0.12;
+  const PHASE2_HEX_CORRIDOR_POINT_TURN = 0.25;
+  const PHASE2_HEX_ZIGZAG_SLOTS = 4;
+  const PHASE2_HEX_WHIRLPOOL_CAST_BEATS = 2.5;
+  const PHASE2_HEX_WHIRLPOOL_SWITCH_BEATS = 2.4;
+  const PHASE2_HEX_WHIRLPOOL_SPEED_DELTA = 0.25;
   const PHASE2_HEX_VP_HITBOX_SCALE = 0.40;
   const PHASE2_HEX_VP_CONTACT_PADDING = 0.75;
   const PHASE2_HEX_VP_HITBOX_SAMPLES = 6;
@@ -2341,19 +2351,21 @@
     const cy = center.y;
     ctx.save();
     ctx.globalAlpha = alpha;
-    const shadowInner = Math.max(1, inner - wall.thickness * PHASE2_HEX_WALL_SHADOW_SCALE);
-    ctx.beginPath();
-    for (const segment of segments) {
-      ctx.moveTo(cx + Math.cos(segment.start) * inner, cy + Math.sin(segment.start) * inner);
-      ctx.arc(cx, cy, inner, segment.start, segment.end);
-      ctx.arc(cx, cy, shadowInner, segment.end, segment.start, true);
-      ctx.closePath();
+    if (wall.kind !== 'corridor-points') {
+      const shadowInner = Math.max(1, inner - wall.thickness * PHASE2_HEX_WALL_SHADOW_SCALE);
+      ctx.beginPath();
+      for (const segment of segments) {
+        ctx.moveTo(cx + Math.cos(segment.start) * inner, cy + Math.sin(segment.start) * inner);
+        ctx.arc(cx, cy, inner, segment.start, segment.end);
+        ctx.arc(cx, cy, shadowInner, segment.end, segment.start, true);
+        ctx.closePath();
+      }
+      ctx.fillStyle = 'rgba(24, 20, 28, 0.62)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(112, 106, 119, 0.28)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
     }
-    ctx.fillStyle = 'rgba(24, 20, 28, 0.62)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(112, 106, 119, 0.28)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
 
     ctx.beginPath();
     for (const segment of segments) {
@@ -2390,6 +2402,61 @@
         ctx.moveTo(cx + Math.cos(angle) * inner, cy + Math.sin(angle) * inner);
         ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
         ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function renderPhaseTwoHexCorridorPointConnections(walls) {
+    const pointWalls = walls
+      .filter((wall) => wall.kind === 'corridor-points')
+      .map((wall) => {
+        const progress = clamp01(phaseTwoHexWallProgress(wall));
+        return {
+          wall,
+          radius: phaseTwoHexWallRadius(wall),
+          alpha: smoothstep(progress / 0.11) *
+            (1 - smoothstep((progress - 0.96) / 0.10)),
+        };
+      })
+      .filter((point) => point.alpha > 0.001);
+    const waveGroups = new Map();
+    for (const point of pointWalls) {
+      const waveId = point.wall.corridorPointWaveId;
+      if (!waveGroups.has(waveId)) waveGroups.set(waveId, []);
+      waveGroups.get(waveId).push(point);
+    }
+    const center = phaseTwoHexCenter();
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const points of waveGroups.values()) {
+      if (points.length < 2) continue;
+      points.sort((a, b) => a.radius - b.radius);
+      const lineWidth = points[0].wall.thickness * 0.72;
+      ctx.globalAlpha = points.reduce((sum, point) => sum + point.alpha, 0) / points.length;
+      for (let setIndex = 0; setIndex < PHASE2_HEX_CORRIDOR_POINT_SETS; setIndex++) {
+        const setOffset = setIndex * Math.PI * 2 / PHASE2_HEX_CORRIDOR_POINT_SETS;
+        for (const side of [-1, 1]) {
+          ctx.beginPath();
+          for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            const halfGap = phaseTwoHexWallGapWidth(point.wall, point.radius) / 2;
+            const angle = phaseTwoHexWallGapAngle(point.wall) + setOffset + side * halfGap;
+            const x = center.x + Math.cos(angle) * point.radius;
+            const y = center.y + Math.sin(angle) * point.radius;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = 'rgba(126, 12, 24, 0.88)';
+          ctx.lineWidth = lineWidth + 3;
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(19, 17, 21, 0.99)';
+          ctx.lineWidth = lineWidth;
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(164, 161, 151, 0.13)';
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+        }
       }
     }
     ctx.restore();
@@ -2446,6 +2513,89 @@
     ctx.strokeStyle = 'rgba(120, 112, 126, 0.20)';
     ctx.lineWidth = 0.8;
     ctx.stroke();
+    ctx.restore();
+  }
+
+  function renderPhaseTwoHexWhirlpool(pattern) {
+    const hex = pattern && pattern.hex;
+    const whirlpool = hex && hex.whirlpool;
+    if (!whirlpool) return;
+    const castProgress = clamp01(whirlpool.ageBeats / PHASE2_HEX_WHIRLPOOL_CAST_BEATS);
+    const reveal = whirlpool.active ? 1 : smoothstep(castProgress);
+    const center = phaseTwoHexCenter();
+    const outerRadius = Math.min(canvas.width, canvas.height) * 0.5 - 8;
+    const innerRadius = PHASE2_HEX_CRATER_RADIUS + 10;
+    const flow = whirlpool.flow;
+    const flowStrength = Math.abs(flow);
+    const trailCount = 52;
+    const trailSegments = 14;
+    ctx.save();
+    ctx.strokeStyle = 'rgb(151, 154, 157)';
+    ctx.lineCap = 'round';
+    for (let segment = 0; segment < trailSegments; segment++) {
+      const tailProgress = segment / trailSegments;
+      const headProgress = (segment + 1) / trailSegments;
+      const tailFade = Math.pow(headProgress, 2.35);
+      for (let pulseGroup = 0; pulseGroup < 4; pulseGroup++) {
+        const pulse = 0.28 + 0.72 * Math.pow(
+          0.5 + 0.5 * Math.sin(whirlpool.ageBeats * 1.15 + pulseGroup * Math.PI / 2),
+          1.7
+        );
+        ctx.globalAlpha = reveal * tailFade * pulse * (0.09 + flowStrength * 0.16);
+        ctx.lineWidth = 0.72 + headProgress * 0.82;
+        ctx.beginPath();
+        for (let i = pulseGroup; i < trailCount; i += 4) {
+          const radialSeed = (i + 0.5) / trailCount;
+          const radiusJitter = Math.sin(i * 4.17) *
+            (outerRadius - innerRadius) / trailCount * 0.42;
+          const radius = innerRadius + (outerRadius - innerRadius) * radialSeed + radiusJitter;
+          const headAngle = i * 2.3999632297 +
+            whirlpool.spinAngle * (0.72 + radialSeed * 0.24) +
+            Math.sin(whirlpool.ageBeats * 0.31 + i * 1.73) * 0.025;
+          const sweep = flow * (3.64 + radialSeed * 0.68);
+          const startAngle = headAngle - sweep * (1 - tailProgress);
+          const endAngle = headAngle - sweep * (1 - headProgress);
+          ctx.moveTo(
+            center.x + Math.cos(startAngle) * radius,
+            center.y + Math.sin(startAngle) * radius
+          );
+          ctx.arc(center.x, center.y, radius, startAngle, endAngle, sweep < 0);
+        }
+        ctx.stroke();
+      }
+    }
+    ctx.fillStyle = 'rgb(174, 176, 178)';
+    for (let i = 0; i < trailCount; i++) {
+      const radialSeed = (i + 0.5) / trailCount;
+      const radiusJitter = Math.sin(i * 4.17) *
+        (outerRadius - innerRadius) / trailCount * 0.42;
+      const radius = innerRadius + (outerRadius - innerRadius) * radialSeed + radiusJitter;
+      const headAngle = i * 2.3999632297 +
+        whirlpool.spinAngle * (0.72 + radialSeed * 0.24) +
+        Math.sin(whirlpool.ageBeats * 0.31 + i * 1.73) * 0.025;
+      const pulse = 0.28 + 0.72 * Math.pow(
+        0.5 + 0.5 * Math.sin(whirlpool.ageBeats * 1.15 + (i % 4) * Math.PI / 2),
+        1.7
+      );
+      ctx.globalAlpha = reveal * pulse * (0.12 + flowStrength * 0.18);
+      ctx.beginPath();
+      ctx.arc(
+        center.x + Math.cos(headAngle) * radius,
+        center.y + Math.sin(headAngle) * radius,
+        0.75 + (i % 3) * 0.16,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
+    if (!whirlpool.active) {
+      ctx.globalAlpha = (1 - castProgress) * 0.75;
+      ctx.strokeStyle = 'rgba(218, 218, 216, 0.9)';
+      ctx.lineWidth = Math.max(1, 7 * (1 - castProgress));
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, innerRadius + easeOutCubic(castProgress) * (outerRadius - innerRadius), 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -2516,6 +2666,7 @@
     if (!pattern) return;
     const entry = smoothstep(pattern.elapsed / PHASE2_PITFALL_ENTRY_MS);
     const circularFall = pattern.mode === 'hex' || (pattern.ram && pattern.ram.impacted);
+    const whirlpoolCast = !!(pattern.hex && pattern.hex.whirlpool);
     const hexCenter = phaseTwoHexCenter();
     const cx = circularFall ? hexCenter.x : sceneW / 2;
     const cy = circularFall ? hexCenter.y : sceneH / 2;
@@ -2527,57 +2678,61 @@
     const vanishingY = circularFall ? cy : sceneH * 0.40;
     const innerWidth = sceneW - (BORDER + PAD) * 2;
     const innerHeight = sceneH - (BORDER + PAD) * 2;
-    for (let group = 0; group < 3; group++) {
+    if (!whirlpoolCast) {
+      for (let group = 0; group < 3; group++) {
+        ctx.beginPath();
+        for (let i = group; i < 9; i += 3) {
+          const travel = (i / 9 + pattern.tunnelOffset / 1180) % 1;
+          const scale = 0.025 + easeInQuad(travel) * 0.955;
+          const width = innerWidth * scale;
+          const height = innerHeight * scale;
+          const ringY = circularFall ? cy : vanishingY + (cy - vanishingY) * travel;
+          if (circularFall) {
+            ctx.moveTo(cx + width / 2, ringY);
+            ctx.ellipse(cx, ringY, width / 2, height / 2, 0, 0, Math.PI * 2);
+          } else {
+            ctx.rect(cx - width / 2, ringY - height / 2, width, height);
+          }
+        }
+        ctx.strokeStyle = 'rgba(190, 188, 178, ' + (0.10 + group * 0.045).toFixed(3) + ')';
+        ctx.lineWidth = 0.7 + group * 0.35;
+        ctx.stroke();
+      }
+
       ctx.beginPath();
-      for (let i = group; i < 9; i += 3) {
-        const travel = (i / 9 + pattern.tunnelOffset / 1180) % 1;
-        const scale = 0.025 + easeInQuad(travel) * 0.955;
-        const width = innerWidth * scale;
-        const height = innerHeight * scale;
-        const ringY = circularFall ? cy : vanishingY + (cy - vanishingY) * travel;
-        if (circularFall) {
-          ctx.moveTo(cx + width / 2, ringY);
-          ctx.ellipse(cx, ringY, width / 2, height / 2, 0, 0, Math.PI * 2);
+      for (let i = 0; i < 12; i++) {
+        const travel = (i / 12 + pattern.tunnelOffset / 920) % 1;
+        const side = i % 4;
+        const scale = 0.06 + easeInQuad(travel) * 0.82;
+        const width = (sceneW - (BORDER + PAD) * 2) * scale;
+        const height = (sceneH - (BORDER + PAD) * 2) * scale;
+        const ringY = vanishingY + (cy - vanishingY) * travel;
+        const left = cx - width / 2;
+        const right = cx + width / 2;
+        const top = ringY - height / 2;
+        const bottom = ringY + height / 2;
+        if (side === 0 || side === 2) {
+          const x = side === 0 ? left : right;
+          ctx.moveTo(x, top);
+          ctx.lineTo(x + (side === 0 ? -1 : 1) * (10 + travel * 26), top - 5);
         } else {
-          ctx.rect(cx - width / 2, ringY - height / 2, width, height);
+          const y = side === 1 ? top : bottom;
+          ctx.moveTo(left, y);
+          ctx.lineTo(left - 5, y + (side === 1 ? -1 : 1) * (10 + travel * 26));
         }
       }
-      ctx.strokeStyle = 'rgba(190, 188, 178, ' + (0.10 + group * 0.045).toFixed(3) + ')';
-      ctx.lineWidth = 0.7 + group * 0.35;
+      ctx.strokeStyle = 'rgba(205, 202, 190, 0.20)';
+      ctx.lineWidth = 1;
       ctx.stroke();
     }
-
-    ctx.beginPath();
-    for (let i = 0; i < 12; i++) {
-      const travel = (i / 12 + pattern.tunnelOffset / 920) % 1;
-      const side = i % 4;
-      const scale = 0.06 + easeInQuad(travel) * 0.82;
-      const width = (sceneW - (BORDER + PAD) * 2) * scale;
-      const height = (sceneH - (BORDER + PAD) * 2) * scale;
-      const ringY = vanishingY + (cy - vanishingY) * travel;
-      const left = cx - width / 2;
-      const right = cx + width / 2;
-      const top = ringY - height / 2;
-      const bottom = ringY + height / 2;
-      if (side === 0 || side === 2) {
-        const x = side === 0 ? left : right;
-        ctx.moveTo(x, top);
-        ctx.lineTo(x + (side === 0 ? -1 : 1) * (10 + travel * 26), top - 5);
-      } else {
-        const y = side === 1 ? top : bottom;
-        ctx.moveTo(left, y);
-        ctx.lineTo(left - 5, y + (side === 1 ? -1 : 1) * (10 + travel * 26));
-      }
-    }
-    ctx.strokeStyle = 'rgba(205, 202, 190, 0.20)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
 
     const platforms = pattern.platforms.slice().sort((a, b) => a.age - b.age);
     for (const platform of platforms) renderPhaseTwoPitfallPlatform(platform);
     if (pattern.mode === 'hex' && pattern.hex) {
+      renderPhaseTwoHexWhirlpool(pattern);
       const walls = pattern.hex.walls.slice().sort((a, b) => a.ageBeats - b.ageBeats);
       for (const wall of walls) renderPhaseTwoHexWall(wall);
+      renderPhaseTwoHexCorridorPointConnections(walls);
       for (const orb of pattern.hex.orbs) renderPhaseTwoHexOrb(orb);
     }
     if (circularFall) {
@@ -3084,6 +3239,7 @@
         bpm = phaseTwoBpm();
         beatMs = 60000 / bpm;
         phase2PlayerHits++;
+        registerPhaseTwoHexPlayerHit();
         if (phase2PlayerHits === 2 && !phase2GridSpecial) startPhaseTwoGridSpecial();
         surgeWrath();
         return 1 - Math.sin(Math.min(1, p) * Math.PI) * (1 - STRIKE_SLOW);
@@ -4189,7 +4345,8 @@
   }
 
   function startPhaseTwoGridSpecial() {
-    if (!phase2CombatStarted || !canvas || !phase2Avatar || phase2GridSpecial) return false;
+    if (!phase2CombatStarted || !canvas || !phase2Avatar || phase2GridSpecial ||
+        phase2SquareArenaLocked || phase2PitfallPattern) return false;
     const board = getBoardRect();
     const avatar = phase2Avatar.state && phase2Avatar.state.avatar;
     if (!board.width || !avatar) return false;
@@ -5649,11 +5806,18 @@
     const growth = targetSide - board.height;
     const rowLeft = parseFloat(overlay.style.getPropertyValue('--phase2-row-left'));
     const rowTop = parseFloat(overlay.style.getPropertyValue('--phase2-row-top'));
+    const wrathTop = parseFloat(overlay.style.getPropertyValue('--phase2-wrath-top'));
     if (Number.isFinite(rowLeft)) {
       overlay.style.setProperty('--phase2-row-left', (rowLeft - growth / 2).toFixed(1) + 'px');
     }
     if (Number.isFinite(rowTop)) {
       overlay.style.setProperty('--phase2-row-top', (rowTop - growth / 2).toFixed(1) + 'px');
+    }
+    if (Number.isFinite(wrathTop)) {
+      overlay.style.setProperty(
+        '--phase2-wrath-top',
+        Math.max(14, wrathTop - growth / 2 - PHASE2_HEX_BAR_LIFT).toFixed(1) + 'px'
+      );
     }
     overlay.style.setProperty('--phase2-stage-w', targetSide + 'px');
     overlay.style.setProperty('--phase2-stage-h', targetSide + 'px');
@@ -5700,8 +5864,14 @@
     heroMove.x = 0;
     heroMove.y = 0;
     if (direction) {
+      const whirlpool = pattern.hex.whirlpool;
+      const flow = whirlpool && whirlpool.active ? whirlpool.flow : 0;
+      const currentScale = flow === 0
+        ? 1
+        : 1 + PHASE2_HEX_WHIRLPOOL_SPEED_DELTA * Math.sign(direction * flow) * Math.abs(flow);
       pattern.hex.heroAngle = phaseTwoHexNormalizeAngle(
-        pattern.hex.heroAngle + direction * PHASE2_HEX_ANGULAR_SPEED * (bpm / PHASE2_BPM_MIN) * dt
+        pattern.hex.heroAngle +
+          direction * PHASE2_HEX_ANGULAR_SPEED * currentScale * (bpm / PHASE2_BPM_MIN) * dt
       );
       heroMove.x = -Math.sin(pattern.hex.heroAngle) * direction;
       heroMove.y = Math.cos(pattern.hex.heroAngle) * direction;
@@ -5747,11 +5917,14 @@
   function phaseTwoHexWallRadius(wall) {
     const progress = clamp01(phaseTwoHexWallProgress(wall));
     const outerRadius = canvas.width * 0.56;
-    const innerRadius = PHASE2_HEX_CRATER_RADIUS * 0.52;
+    const innerRadius = wall.kind === 'corridor-points'
+      ? PHASE2_HEX_CRATER_RADIUS + wall.thickness / 2
+      : PHASE2_HEX_CRATER_RADIUS * 0.52;
     return outerRadius + (innerRadius - outerRadius) * easeInQuad(progress);
   }
 
   function phaseTwoHexWallGapWidth(wall, radius) {
+    if (wall.kind === 'corridor-points') return wall.gapWidth;
     const outerRadius = canvas.width * 0.56;
     const approach = 1 - clamp01(
       (radius - PHASE2_HEX_ORBIT_RADIUS) / Math.max(1, outerRadius - PHASE2_HEX_ORBIT_RADIUS)
@@ -5777,6 +5950,21 @@
     }
     const halfGap = phaseTwoHexWallGapWidth(wall, radius) / 2;
     const gapAngle = phaseTwoHexWallGapAngle(wall);
+    if (wall.kind === 'corridor-points') {
+      const halfPoint = PHASE2_HEX_CORRIDOR_POINT_ARC / 2;
+      const segments = [];
+      for (let setIndex = 0; setIndex < PHASE2_HEX_CORRIDOR_POINT_SETS; setIndex++) {
+        const setAngle = gapAngle + setIndex * Math.PI * 2 / PHASE2_HEX_CORRIDOR_POINT_SETS;
+        for (const side of [-1, 1]) {
+          const pointAngle = setAngle + side * halfGap;
+          segments.push({
+            start: pointAngle - halfPoint,
+            end: pointAngle + halfPoint,
+          });
+        }
+      }
+      return segments;
+    }
     return [{
       start: gapAngle + halfGap,
       end: gapAngle + Math.PI * 2 - halfGap,
@@ -5790,6 +5978,19 @@
       );
       return sectorIndex % 2 === wall.splitParity;
     }
+    if (wall.kind === 'corridor-points') {
+      const gapAngle = phaseTwoHexWallGapAngle(wall);
+      const halfGap = gapWidth / 2;
+      const halfPoint = PHASE2_HEX_CORRIDOR_POINT_ARC / 2;
+      for (let setIndex = 0; setIndex < PHASE2_HEX_CORRIDOR_POINT_SETS; setIndex++) {
+        const setAngle = gapAngle + setIndex * Math.PI * 2 / PHASE2_HEX_CORRIDOR_POINT_SETS;
+        if (
+          phaseTwoHexAngleDistance(angle, setAngle - halfGap) <= halfPoint ||
+          phaseTwoHexAngleDistance(angle, setAngle + halfGap) <= halfPoint
+        ) return true;
+      }
+      return false;
+    }
     return phaseTwoHexAngleDistance(angle, phaseTwoHexWallGapAngle(wall)) > gapWidth / 2;
   }
 
@@ -5800,7 +6001,6 @@
     const samplePadding = PHASE2_HEX_VP_CONTACT_PADDING;
     const heroCenterRadius = Math.hypot(hero.x - center.x, hero.y - center.y);
     const hitboxRadius = Math.hypot(halfWidth, halfHeight);
-    const gapAngle = phaseTwoHexWallGapAngle(wall);
     if (
       heroCenterRadius + hitboxRadius < shadowInnerEdge - samplePadding ||
       heroCenterRadius - hitboxRadius > shadowOuterEdge + samplePadding
@@ -5818,15 +6018,10 @@
         ) continue;
         const sampleAngle = Math.atan2(dy, dx);
         const angularPadding = Math.atan2(samplePadding, Math.max(1, sampleRadius));
-        if (wall.kind === 'split') {
-          if (
-            phaseTwoHexAngleInsideWall(wall, sampleAngle, gapWidth) ||
-            phaseTwoHexAngleInsideWall(wall, sampleAngle - angularPadding, gapWidth) ||
-            phaseTwoHexAngleInsideWall(wall, sampleAngle + angularPadding, gapWidth)
-          ) return true;
-        } else if (
-          phaseTwoHexAngleDistance(sampleAngle, gapAngle) >
-          Math.max(0, gapWidth / 2 - angularPadding)
+        if (
+          phaseTwoHexAngleInsideWall(wall, sampleAngle, gapWidth) ||
+          phaseTwoHexAngleInsideWall(wall, sampleAngle - angularPadding, gapWidth) ||
+          phaseTwoHexAngleInsideWall(wall, sampleAngle + angularPadding, gapWidth)
         ) return true;
       }
     }
@@ -5905,6 +6100,7 @@
       resolved: false,
       hit: false,
       impactAge: -1,
+      patternEnd: true,
     };
   }
 
@@ -5916,6 +6112,7 @@
       kind: 'split',
       patternAngle,
       splitParity: 0,
+      patternEnd: false,
     });
     const second = {
       ...first,
@@ -5925,6 +6122,7 @@
       resolved: false,
       hit: false,
       impactAge: -1,
+      patternEnd: true,
     };
     return [first, second];
   }
@@ -5973,9 +6171,11 @@
         spiralTwist: direction * 0.42,
         thickness: PHASE2_HEX_WALL_THICKNESS * 0.72,
         damageScale: 0.32,
+        patternEnd: false,
       });
       walls.push(wall);
     }
+    walls[walls.length - 1].patternEnd = true;
     pattern.hex.nextGapAngle = phaseTwoHexNormalizeAngle(
       baseAngle + direction * (PHASE2_HEX_SPIRAL_WALL_COUNT * 0.48 + 0.42)
     );
@@ -5993,18 +6193,74 @@
         ageBeats: -i * PHASE2_HEX_WALL_SPAWN_BEATS,
         gapAngle: phaseTwoHexNormalizeAngle(gapAngle + direction * i * 0.08),
         gapWidth: 0.62,
+        patternEnd: false,
       });
       walls.push(wall);
     }
+    walls[walls.length - 1].patternEnd = true;
     pattern.hex.nextGapAngle = phaseTwoHexNormalizeAngle(
       gapAngle + direction * PHASE2_HEX_CORRIDOR_SLOTS * 0.08
     );
     return walls;
   }
 
+  function makePhaseTwoHexCorridorPointWalls(pattern) {
+    const firstDirection = pattern.random() < 0.5 ? -1 : 1;
+    const sequenceSpan = (PHASE2_HEX_CORRIDOR_SLOTS - 1) * PHASE2_HEX_WALL_SPAWN_BEATS;
+    const wallStepBeats = sequenceSpan / (PHASE2_HEX_CORRIDOR_POINT_WALLS - 1);
+    const waveStepBeats = PHASE2_HEX_CORRIDOR_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
+    const sequenceId = pattern.hex.nextCorridorPointSequenceId++;
+    const walls = [];
+    let finalGapAngle = pattern.hex.heroAngle;
+    for (let waveIndex = 0; waveIndex < PHASE2_HEX_CORRIDOR_POINT_WAVES; waveIndex++) {
+      const direction = firstDirection * (waveIndex % 2 === 0 ? 1 : -1);
+      const gapAngle = phaseTwoHexNormalizeAngle(pattern.hex.heroAngle + direction * 0.30);
+      for (let i = 0; i < PHASE2_HEX_CORRIDOR_POINT_WALLS; i++) {
+        const wall = makePhaseTwoHexWall(pattern);
+        Object.assign(wall, {
+          kind: 'corridor-points',
+          corridorPointWaveId: sequenceId * PHASE2_HEX_CORRIDOR_POINT_WAVES + waveIndex,
+          ageBeats: -waveIndex * waveStepBeats - i * wallStepBeats,
+          gapAngle: phaseTwoHexNormalizeAngle(
+            gapAngle + direction * i * PHASE2_HEX_CORRIDOR_POINT_TURN
+          ),
+          gapWidth: Math.PI / PHASE2_HEX_CORRIDOR_POINT_SETS,
+          damageScale: 0.6,
+          patternEnd: false,
+        });
+        walls.push(wall);
+      }
+      finalGapAngle = phaseTwoHexNormalizeAngle(
+        gapAngle + direction * PHASE2_HEX_CORRIDOR_POINT_WALLS * PHASE2_HEX_CORRIDOR_POINT_TURN
+      );
+    }
+    walls[walls.length - 1].patternEnd = true;
+    pattern.hex.nextGapAngle = finalGapAngle;
+    return walls;
+  }
+
+  function makePhaseTwoHexZigzagWalls(pattern) {
+    const baseAngle = pattern.hex.heroAngle;
+    const offsets = [0.58, 1.16, 0.58, 0];
+    const walls = [];
+    for (let i = 0; i < PHASE2_HEX_ZIGZAG_SLOTS; i++) {
+      const wall = makePhaseTwoHexWall(pattern);
+      Object.assign(wall, {
+        kind: 'zigzag',
+        ageBeats: -i * PHASE2_HEX_WALL_SPAWN_BEATS,
+        gapAngle: phaseTwoHexNormalizeAngle(baseAngle + offsets[i]),
+        gapWidth: PHASE2_HEX_WALL_GAP * 0.86,
+        patternEnd: i === PHASE2_HEX_ZIGZAG_SLOTS - 1,
+      });
+      walls.push(wall);
+    }
+    pattern.hex.nextGapAngle = baseAngle;
+    return walls;
+  }
+
   function startPhaseTwoHexSpecialPattern(pattern) {
     const hex = pattern.hex;
-    const types = ['bullet', 'spiral', 'corridor'];
+    const types = ['bullet', 'spiral', 'corridor', 'corridor-points', 'zigzag'];
     const type = types[hex.specialPatternIndex % types.length];
     hex.specialPatternIndex++;
     if (type === 'bullet') {
@@ -6025,8 +6281,17 @@
       hex.walls.push(...makePhaseTwoHexSpiralWalls(pattern));
       return PHASE2_HEX_SPIRAL_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
     }
-    hex.walls.push(...makePhaseTwoHexCorridorWalls(pattern));
-    return PHASE2_HEX_CORRIDOR_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
+    if (type === 'corridor') {
+      hex.walls.push(...makePhaseTwoHexCorridorWalls(pattern));
+      return PHASE2_HEX_CORRIDOR_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
+    }
+    if (type === 'corridor-points') {
+      hex.walls.push(...makePhaseTwoHexCorridorPointWalls(pattern));
+      return PHASE2_HEX_CORRIDOR_POINT_WAVES *
+        PHASE2_HEX_CORRIDOR_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
+    }
+    hex.walls.push(...makePhaseTwoHexZigzagWalls(pattern));
+    return PHASE2_HEX_ZIGZAG_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
   }
 
   function startPhaseTwoHexMode(pattern) {
@@ -6043,11 +6308,14 @@
       spawnBeats: 0,
       nextSpawnBeats: PHASE2_HEX_WALL_SPAWN_BEATS,
       nextGapAngle: heroAngle,
+      nextCorridorPointSequenceId: 1,
       wallsUntilSplit: 2 + Math.floor(pattern.random() * 2),
       wallsUntilSpecial: 2,
       specialPatternIndex: 0,
       bulletPattern: null,
       orbs: [],
+      playerHits: 0,
+      whirlpool: null,
     };
     pattern.ram = null;
     keys.clear();
@@ -6172,14 +6440,91 @@
       bulletPattern &&
       bulletPattern.ageBeats >= bulletPattern.durationBeats &&
       hex.orbs.length === 0
-    ) hex.bulletPattern = null;
+    ) {
+      hex.bulletPattern = null;
+      phaseTwoHexPatternPassed(pattern);
+    }
     return shadowOrbs;
+  }
+
+  function startPhaseTwoHexWhirlpoolCast(pattern) {
+    const hex = pattern && pattern.hex;
+    if (!hex || hex.whirlpool) return false;
+    const direction = pattern.random() < 0.5 ? -1 : 1;
+    hex.whirlpool = {
+      ageBeats: 0,
+      active: false,
+      flow: 0,
+      targetDirection: direction,
+      transitionAgeBeats: -1,
+      transitionFrom: 0,
+      spinAngle: hex.heroAngle,
+    };
+    if (phase2Avatar && phase2Avatar.state) {
+      phase2Avatar.state.impact = 1;
+      phase2Avatar.state.impactAge = 0;
+    }
+    return true;
+  }
+
+  function registerPhaseTwoHexPlayerHit() {
+    const pattern = phase2PitfallPattern;
+    const hex = pattern && pattern.mode === 'hex' ? pattern.hex : null;
+    if (!hex || hex.whirlpool) return;
+    hex.playerHits++;
+    if (hex.playerHits >= 2) startPhaseTwoHexWhirlpoolCast(pattern);
+  }
+
+  function phaseTwoHexPatternPassed(pattern) {
+    const whirlpool = pattern && pattern.hex && pattern.hex.whirlpool;
+    if (
+      !whirlpool ||
+      !whirlpool.active ||
+      whirlpool.transitionAgeBeats >= 0 ||
+      pattern.random() >= 1 / 3
+    ) return;
+    whirlpool.transitionFrom = whirlpool.flow;
+    whirlpool.targetDirection *= -1;
+    whirlpool.transitionAgeBeats = 0;
+  }
+
+  function updatePhaseTwoHexWhirlpool(pattern, dt) {
+    const whirlpool = pattern.hex.whirlpool;
+    if (!whirlpool) return;
+    const beatStep = dt / beatMs;
+    whirlpool.ageBeats += beatStep;
+    if (!whirlpool.active) {
+      const progress = clamp01(whirlpool.ageBeats / PHASE2_HEX_WHIRLPOOL_CAST_BEATS);
+      whirlpool.flow = whirlpool.targetDirection * smoothstep(progress);
+      if (progress >= 1) {
+        whirlpool.active = true;
+        whirlpool.flow = whirlpool.targetDirection;
+      }
+    } else if (whirlpool.transitionAgeBeats >= 0) {
+      whirlpool.transitionAgeBeats += beatStep;
+      const progress = clamp01(
+        whirlpool.transitionAgeBeats / PHASE2_HEX_WHIRLPOOL_SWITCH_BEATS
+      );
+      whirlpool.flow = progress < 0.5
+        ? whirlpool.transitionFrom * (1 - smoothstep(progress * 2))
+        : whirlpool.targetDirection * smoothstep((progress - 0.5) * 2);
+      if (progress >= 1) {
+        whirlpool.flow = whirlpool.targetDirection;
+        whirlpool.transitionAgeBeats = -1;
+      }
+    } else {
+      whirlpool.flow = whirlpool.targetDirection;
+    }
+    whirlpool.spinAngle = phaseTwoHexNormalizeAngle(
+      whirlpool.spinAngle + whirlpool.flow * beatStep * 0.24
+    );
   }
 
   function updatePhaseTwoHexPattern(pattern, dt) {
     const hex = pattern.hex;
     if (!hex) return;
     hex.elapsed += dt;
+    updatePhaseTwoHexWhirlpool(pattern, dt);
     hex.spawnBeats += dt / beatMs;
     while (hex.spawnBeats >= hex.nextSpawnBeats && hex.walls.length < 16) {
       if (hex.wallsUntilSpecial <= 0) {
@@ -6213,6 +6558,7 @@
       const shadowInnerEdge = innerEdge - wall.thickness * PHASE2_HEX_WALL_SHADOW_SCALE;
       const gapWidth = phaseTwoHexWallGapWidth(wall, radius);
       if (
+        wall.kind !== 'corridor-points' &&
         !wall.resolved &&
         phaseTwoHexHeroTouchesWallShadow(wall, shadowInnerEdge, innerEdge, gapWidth)
       ) {
@@ -6231,11 +6577,13 @@
           hp = Math.max(0, hp - PHASE2_HEX_WALL_DAMAGE * damageScale * (bpm / PHASE2_BPM_MIN));
           if (hp <= 0) die();
         }
+        if (wall.patternEnd) phaseTwoHexPatternPassed(pattern);
       }
       wall.previousRadius = radius;
     }
     const shadowOrbs = updatePhaseTwoHexBulletPattern(pattern, dt);
-    const shadowVpWeight = shadowWalls + shadowOrbs * PHASE2_HEX_ORB_VP_SCALE;
+    const shadowVpWeight = shadowWalls +
+      shadowOrbs * PHASE2_HEX_ORB_VP_SCALE;
     if (shadowVpWeight > 0) {
       vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadowVpWeight * dt / beatMs);
     }
