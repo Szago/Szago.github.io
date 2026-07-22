@@ -466,15 +466,20 @@
   const PHASE2_HEX_WALL_SHADOW_SCALE = 1.5;
   const PHASE2_HEX_WALL_GAP = 1.16;
   const PHASE2_HEX_WALL_DAMAGE = 50;
-  const PHASE2_HEX_BULLET_SLOTS = 4;
+  const PHASE2_HEX_BULLET_SLOTS = 8;
   const PHASE2_HEX_SPIRAL_SLOTS = 3;
   const PHASE2_HEX_SPIRAL_WALL_COUNT = 7;
   const PHASE2_HEX_CORRIDOR_SLOTS = 2;
   const PHASE2_HEX_ORB_TRAVEL_BEATS = 7;
-  const PHASE2_HEX_ORB_SPAWN_BEATS = 0.32;
+  const PHASE2_HEX_ORB_LANES = 6;
+  const PHASE2_HEX_ORB_WAVES = 8;
   const PHASE2_HEX_ORB_RADIUS = 12;
-  const PHASE2_HEX_ORB_SHADOW_SCALE = 3;
+  const PHASE2_HEX_ORB_SHADOW_LENGTH = 2;
   const PHASE2_HEX_ORB_DAMAGE = 32;
+  const PHASE2_HEX_ORB_VP_SCALE = 0.75;
+  const PHASE2_HEX_VP_HITBOX_SCALE = 0.40;
+  const PHASE2_HEX_VP_CONTACT_PADDING = 0.75;
+  const PHASE2_HEX_VP_HITBOX_SAMPLES = 6;
   const DEATH_SLOW_MS = 900;
   const DEATH_FADE_START = 90;
   const DEATH_FADE_END = 1080;
@@ -2396,14 +2401,32 @@
     const fade = smoothstep(progress / 0.10) * (1 - smoothstep((progress - 0.94) / 0.08));
     if (fade <= 0.001) return;
     const facing = orb.angle + Math.PI;
-    const shadowOuter = orb.radius * PHASE2_HEX_ORB_SHADOW_SCALE;
-    const shadowInner = orb.radius;
+    const facingX = Math.cos(facing);
+    const facingY = Math.sin(facing);
+    const sideX = -facingY;
+    const sideY = facingX;
+    const shadowStart = orb.radius;
+    const shadowEnd = orb.radius * (1 + PHASE2_HEX_ORB_SHADOW_LENGTH);
     ctx.save();
     ctx.globalAlpha = fade;
 
     ctx.beginPath();
-    ctx.arc(position.x, position.y, shadowOuter, facing - Math.PI / 2, facing + Math.PI / 2);
-    ctx.arc(position.x, position.y, shadowInner, facing + Math.PI / 2, facing - Math.PI / 2, true);
+    ctx.moveTo(
+      position.x + facingX * shadowStart + sideX * orb.radius,
+      position.y + facingY * shadowStart + sideY * orb.radius
+    );
+    ctx.lineTo(
+      position.x + facingX * shadowEnd + sideX * orb.radius,
+      position.y + facingY * shadowEnd + sideY * orb.radius
+    );
+    ctx.lineTo(
+      position.x + facingX * shadowEnd - sideX * orb.radius,
+      position.y + facingY * shadowEnd - sideY * orb.radius
+    );
+    ctx.lineTo(
+      position.x + facingX * shadowStart - sideX * orb.radius,
+      position.y + facingY * shadowStart - sideY * orb.radius
+    );
     ctx.closePath();
     ctx.fillStyle = 'rgba(27, 23, 32, 0.68)';
     ctx.fill();
@@ -5772,9 +5795,9 @@
 
   function phaseTwoHexHeroTouchesWallShadow(wall, shadowInnerEdge, shadowOuterEdge, gapWidth) {
     const center = phaseTwoHexCenter();
-    const halfWidth = HERO_W / 2;
-    const halfHeight = HERO_H / 2;
-    const samplePadding = HERO_SCALE * Math.SQRT1_2;
+    const halfWidth = HERO_W * PHASE2_HEX_VP_HITBOX_SCALE / 2;
+    const halfHeight = HERO_H * PHASE2_HEX_VP_HITBOX_SCALE / 2;
+    const samplePadding = PHASE2_HEX_VP_CONTACT_PADDING;
     const heroCenterRadius = Math.hypot(hero.x - center.x, hero.y - center.y);
     const hitboxRadius = Math.hypot(halfWidth, halfHeight);
     const gapAngle = phaseTwoHexWallGapAngle(wall);
@@ -5782,8 +5805,10 @@
       heroCenterRadius + hitboxRadius < shadowInnerEdge - samplePadding ||
       heroCenterRadius - hitboxRadius > shadowOuterEdge + samplePadding
     ) return false;
-    for (let offsetY = -halfHeight; offsetY <= halfHeight; offsetY += HERO_SCALE) {
-      for (let offsetX = -halfWidth; offsetX <= halfWidth; offsetX += HERO_SCALE) {
+    for (let sampleY = 0; sampleY <= PHASE2_HEX_VP_HITBOX_SAMPLES; sampleY++) {
+      const offsetY = -halfHeight + halfHeight * 2 * sampleY / PHASE2_HEX_VP_HITBOX_SAMPLES;
+      for (let sampleX = 0; sampleX <= PHASE2_HEX_VP_HITBOX_SAMPLES; sampleX++) {
+        const offsetX = -halfWidth + halfWidth * 2 * sampleX / PHASE2_HEX_VP_HITBOX_SAMPLES;
         const dx = hero.x + offsetX - center.x;
         const dy = hero.y + offsetY - center.y;
         const sampleRadius = Math.hypot(dx, dy);
@@ -5828,22 +5853,31 @@
   }
 
   function phaseTwoHexHeroTouchesOrbShadow(orb, position) {
-    const halfWidth = HERO_W / 2;
-    const halfHeight = HERO_H / 2;
-    const outer = orb.radius * PHASE2_HEX_ORB_SHADOW_SCALE;
+    const halfWidth = HERO_W * PHASE2_HEX_VP_HITBOX_SCALE / 2;
+    const halfHeight = HERO_H * PHASE2_HEX_VP_HITBOX_SCALE / 2;
+    const contactPadding = PHASE2_HEX_VP_CONTACT_PADDING;
     const facing = orb.angle + Math.PI;
     const facingX = Math.cos(facing);
     const facingY = Math.sin(facing);
-    const nearestX = Math.max(hero.x - halfWidth, Math.min(position.x, hero.x + halfWidth));
-    const nearestY = Math.max(hero.y - halfHeight, Math.min(position.y, hero.y + halfHeight));
-    if (Math.hypot(nearestX - position.x, nearestY - position.y) > outer + HERO_SCALE) return false;
-    for (let offsetY = -halfHeight; offsetY <= halfHeight; offsetY += HERO_SCALE) {
-      for (let offsetX = -halfWidth; offsetX <= halfWidth; offsetX += HERO_SCALE) {
+    const shadowStart = orb.radius;
+    const shadowEnd = orb.radius * (1 + PHASE2_HEX_ORB_SHADOW_LENGTH);
+    if (
+      Math.hypot(hero.x - position.x, hero.y - position.y) >
+      shadowEnd + Math.hypot(halfWidth, halfHeight)
+    ) return false;
+    for (let sampleY = 0; sampleY <= PHASE2_HEX_VP_HITBOX_SAMPLES; sampleY++) {
+      const offsetY = -halfHeight + halfHeight * 2 * sampleY / PHASE2_HEX_VP_HITBOX_SAMPLES;
+      for (let sampleX = 0; sampleX <= PHASE2_HEX_VP_HITBOX_SAMPLES; sampleX++) {
+        const offsetX = -halfWidth + halfWidth * 2 * sampleX / PHASE2_HEX_VP_HITBOX_SAMPLES;
         const dx = hero.x + offsetX - position.x;
         const dy = hero.y + offsetY - position.y;
-        const distance = Math.hypot(dx, dy);
-        if (distance < orb.radius - HERO_SCALE || distance > outer + HERO_SCALE) continue;
-        if (dx * facingX + dy * facingY >= -HERO_SCALE) return true;
+        const forward = dx * facingX + dy * facingY;
+        const sideways = Math.abs(-dx * facingY + dy * facingX);
+        if (
+          forward >= shadowStart - contactPadding &&
+          forward <= shadowEnd + contactPadding &&
+          sideways <= orb.radius + contactPadding
+        ) return true;
       }
     }
     return false;
@@ -5901,15 +5935,26 @@
     const orb = {
       ageBeats: Number.isFinite(settings.ageBeats) ? settings.ageBeats : 0,
       travelBeats: PHASE2_HEX_ORB_TRAVEL_BEATS,
-      startRadius: canvas.width * (0.54 + pattern.random() * 0.08),
+      startRadius: Number.isFinite(settings.startRadius) ? settings.startRadius : canvas.width * 0.56,
       angle,
-      radius: PHASE2_HEX_ORB_RADIUS * (0.88 + pattern.random() * 0.22),
+      radius: Number.isFinite(settings.radius) ? settings.radius : PHASE2_HEX_ORB_RADIUS,
       hit: false,
     };
     const position = phaseTwoHexOrbPosition(orb);
     orb.previousX = position.x;
     orb.previousY = position.y;
     return orb;
+  }
+
+  function spawnPhaseTwoHexOrbWave(pattern, bulletPattern) {
+    const angleStep = Math.PI * 2 / PHASE2_HEX_ORB_LANES;
+    const alternatingOffset = bulletPattern.wavesSpawned % 2 === 0 ? 0 : angleStep / 2;
+    for (let lane = 0; lane < PHASE2_HEX_ORB_LANES; lane++) {
+      pattern.hex.orbs.push(makePhaseTwoHexOrb(pattern, {
+        angle: bulletPattern.angleOffset + alternatingOffset + lane * angleStep,
+      }));
+    }
+    bulletPattern.wavesSpawned++;
   }
 
   function makePhaseTwoHexSpiralWalls(pattern) {
@@ -5964,21 +6009,17 @@
     hex.specialPatternIndex++;
     if (type === 'bullet') {
       const durationBeats = PHASE2_HEX_BULLET_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
-      const initialOrbCount = 12;
-      const angleOffset = pattern.random() * Math.PI * 2;
-      for (let i = 0; i < initialOrbCount; i++) {
-        hex.orbs.push(makePhaseTwoHexOrb(pattern, {
-          angle: angleOffset + i * Math.PI * 2 / initialOrbCount + (pattern.random() - 0.5) * 0.18,
-          ageBeats: i / (initialOrbCount - 1) * PHASE2_HEX_ORB_TRAVEL_BEATS * 0.82,
-        }));
-      }
       hex.bulletPattern = {
         ageBeats: 0,
         durationBeats,
-        spawnUntilBeats: durationBeats - PHASE2_HEX_ORB_TRAVEL_BEATS,
         spawnBeats: 0,
+        spawnIntervalBeats: (durationBeats - PHASE2_HEX_ORB_TRAVEL_BEATS) /
+          (PHASE2_HEX_ORB_WAVES - 1),
+        wavesSpawned: 0,
+        angleOffset: pattern.random() * Math.PI * 2,
       };
-      return durationBeats;
+      spawnPhaseTwoHexOrbWave(pattern, hex.bulletPattern);
+      return durationBeats - PHASE2_HEX_WALL_TRAVEL_BEATS + PHASE2_HEX_WALL_SPAWN_BEATS;
     }
     if (type === 'spiral') {
       hex.walls.push(...makePhaseTwoHexSpiralWalls(pattern));
@@ -6093,11 +6134,11 @@
       bulletPattern.ageBeats += beatStep;
       bulletPattern.spawnBeats += beatStep;
       while (
-        bulletPattern.ageBeats <= bulletPattern.spawnUntilBeats &&
-        bulletPattern.spawnBeats >= PHASE2_HEX_ORB_SPAWN_BEATS
+        bulletPattern.wavesSpawned < PHASE2_HEX_ORB_WAVES &&
+        bulletPattern.spawnBeats >= bulletPattern.spawnIntervalBeats
       ) {
-        bulletPattern.spawnBeats -= PHASE2_HEX_ORB_SPAWN_BEATS;
-        hex.orbs.push(makePhaseTwoHexOrb(pattern));
+        bulletPattern.spawnBeats -= bulletPattern.spawnIntervalBeats;
+        spawnPhaseTwoHexOrbWave(pattern, bulletPattern);
       }
     }
 
@@ -6194,8 +6235,9 @@
       wall.previousRadius = radius;
     }
     const shadowOrbs = updatePhaseTwoHexBulletPattern(pattern, dt);
-    if (shadowWalls + shadowOrbs > 0) {
-      vp = Math.min(VP_MAX, vp + VP_PER_BEAT * (shadowWalls + shadowOrbs) * dt / beatMs);
+    const shadowVpWeight = shadowWalls + shadowOrbs * PHASE2_HEX_ORB_VP_SCALE;
+    if (shadowVpWeight > 0) {
+      vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadowVpWeight * dt / beatMs);
     }
     hex.walls = hex.walls.filter((wall) => phaseTwoHexWallProgress(wall) < 1.06);
   }
