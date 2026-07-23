@@ -15,6 +15,12 @@
     return accents;
   }
 
+  function holdTimeline(length, events) {
+    const holds = Array(length).fill(1);
+    events.forEach(([step, hold]) => { holds[step] = hold; });
+    return holds;
+  }
+
   const PRESETS = {
     grave: {
       name: 'Grave Signal', length: 10,
@@ -33,44 +39,59 @@
     },
     megalovania: {
       name: 'Megalovania — opening reference',
-      length: 24,
-      // Short opening hook: D, D, octave D, A, Ab, G, F, D, F, G.
-      // Empty steps preserve the recognizable syncopated attacks.
-      notes: noteTimeline(24, [
-        [0, 'D3'], [2, 'D3'], [4, 'D4'], [8, 'A3'], [10, 'G#3'],
-        [12, 'G3'], [14, 'F3'], [16, 'D3'], [18, 'F3'], [20, 'G3']
+      length: 64,
+      // Complete four-measure opening ostinato. Each measure repeats the
+      // upper riff while its first two attacks descend D, C, B, then Bb.
+      notes: noteTimeline(64, [
+        [0, 'D3'], [1, 'D3'], [2, 'D4'], [4, 'A3'], [7, 'G#3'],
+        [9, 'G3'], [11, 'F3'], [13, 'D3'], [14, 'F3'], [15, 'G3'],
+        [16, 'C3'], [17, 'C3'], [18, 'D4'], [20, 'A3'], [23, 'G#3'],
+        [25, 'G3'], [27, 'F3'], [29, 'D3'], [30, 'F3'], [31, 'G3'],
+        [32, 'B2'], [33, 'B2'], [34, 'D4'], [36, 'A3'], [39, 'G#3'],
+        [41, 'G3'], [43, 'F3'], [45, 'D3'], [46, 'F3'], [47, 'G3'],
+        [48, 'A#2'], [49, 'A#2'], [50, 'D4'], [52, 'A3'], [55, 'G#3'],
+        [57, 'G3'], [59, 'F3'], [61, 'D3'], [62, 'F3'], [63, 'G3']
       ]),
-      accents: accentTimeline(24, [0, 4, 16]),
+      accents: accentTimeline(64, [0, 16, 32, 48]),
+      holds: holdTimeline(64, [[11, 2], [27, 2], [43, 2], [59, 2]]),
       settings: {
         bpm: 240, division: 2, gate: 58, voice: 'metalSquare', transpose: 0,
-        bits: 8, drive: 62, cutoff: 5200, bass: 30, noise: 5, echo: 5
+        bits: 8, drive: 62, cutoff: 5200, bass: 0, noise: 0, echo: 5,
+        echoRate: 0.75
       }
     },
     trueHero: {
       name: 'Battle Against a True Hero — opening reference',
-      length: 28,
-      // Opening right-hand ostinato, encoded on a sixteenth-note grid.
-      notes: noteTimeline(28, [
-        [0, 'D#6'], [1, 'D#6'], [3, 'F6'], [5, 'F6'], [6, 'A#5'],
-        [8, 'A#5'], [9, 'C6'], [11, 'C6'], [12, 'G#5'], [14, 'F5'],
-        [16, 'C#6'], [19, 'G#5'], [22, 'D#6'], [23, 'D#6'], [25, 'G#5']
+      length: 64,
+      // Complete two-bar piano ostinato. The source's additional attacks are
+      // echoes at 3/8-beat intervals, reproduced by the synth delay below.
+      notes: noteTimeline(64, [
+        [0, 'D#6'], [6, 'F6'], [12, 'A#5'], [18, 'C6'],
+        [24, 'G#5'], [28, 'F5'], [32, 'C#6'], [38, 'G#5'],
+        [44, 'D#6'], [50, 'G#5'], [56, 'G5'], [60, 'D#5']
       ]),
-      accents: accentTimeline(28, [0, 9, 16, 22]),
+      accents: accentTimeline(64, [0, 32]),
+      holds: holdTimeline(64, [
+        [0, 6], [6, 6], [12, 6], [18, 6], [24, 4], [28, 4],
+        [32, 6], [38, 6], [44, 6], [50, 6], [56, 4], [60, 4]
+      ]),
       settings: {
-        bpm: 150, division: 4, gate: 72, voice: 'pulse25', transpose: 0,
-        bits: 9, drive: 20, cutoff: 6500, bass: 12, noise: 2, echo: 16
+        bpm: 150, division: 8, gate: 96, voice: 'pulse25', transpose: 0,
+        bits: 9, drive: 16, cutoff: 6500, bass: 0, noise: 0, echo: 55,
+        echoRate: 0.375
       }
     }
   };
 
   const DEFAULT_SOUND = {
     bpm: 150, division: 2, gate: 72, voice: 'pulse25', transpose: 0,
-    bits: 6, drive: 32, cutoff: 2600, bass: 24, noise: 11, echo: 18
+    bits: 6, drive: 32, cutoff: 2600, bass: 24, noise: 11, echo: 18,
+    echoRate: 0.75
   };
 
   const state = {
     length: 10,
-    steps: Array.from({ length: 10 }, () => ({ note: null, accent: false })),
+    steps: Array.from({ length: 10 }, () => ({ note: null, accent: false, hold: 1 })),
     looping: false,
     playOnce: false,
     currentStep: 0,
@@ -83,10 +104,11 @@
   let audio = null;
   let periodicWaves = null;
   const $ = (id) => document.getElementById(id);
-  const controlIds = ['bpm', 'division', 'gate', 'voice', 'transpose', 'bits', 'drive', 'cutoff', 'bass', 'noise', 'echo'];
+  const controlIds = ['bpm', 'division', 'gate', 'voice', 'transpose', 'bits', 'drive', 'cutoff', 'bass', 'noise', 'echo', 'echoRate'];
+  const HOLD_VALUES = [1, 2, 3, 4, 6, 8, 12, 16];
 
   function ensureStepCount(count) {
-    while (state.steps.length < count) state.steps.push({ note: null, accent: false });
+    while (state.steps.length < count) state.steps.push({ note: null, accent: false, hold: 1 });
   }
 
   function setLength(value) {
@@ -122,10 +144,21 @@
       actions.className = 'step-actions';
       const accent = document.createElement('button');
       accent.type = 'button';
+      accent.className = 'accent';
       accent.textContent = 'ACC';
       accent.title = 'Toggle accent';
       accent.addEventListener('click', () => {
         step.accent = !step.accent;
+        syncSteps();
+        updateConfigPreview();
+      });
+      const hold = document.createElement('button');
+      hold.type = 'button';
+      hold.className = 'hold';
+      hold.title = 'Cycle note hold length';
+      hold.addEventListener('click', () => {
+        const current = HOLD_VALUES.indexOf(step.hold || 1);
+        step.hold = HOLD_VALUES[(current + 1) % HOLD_VALUES.length];
         syncSteps();
         updateConfigPreview();
       });
@@ -137,7 +170,7 @@
       audition.setAttribute('aria-label', 'Audition step ' + (index + 1));
       audition.addEventListener('click', () => auditionStep(index));
 
-      actions.append(accent, audition);
+      actions.append(accent, hold, audition);
       card.append(number, noteButton, actions);
       host.appendChild(card);
     });
@@ -150,7 +183,8 @@
       const noteButton = card.querySelector('.note-button');
       noteButton.textContent = note || '— REST —';
       noteButton.classList.toggle('is-rest', !note);
-      card.querySelector('.step-actions button').classList.toggle('on', state.steps[index].accent);
+      card.querySelector('.accent').classList.toggle('on', state.steps[index].accent);
+      card.querySelector('.hold').textContent = '×' + (state.steps[index].hold || 1);
     });
   }
 
@@ -232,7 +266,8 @@
       cutoff: Number($('cutoff').value),
       bass: Number($('bass').value) / 100,
       noise: Number($('noise').value) / 100,
-      echo: Number($('echo').value) / 100
+      echo: Number($('echo').value) / 100,
+      echoRate: Number($('echoRate').value)
     };
   }
 
@@ -246,6 +281,7 @@
       length: state.length,
       notes: state.steps.slice(0, state.length).map((step) => step.note),
       accents: state.steps.slice(0, state.length).map((step) => step.accent),
+      holds: state.steps.slice(0, state.length).map((step) => step.hold || 1),
       synth: {
         voice: sound.voice,
         gate: sound.gate,
@@ -255,7 +291,8 @@
         cutoffHz: sound.cutoff,
         bass: sound.bass,
         noise: sound.noise,
-        echo: sound.echo
+        echo: sound.echo,
+        echoBeats: sound.echoRate
       }
     };
   }
@@ -371,9 +408,9 @@
     audio.drive.curve = makeDriveCurve(settings.drive);
     audio.drive.oversample = 'none';
     audio.filter.frequency.setTargetAtTime(settings.cutoff, now, 0.01);
-    audio.delay.delayTime.setTargetAtTime((60 / settings.bpm) * 0.75, now, 0.01);
-    audio.wet.gain.setTargetAtTime(settings.echo * 0.58, now, 0.01);
-    audio.feedback.gain.setTargetAtTime(Math.min(0.48, settings.echo * 0.7), now, 0.01);
+    audio.delay.delayTime.setTargetAtTime((60 / settings.bpm) * settings.echoRate, now, 0.01);
+    audio.wet.gain.setTargetAtTime(settings.echo * 0.9, now, 0.01);
+    audio.feedback.gain.setTargetAtTime(Math.min(0.6, settings.echo * 1.05), now, 0.01);
   }
 
   function noteToMidi(note) {
@@ -465,13 +502,13 @@
 
   function scheduleStep(index, time, settings) {
     const step = state.steps[index];
-    scheduleTone(step.note, step.accent, time, settings);
+    scheduleTone(step.note, step.accent, time, settings, step.hold || 1);
     queueVisualStep(index, time);
   }
 
-  function scheduleTone(note, accent, time, settings) {
+  function scheduleTone(note, accent, time, settings, hold) {
     const stepDuration = 60 / settings.bpm / settings.division;
-    const gateDuration = Math.max(0.035, stepDuration * settings.gate);
+    const gateDuration = Math.max(0.035, stepDuration * settings.gate * (hold || 1));
     if (note) {
       const midi = noteToMidi(note) + settings.transpose;
       const frequency = midiToFrequency(midi);
@@ -582,6 +619,7 @@
     state.steps.slice(0, preset.length).forEach((step, index) => {
       step.note = preset.notes[index] || null;
       step.accent = Boolean(preset.accents[index]);
+      step.hold = preset.holds ? preset.holds[index] : 1;
     });
     buildSteps();
     updateReadouts();
@@ -599,6 +637,7 @@
       if (i === 0 || i === state.length - 1) midi = root + (Math.random() < 0.7 ? 12 : 0);
       state.steps[i].note = rest ? null : midiToNote(midi);
       state.steps[i].accent = i === 0 || Math.random() < 0.25;
+      state.steps[i].hold = 1;
     }
     syncSteps();
     updateConfigPreview();

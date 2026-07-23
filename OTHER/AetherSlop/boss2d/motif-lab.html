@@ -254,7 +254,7 @@
         </div>
         <div class="control">
           <label for="division">Notes per beat</label>
-          <select id="division"><option value="1">1 — quarter notes</option><option value="2" selected>2 — eighth notes</option><option value="4">4 — sixteenth notes</option></select>
+          <select id="division"><option value="1">1 — quarter notes</option><option value="2" selected>2 — eighth notes</option><option value="4">4 — sixteenth notes</option><option value="8">8 — thirty-second notes</option></select>
         </div>
         <div class="control">
           <label for="length">Motif length <output id="lengthOut">10 steps</output></label>
@@ -322,11 +322,21 @@
           <label for="echo">Echo <output id="echoOut">18%</output></label>
           <input id="echo" type="range" min="0" max="55" value="18" step="1">
         </div>
+        <div class="control">
+          <label for="echoRate">Echo spacing</label>
+          <select id="echoRate">
+            <option value="0.25">1/4 beat</option>
+            <option value="0.375">3/8 beat</option>
+            <option value="0.5">1/2 beat</option>
+            <option value="0.75" selected>3/4 beat</option>
+            <option value="1">1 beat</option>
+          </select>
+        </div>
       </div>
 
       <div class="sequencer-head">
         <h2>Motif</h2>
-        <p>ACC = louder note + noise hit · speaker button auditions one step</p>
+        <p>ACC = louder note + noise hit · ×N = note hold in steps · ♪ = audition</p>
       </div>
       <div class="steps" id="steps" aria-label="Motif steps"></div>
 
