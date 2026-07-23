@@ -168,6 +168,128 @@
   let beatIndex = 0;                 // beats elapsed since the fight began
   let lastAnimBpm = -1;              // last tempo pushed to the CSS animations
 
+  // ---- Phase-one music ---------------------------------------------------
+  // Exported from the adjacent motif lab. `bpm` is the audition tempo only;
+  // combat playback uses the live fight BPM so the loop follows wrath.
+  const BOSS_MOTIF = {
+    name: 'It Knows Your Name',
+    bpm: 99,
+    stepsPerBeat: 4,
+    stepBeats: 0.25,
+    length: 16,
+    layers: [
+      {
+        name: 'Layer 1',
+        instrument: 'lead',
+        volume: 0.72,
+        muted: false,
+        notes: [
+          null, null, null, null, null, null, null, null,
+          null, null, null, null, null, null, null, null,
+        ],
+        accents: [
+          false, false, false, false, false, false, false, false,
+          false, false, false, false, false, false, false, false,
+        ],
+        holds: [4, 1, 1, 1, 2, 1, 1, 1, 4, 1, 1, 1, 1, 2, 1, 1],
+        variance: {
+          cycleTranspose: 'rise',
+          noteMutationChance: 0.03,
+          mutationSemitones: 1,
+          nonAccentDropout: 0.04,
+        },
+      },
+      {
+        name: 'Layer 2',
+        instrument: 'guitar',
+        volume: 0.58,
+        muted: false,
+        notes: [
+          'C#2', null, null, null, null, null, null, null,
+          'C2', null, null, null, null, null, null, null,
+        ],
+        accents: [
+          true, false, false, false, false, false, false, false,
+          true, false, false, false, false, false, false, false,
+        ],
+        holds: [8, 1, 1, 1, 1, 1, 1, 1, 8, 1, 1, 1, 1, 1, 1, 1],
+        variance: {
+          cycleTranspose: 'uneasy',
+          noteMutationChance: 0,
+          mutationSemitones: 1,
+          nonAccentDropout: 0.13,
+        },
+      },
+      {
+        name: 'Layer 3',
+        instrument: 'bass',
+        volume: 0.82,
+        muted: false,
+        notes: [
+          'C#2', null, null, 'C#2', null, null, null, null,
+          'C2', null, null, 'B1', null, null, 'C#2', null,
+        ],
+        accents: [
+          true, false, false, true, false, false, false, false,
+          true, false, false, true, false, false, false, false,
+        ],
+        holds: [2, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1],
+        variance: {
+          cycleTranspose: 'off',
+          noteMutationChance: 0,
+          mutationSemitones: 1,
+          nonAccentDropout: 0,
+        },
+      },
+      {
+        name: 'Layer 4',
+        instrument: 'drums',
+        volume: 0.64,
+        muted: false,
+        notes: [
+          'KICK', null, null, 'KICK', null, null, null, 'OPEN_HAT',
+          'KICK', null, null, 'KICK', null, null, null, 'SNARE',
+        ],
+        accents: [
+          true, false, false, true, false, false, false, false,
+          true, false, false, true, false, false, false, true,
+        ],
+        holds: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        variance: {
+          cycleTranspose: 'off',
+          noteMutationChance: 0,
+          mutationSemitones: 1,
+          nonAccentDropout: 0,
+        },
+      },
+    ],
+    synth: {
+      voice: 'warblePulse',
+      gate: 0.45,
+      transpose: 0,
+      bitDepth: 4,
+      drive: 0.48,
+      cutoffHz: 2000,
+      bass: 0,
+      noise: 0.03,
+      echo: 0.4,
+      echoBeats: 0.75,
+    },
+  };
+  const BOSS_MUSIC_MASTER_GAIN = 0.58;
+  const BOSS_MUSIC_LOOKAHEAD = 0.11;
+  let bossMusic = null;
+  let bossMusicTimer = 0;
+  let bossMusicPlaying = false;
+  let bossMusicStep = 0;
+  let bossMusicCycle = 0;
+  let bossMusicNextNoteTime = 0;
+  let bossMusicLastBpm = -1;
+  let bossMusicClockTime = 0;
+  let bossMusicClockBeats = 0;
+  let bossMusicClockBpm = BASE_BPM;
+  let fightMusicBeatCursor = null;
+
   // ---- Attacks ------------------------------------------------------------
   // Every attack telegraphs first: a dark-purple outline snakes out across the
   // floor at the beat's pace, and the strike lands a beat after it finishes.
@@ -3955,6 +4077,7 @@
     };
     dead = true;
     keys.clear();
+    stopBossMusic(0.2);
     if (deathScreen) {
       deathScreen.classList.remove('hidden', 'is-ready');
     }
@@ -3994,6 +4117,9 @@
 
   function startSecondPhase() {
     if (phase === PHASE.SECOND) return;
+    // Her fall is the phase-one musical cutoff. Let the last hit and echo tail
+    // dissolve beneath the first beat of the transformation.
+    stopBossMusic(0.9);
     fadingAttacks = attacks.map((a) => ({ ...a, fadeTime: 0, fadeDuration: PHASE2_ATTACK_FADE }));
     attacks = [];
     phase2Attacks = [];
@@ -4189,6 +4315,414 @@
   }
 
   // ---- Tempo / beat clock -----------------------------------------------
+  function makeBossMusicPulseWave(context, duty) {
+    const harmonics = 64;
+    const real = new Float32Array(harmonics + 1);
+    const imag = new Float32Array(harmonics + 1);
+    for (let n = 1; n <= harmonics; n++) {
+      real[n] = (2 / (n * Math.PI)) * Math.sin(2 * Math.PI * n * duty);
+      imag[n] = (2 / (n * Math.PI)) * (1 - Math.cos(2 * Math.PI * n * duty));
+    }
+    return context.createPeriodicWave(real, imag, { disableNormalization: false });
+  }
+
+  function makeBossMusicCrusherCurve(bits) {
+    const size = 65536;
+    const curve = new Float32Array(size);
+    const levels = Math.pow(2, bits - 1);
+    for (let i = 0; i < size; i++) {
+      const sample = i / (size - 1) * 2 - 1;
+      curve[i] = Math.round(sample * levels) / levels;
+    }
+    return curve;
+  }
+
+  function makeBossMusicDriveCurve(amount) {
+    const size = 32768;
+    const curve = new Float32Array(size);
+    const driveAmount = 1 + amount * 75;
+    for (let i = 0; i < size; i++) {
+      const sample = i / (size - 1) * 2 - 1;
+      curve[i] = ((1 + driveAmount) * sample) / (1 + driveAmount * Math.abs(sample));
+    }
+    return curve;
+  }
+
+  function createBossMusic() {
+    if (bossMusic) return bossMusic;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+
+    let context;
+    try {
+      context = new AudioContext();
+    } catch (error) {
+      console.warn('Unable to start boss music:', error);
+      return null;
+    }
+
+    const input = context.createGain();
+    const crusher = context.createWaveShaper();
+    const drive = context.createWaveShaper();
+    const filter = context.createBiquadFilter();
+    const dry = context.createGain();
+    const delay = context.createDelay(2);
+    const feedback = context.createGain();
+    const wet = context.createGain();
+    const master = context.createGain();
+    const compressor = context.createDynamicsCompressor();
+    const trackGains = BOSS_MOTIF.layers.map(() => context.createGain());
+
+    crusher.curve = makeBossMusicCrusherCurve(BOSS_MOTIF.synth.bitDepth);
+    crusher.oversample = 'none';
+    drive.curve = makeBossMusicDriveCurve(BOSS_MOTIF.synth.drive);
+    drive.oversample = 'none';
+    filter.type = 'lowpass';
+    filter.frequency.value = BOSS_MOTIF.synth.cutoffHz;
+    filter.Q.value = 1.2;
+    dry.gain.value = 1;
+    wet.gain.value = BOSS_MOTIF.synth.echo * 0.9;
+    feedback.gain.value = Math.min(0.6, BOSS_MOTIF.synth.echo * 1.05);
+    master.gain.value = 0.0001;
+    compressor.threshold.value = -15;
+    compressor.knee.value = 4;
+    compressor.ratio.value = 8;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.12;
+
+    trackGains.forEach((gain, index) => {
+      const layer = BOSS_MOTIF.layers[index];
+      gain.gain.value = layer.muted ? 0 : layer.volume;
+      gain.connect(input);
+    });
+    input.connect(crusher).connect(drive).connect(filter);
+    filter.connect(dry).connect(master);
+    filter.connect(delay).connect(wet).connect(master);
+    delay.connect(feedback).connect(delay);
+    master.connect(compressor).connect(context.destination);
+
+    bossMusic = {
+      context,
+      delay,
+      master,
+      trackGains,
+      waves: {
+        pulse12: makeBossMusicPulseWave(context, 0.125),
+        pulse18: makeBossMusicPulseWave(context, 0.1875),
+      },
+    };
+    return bossMusic;
+  }
+
+  function updateBossMusicTempo(force) {
+    if (!bossMusic) return;
+    const liveBpm = Math.max(1, bpm);
+    if (!force && liveBpm === bossMusicLastBpm) return;
+    const now = bossMusic.context.currentTime;
+    if (liveBpm !== bossMusicClockBpm) {
+      bossMusicClockBeats = bossMusicBeatAt(now);
+      bossMusicClockTime = now;
+      bossMusicClockBpm = liveBpm;
+    }
+    bossMusicLastBpm = liveBpm;
+    bossMusic.delay.delayTime.setTargetAtTime(
+      (60 / liveBpm) * BOSS_MOTIF.synth.echoBeats,
+      now,
+      0.01
+    );
+  }
+
+  function bossMusicBeatAt(time) {
+    return bossMusicClockBeats +
+      (time - bossMusicClockTime) * bossMusicClockBpm / 60;
+  }
+
+  function alignFightBeatToBossMusic() {
+    if (!bossMusicPlaying || !bossMusic || bossMusic.context.state !== 'running') {
+      fightMusicBeatCursor = null;
+      return false;
+    }
+    const musicBeat = bossMusicBeatAt(bossMusic.context.currentTime);
+    const wholeBeat = Math.floor(musicBeat);
+    fightMusicBeatCursor = wholeBeat;
+    beatPhase = (musicBeat - wholeBeat) * beatMs;
+    return true;
+  }
+
+  function resumeBossMusicAudio() {
+    const music = createBossMusic();
+    if (!music || music.context.state !== 'suspended') return;
+    music.context.resume().then(() => {
+      if (!bossMusicPlaying) return;
+      bossMusicNextNoteTime = Math.max(
+        bossMusicNextNoteTime,
+        music.context.currentTime + 0.025
+      );
+      bossMusicScheduler();
+      if (phase === PHASE.ACTIVE && fightMusicBeatCursor === null) {
+        alignFightBeatToBossMusic();
+      }
+    }).catch(() => {
+      // Autoplay policy may require the next keyboard/click gesture.
+    });
+  }
+
+  function startBossMusic(fadeSeconds) {
+    const music = createBossMusic();
+    if (!music) return;
+    bossMusicPlaying = true;
+    bossMusicStep = 0;
+    bossMusicCycle = 0;
+    bossMusicLastBpm = -1;
+    bossMusicNextNoteTime = music.context.currentTime + 0.045;
+    bossMusicClockTime = bossMusicNextNoteTime;
+    bossMusicClockBeats = 0;
+    bossMusicClockBpm = Math.max(1, bpm);
+    fightMusicBeatCursor = null;
+    const now = music.context.currentTime;
+    const fade = Math.max(0, fadeSeconds || 0);
+    music.master.gain.cancelScheduledValues(now);
+    music.master.gain.setValueAtTime(fade > 0 ? 0.0001 : BOSS_MUSIC_MASTER_GAIN, now);
+    if (fade > 0) {
+      music.master.gain.linearRampToValueAtTime(BOSS_MUSIC_MASTER_GAIN, now + fade);
+    }
+    updateBossMusicTempo(true);
+    if (bossMusicTimer) window.clearInterval(bossMusicTimer);
+    bossMusicScheduler();
+    bossMusicTimer = window.setInterval(bossMusicScheduler, 25);
+    resumeBossMusicAudio();
+  }
+
+  function stopBossMusic(fadeSeconds) {
+    bossMusicPlaying = false;
+    fightMusicBeatCursor = null;
+    if (bossMusicTimer) window.clearInterval(bossMusicTimer);
+    bossMusicTimer = 0;
+    if (!bossMusic) return;
+    const now = bossMusic.context.currentTime;
+    const fade = Math.max(0, fadeSeconds || 0);
+    const gain = bossMusic.master.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(Math.max(0.0001, gain.value), now);
+    if (fade > 0) gain.exponentialRampToValueAtTime(0.0001, now + fade);
+    else gain.setValueAtTime(0.0001, now);
+  }
+
+  function bossMusicScheduler() {
+    if (!bossMusicPlaying || !bossMusic || bossMusic.context.state !== 'running') return;
+    const now = bossMusic.context.currentTime;
+    if (bossMusicNextNoteTime < now - 0.1) bossMusicNextNoteTime = now + 0.02;
+    updateBossMusicTempo(false);
+    const lookAhead = now + BOSS_MUSIC_LOOKAHEAD;
+    while (bossMusicNextNoteTime < lookAhead) {
+      const liveBpm = Math.max(1, bpm);
+      scheduleBossMusicStep(bossMusicStep, bossMusicNextNoteTime, liveBpm);
+      bossMusicNextNoteTime += (60 / liveBpm) * BOSS_MOTIF.stepBeats;
+      bossMusicStep++;
+      if (bossMusicStep >= BOSS_MOTIF.length) {
+        bossMusicStep = 0;
+        bossMusicCycle++;
+      }
+    }
+  }
+
+  function bossMusicCycleTranspose(mode, cycle) {
+    const patterns = {
+      off: [0],
+      uneasy: [0, 1, 0, -1],
+      rise: [0, 1, 2, 3],
+      menace: [0, 1, 3, 1],
+      sink: [0, -1, -2, -1],
+      octave: [0, 0, 12, 0],
+    };
+    const pattern = patterns[mode] || patterns.off;
+    return pattern[cycle % pattern.length];
+  }
+
+  function bossMusicNoteToMidi(note) {
+    const match = /^([A-G])(#?)(\d)$/.exec(note || '');
+    if (!match) return null;
+    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const pitch = noteNames.indexOf(match[1] + match[2]);
+    return (Number(match[3]) + 1) * 12 + pitch;
+  }
+
+  function scheduleBossMusicStep(index, time, liveBpm) {
+    BOSS_MOTIF.layers.forEach((layer, layerIndex) => {
+      const note = layer.notes[index];
+      if (!note || layer.muted) return;
+      const accent = Boolean(layer.accents[index]);
+      const variance = layer.variance;
+      if (!accent && variance.nonAccentDropout > 0 &&
+          Math.random() < variance.nonAccentDropout) return;
+
+      let mutation = 0;
+      if (layer.instrument !== 'drums' && variance.noteMutationChance > 0 &&
+          Math.random() < variance.noteMutationChance) {
+        const range = Math.max(1, variance.mutationSemitones);
+        const distance = 1 + Math.floor(Math.random() * range);
+        mutation = (Math.random() < 0.5 ? -1 : 1) * distance;
+      }
+      const cycleOffset = layer.instrument === 'drums'
+        ? 0
+        : bossMusicCycleTranspose(variance.cycleTranspose, bossMusicCycle);
+      scheduleBossMusicEvent(
+        layer.instrument,
+        note,
+        accent,
+        layer.holds[index] || 1,
+        time,
+        liveBpm,
+        bossMusic.trackGains[layerIndex],
+        cycleOffset + mutation
+      );
+    });
+  }
+
+  function scheduleBossMusicEvent(instrument, note, accent, hold, time, liveBpm, destination, pitchOffset) {
+    if (instrument === 'drums') {
+      scheduleBossMusicDrum(destination, note, time, accent);
+      return;
+    }
+    const noteMidi = bossMusicNoteToMidi(note);
+    if (noteMidi === null) return;
+    const stepDuration = (60 / liveBpm) * BOSS_MOTIF.stepBeats;
+    const duration = Math.max(0.035, stepDuration * BOSS_MOTIF.synth.gate * hold);
+    const midi = noteMidi + BOSS_MOTIF.synth.transpose + (pitchOffset || 0);
+    const frequency = 440 * Math.pow(2, (midi - 69) / 12);
+    const velocity = accent ? 0.32 : 0.22;
+
+    if (instrument === 'guitar') {
+      scheduleBossMusicGuitar(destination, frequency, time, duration, velocity);
+    } else if (instrument === 'bass') {
+      scheduleBossMusicBass(destination, frequency, time, duration, velocity);
+    } else {
+      scheduleBossMusicLead(destination, frequency, time, duration, velocity);
+      if (BOSS_MOTIF.synth.bass > 0) {
+        scheduleBossMusicOscillator(
+          destination,
+          'triangle',
+          frequency / 2,
+          time,
+          duration * 0.94,
+          BOSS_MOTIF.synth.bass * (accent ? 0.3 : 0.23)
+        );
+      }
+      if (accent && BOSS_MOTIF.synth.noise > 0) {
+        scheduleBossMusicNoise(
+          destination,
+          time,
+          Math.min(0.075, duration),
+          BOSS_MOTIF.synth.noise * 0.8,
+          'highpass',
+          900,
+          1
+        );
+      }
+    }
+  }
+
+  function scheduleBossMusicOscillator(destination, voice, frequency, time, duration, amount, options) {
+    const context = bossMusic.context;
+    const oscillator = context.createOscillator();
+    const envelope = context.createGain();
+    const config = options || {};
+    if (bossMusic.waves[voice]) oscillator.setPeriodicWave(bossMusic.waves[voice]);
+    else oscillator.type = voice;
+    oscillator.frequency.setValueAtTime(frequency * 1.012, time);
+    oscillator.frequency.exponentialRampToValueAtTime(
+      frequency,
+      time + Math.min(0.025, duration * 0.2)
+    );
+    if (config.wobble) {
+      const curve = new Float32Array(32);
+      for (let i = 0; i < curve.length; i++) {
+        curve[i] = (config.detune || 0) +
+          Math.sin(i / (curve.length - 1) * Math.PI * 8) * config.wobble;
+      }
+      oscillator.detune.setValueCurveAtTime(curve, time, duration);
+    } else {
+      oscillator.detune.setValueAtTime(config.detune || 0, time);
+    }
+    envelope.gain.setValueAtTime(0.0001, time);
+    envelope.gain.exponentialRampToValueAtTime(amount, time + 0.004);
+    envelope.gain.setValueAtTime(amount, Math.max(time + 0.005, time + duration * 0.64));
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    oscillator.connect(envelope).connect(destination);
+    oscillator.start(time);
+    oscillator.stop(time + duration + 0.02);
+  }
+
+  function scheduleBossMusicLead(destination, frequency, time, duration, velocity) {
+    scheduleBossMusicOscillator(
+      destination,
+      BOSS_MOTIF.synth.voice === 'warblePulse' ? 'pulse18' : BOSS_MOTIF.synth.voice,
+      frequency,
+      time,
+      duration,
+      velocity,
+      BOSS_MOTIF.synth.voice === 'warblePulse' ? { wobble: 24 } : null
+    );
+  }
+
+  function scheduleBossMusicGuitar(destination, frequency, time, duration, velocity) {
+    scheduleBossMusicOscillator(destination, 'sawtooth', frequency, time, duration, velocity * 0.48, { detune: -5 });
+    scheduleBossMusicOscillator(destination, 'square', frequency, time, duration * 0.96, velocity * 0.28, { detune: 5 });
+    scheduleBossMusicOscillator(destination, 'pulse18', frequency * 1.4983, time, duration * 0.88, velocity * 0.23);
+    scheduleBossMusicOscillator(destination, 'pulse12', frequency * 2, time, duration * 0.72, velocity * 0.15);
+  }
+
+  function scheduleBossMusicBass(destination, frequency, time, duration, velocity) {
+    scheduleBossMusicOscillator(destination, 'triangle', frequency, time, duration, velocity * 0.82);
+    scheduleBossMusicOscillator(destination, 'pulse12', frequency, time, duration * 0.78, velocity * 0.22);
+  }
+
+  function scheduleBossMusicDrum(destination, drum, time, accent) {
+    const context = bossMusic.context;
+    const strength = accent ? 1.25 : 1;
+    if (drum === 'KICK') {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(165, time);
+      oscillator.frequency.exponentialRampToValueAtTime(43, time + 0.13);
+      gain.gain.setValueAtTime(0.58 * strength, time);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.2);
+      oscillator.connect(gain).connect(destination);
+      oscillator.start(time);
+      oscillator.stop(time + 0.22);
+    } else if (drum === 'SNARE') {
+      scheduleBossMusicNoise(destination, time, 0.15, 0.42 * strength, 'bandpass', 1800, 0.7);
+      scheduleBossMusicOscillator(destination, 'triangle', 175, time, 0.09, 0.13 * strength);
+    } else if (drum === 'OPEN_HAT') {
+      scheduleBossMusicNoise(destination, time, 0.25, 0.18 * strength, 'highpass', 4300, 0.7);
+    }
+  }
+
+  function scheduleBossMusicNoise(destination, time, duration, amount, type, frequency, q) {
+    if (amount <= 0) return;
+    const context = bossMusic.context;
+    const frames = Math.max(1, Math.ceil(context.sampleRate * duration));
+    const buffer = context.createBuffer(1, frames, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    let held = 0;
+    for (let i = 0; i < frames; i++) {
+      if (i % 3 === 0) held = Math.random() * 2 - 1;
+      data[i] = held;
+    }
+    const source = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    filter.type = type;
+    filter.frequency.value = frequency;
+    filter.Q.value = q;
+    gain.gain.setValueAtTime(amount, time);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    source.connect(filter).connect(gain).connect(destination);
+    source.start(time);
+  }
+
   function startFight() {
     fightClock = 0;
     bpm = BASE_BPM;
@@ -4197,6 +4731,7 @@
     beatPhase = 0;
     beatIndex = 0;
     lastAnimBpm = -1;
+    fightMusicBeatCursor = null;
     attacks = [];
     fadingAttacks = [];
     phase2Ritual = null;
@@ -4236,6 +4771,7 @@
     nextAttackBeat = 2; // a couple of beats to read the room before the first strike
     applyTempoToAnimations();
     if (bpmElement) bpmElement.textContent = 'BPM ' + bpm;
+    alignFightBeatToBossMusic();
   }
 
   // Scale the cultist's idle CSS animations to the beat: faster tempo, faster
@@ -4252,12 +4788,28 @@
     if (targetBpm !== bpm) {
       bpm = targetBpm;
       beatMs = 60000 / bpm;
+      updateBossMusicTempo(true);
     }
-    beatPhase += dt;
-    while (beatPhase >= beatMs) {
-      beatPhase -= beatMs;
-      beatIndex++;
-      onBeat(beatIndex);
+    if (bossMusicPlaying && bossMusic && bossMusic.context.state === 'running') {
+      if (fightMusicBeatCursor === null) alignFightBeatToBossMusic();
+      const musicBeat = bossMusicBeatAt(bossMusic.context.currentTime);
+      const wholeBeat = Math.floor(musicBeat);
+      // A backgrounded tab can leave the audio clock far ahead of rendering.
+      // Skip stale beats instead of releasing a backlog of attack waves.
+      if (wholeBeat - fightMusicBeatCursor > 4) fightMusicBeatCursor = wholeBeat - 1;
+      while (fightMusicBeatCursor < wholeBeat) {
+        fightMusicBeatCursor++;
+        beatIndex++;
+        onBeat(beatIndex);
+      }
+      beatPhase = (musicBeat - wholeBeat) * beatMs;
+    } else {
+      beatPhase += dt;
+      while (beatPhase >= beatMs) {
+        beatPhase -= beatMs;
+        beatIndex++;
+        onBeat(beatIndex);
+      }
     }
     if (bpm !== lastAnimBpm) {
       lastAnimBpm = bpm;
@@ -10441,6 +10993,7 @@
 
   function onKeyDown(event) {
     if (!active) return;
+    resumeBossMusicAudio();
     // Secret debug sequence (2137): typing it bails out of the rift.
     if (event.key && event.key.length === 1 && event.key >= '0' && event.key <= '9') {
       debugBuffer = (debugBuffer + event.key).slice(-DEBUG_QUIT_SEQUENCE.length);
@@ -10491,6 +11044,7 @@
   // A normal open starts from the phase-one fall; PERSIST may select phase two.
   function resetRun(restartPhase) {
     const checkpoint = restartPhase === PHASE.SECOND ? PHASE.SECOND : PHASE.FALL;
+    stopBossMusic(0);
     // Reset the scripted intro sequence.
     phase = PHASE.FALL;
     phaseTime = 0;
@@ -10570,6 +11124,10 @@
     if (checkpoint === PHASE.SECOND) {
       skipToActive();
       startSecondPhase();
+    } else {
+      // The motif belongs to the whole cultist encounter, including the fall
+      // into the arena and the seal-drawing intro before she stands.
+      startBossMusic(2.4);
     }
     updateBars();
     if (bpmElement) bpmElement.textContent = 'BPM --';
@@ -10595,6 +11153,7 @@
     overlay.classList.remove('hidden');
     document.body.classList.add('aether-boss2d-active');
     active = true;
+    resumeBossMusicAudio();
     sizeBackground();
     sizeAttackCanvas();
     sizeDeathCanvas();
@@ -10605,6 +11164,7 @@
   // PERSIST: restart at the beginning of the phase in which the hero died.
   function restart() {
     if (!active) return;
+    resumeBossMusicAudio();
     const checkpoint = deathSequence ? deathSequence.restartPhase : PHASE.FALL;
     resetRun(checkpoint);
   }
@@ -10614,6 +11174,7 @@
     active = false;
     cancelAnimationFrame(animationFrame);
     animationFrame = 0;
+    stopBossMusic(0.08);
     keys.clear();
     resetPhaseTwoLayout();
     overlay.classList.add('hidden');
