@@ -123,31 +123,111 @@
     .sequencer-head p { margin: 0; color: var(--dim); font-size: 11px; }
 
     .steps {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
-      gap: 7px;
+      position: relative;
+      display: block;
+      max-width: 100%;
+      overflow-x: auto;
+      overscroll-behavior-inline: contain;
       margin: 9px 0 22px;
+      border: 1px solid var(--line);
+      background: #050205;
+      scrollbar-color: var(--red-dark) #080408;
+      scrollbar-width: thin;
     }
+
+    .timeline-ruler,
+    .timeline-track {
+      display: grid;
+      width: max-content;
+      min-width: 100%;
+    }
+
+    .timeline-ruler {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      min-height: 27px;
+      border-bottom: 1px solid var(--line);
+      background: #080408;
+    }
+
+    .ruler-corner,
+    .track-label {
+      position: sticky;
+      left: 0;
+      z-index: 4;
+      border-right: 2px solid #4f1723;
+      background: #0d060b;
+    }
+
+    .ruler-corner {
+      z-index: 7;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      color: #754b58;
+      font-size: 9px;
+      letter-spacing: .08em;
+    }
+
+    .ruler-step {
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      color: #65404b;
+      border-right: 1px solid #24131a;
+      font-size: 9px;
+    }
+
+    .ruler-step.beat {
+      color: #c48698;
+      border-left: 1px solid #7d2231;
+      background: rgba(105, 17, 32, .15);
+    }
+
+    .timeline-track { border-bottom: 1px solid var(--line); }
+    .timeline-track:last-child { border-bottom: 0; }
+
+    .track-label {
+      z-index: 6;
+      display: grid;
+      align-content: center;
+      gap: 5px;
+      min-height: 92px;
+      padding: 7px;
+      box-shadow: 7px 0 12px rgba(0, 0, 0, .45);
+    }
+
+    .track-label select { width: 100%; min-width: 0; height: 27px; padding: 2px 4px; font-size: 10px; }
+    .track-name { display: flex; justify-content: space-between; align-items: center; gap: 5px; color: #fff; font-size: 10px; letter-spacing: .08em; }
+    .track-mute { min-height: 24px; padding: 2px 5px; color: var(--dim); font-size: 9px; }
+    .track-mute.on { color: #090204; border-color: var(--red); background: var(--red); }
+    .track-volume { display: grid; grid-template-columns: 1fr 31px; gap: 4px; align-items: center; color: var(--dim); font-size: 9px; }
+    .track-volume input { min-width: 0; }
 
     .step {
       position: relative;
       min-width: 0;
-      padding: 9px 7px 8px;
-      border: 1px solid var(--line);
+      min-height: 92px;
+      padding: 7px 4px 5px;
+      border-right: 1px solid #24131a;
       background: linear-gradient(180deg, var(--panel-2), #090508);
-      transition: border-color .04s, transform .04s, background .04s;
+      transition: background .04s, box-shadow .04s;
     }
 
-    .step.inactive { display: none; }
-    .step.current { border-color: var(--red); background: #351016; transform: translateY(-3px); box-shadow: 0 3px 0 #8b1b22; }
-    .step-number { display: block; margin-bottom: 6px; color: #74404d; font-size: 10px; }
-    .note-button { width: 100%; min-height: 36px; padding: 5px; color: #fff; border-color: #552635; background: #0a0509; text-align: left; }
+    .step.beat { border-left: 1px solid #6a1b2b; }
+    .step.current { background: #421019; box-shadow: inset 0 3px 0 var(--red), inset 0 -3px 0 #8b1b22; }
+    .step.has-event { background: linear-gradient(180deg, #25101a, #0e070c); }
+    .timeline-track[data-instrument="guitar"] .step.has-event { background: linear-gradient(180deg, #30110d, #110705); }
+    .timeline-track[data-instrument="bass"] .step.has-event { background: linear-gradient(180deg, #101d29, #060a0f); }
+    .timeline-track[data-instrument="drums"] .step.has-event { background: linear-gradient(180deg, #241d0a, #0d0a04); }
+    .note-button { width: 100%; min-height: 34px; padding: 4px; overflow: hidden; color: #fff; border-color: #552635; background: #0a0509; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
     .note-button::after { content: "▦"; float: right; color: var(--red); }
     .note-button.is-rest { color: var(--dim); }
-    .step-actions { display: flex; gap: 4px; margin-top: 6px; }
-    .step-actions button { min-width: 0; min-height: 28px; flex: 1; padding: 3px; color: var(--dim); font-size: 10px; }
+    .step-actions { display: flex; gap: 2px; margin-top: 5px; }
+    .step-actions button { min-width: 0; min-height: 25px; flex: 1; padding: 2px; color: var(--dim); font-size: 8px; }
     .step-actions button.on { color: #fff; border-color: var(--violet); background: #35134d; }
-    .step-actions .audition { flex: 0 0 30px; color: var(--red); }
+    .step-actions .audition { flex: 0 0 24px; color: var(--red); }
 
     .actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 18px; border-top: 1px solid var(--line); }
     .actions select { min-height: 38px; padding: 7px 10px; }
@@ -203,23 +283,28 @@
     .note-choice .choose-note { color: #fff; text-align: left; }
     .note-choice .preview-note { color: var(--red); border-left: 1px solid var(--line); }
     .note-picker-help { margin: 5px 0 0; color: var(--dim); font-size: 10px; }
+    .drum-grid { display: grid; grid-template-columns: repeat(3, minmax(130px, 1fr)); gap: 8px; }
+    .drum-choice { display: grid; grid-template-columns: 1fr 38px; border: 1px solid var(--line); background: #120d05; }
+    .drum-choice.selected { border-color: #ffc34c; background: #352208; }
+    .drum-choice button { min-height: 48px; border: 0; background: transparent; }
+    .drum-choice .choose-drum { color: #fff; text-align: left; }
+    .drum-choice .preview-drum { color: #ffc34c; border-left: 1px solid var(--line); }
 
     footer { padding: 0 22px 21px; color: #745863; font-size: 11px; }
 
     @media (max-width: 900px) {
       body { padding: 10px; }
       .controls { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
-      .steps { grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); }
     }
 
     @media (max-width: 520px) {
       header { grid-template-columns: 1fr; }
       .tempo-readout { text-align: left; }
       .controls { grid-template-columns: 1fr; }
-      .steps { grid-template-columns: repeat(2, minmax(105px, 1fr)); }
       .status { width: 100%; margin-left: 0; }
       .note-picker-overlay { padding: 8px; }
       .note-picker { width: 100%; max-height: 96vh; }
+      .drum-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -267,6 +352,47 @@
         <div class="control">
           <label for="gate">Note length <output id="gateOut">72%</output></label>
           <input id="gate" type="range" min="20" max="100" value="72" step="1">
+        </div>
+      </div>
+
+      <h2>Loop variance</h2>
+      <div class="controls">
+        <div class="control">
+          <label for="varianceLayer">Editing layer</label>
+          <select id="varianceLayer">
+            <option value="0">Layer 1 — Lead chip</option>
+            <option value="1">Layer 2 — Metal guitar</option>
+            <option value="2">Layer 3 — Bass</option>
+            <option value="3">Layer 4 — Drums</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="loopTranspose">Next-cycle transpose</label>
+          <select id="loopTranspose">
+            <option value="off" selected>Off — repeat exactly</option>
+            <option value="uneasy">Uneasy — 0, +1, 0, −1</option>
+            <option value="rise">Chromatic rise — 0, +1, +2, +3</option>
+            <option value="menace">Menace — 0, +1, +3, +1</option>
+            <option value="sink">Sinking — 0, −1, −2, −1</option>
+            <option value="octave">Octave ambush — 0, 0, +12, 0</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="noteVariance">Note mutation <output id="noteVarianceOut">0%</output></label>
+          <input id="noteVariance" type="range" min="0" max="35" value="0" step="1">
+        </div>
+        <div class="control">
+          <label for="varianceRange">Mutation distance</label>
+          <select id="varianceRange">
+            <option value="1" selected>±1 semitone</option>
+            <option value="2">±2 semitones</option>
+            <option value="3">±3 semitones</option>
+            <option value="6">±6 semitones</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="dropout">Non-accent dropout <output id="dropoutOut">0%</output></label>
+          <input id="dropout" type="range" min="0" max="40" value="0" step="1">
         </div>
       </div>
 
@@ -335,16 +461,19 @@
       </div>
 
       <div class="sequencer-head">
-        <h2>Motif</h2>
-        <p>ACC = louder note + noise hit · ×N = note hold in steps · ♪ = audition</p>
+        <h2>Four-layer timeline</h2>
+        <p>Scroll sideways · assign any instrument per layer · ACC = accent · ×N = hold</p>
       </div>
-      <div class="steps" id="steps" aria-label="Motif steps"></div>
+      <div class="steps" id="steps" aria-label="Four-layer motif timeline"></div>
 
       <div class="actions">
         <select id="preset" aria-label="Motif preset">
           <option value="grave">Grave Signal</option>
           <option value="rift">Rift Pursuit</option>
           <option value="crown">Broken Crown</option>
+          <option value="sepulchre">Sepulchre Machine — 4 layers</option>
+          <option value="rustCathedral">Rust Cathedral — 4 layers</option>
+          <option value="itKnows">It Knows Your Name — 4 layers</option>
           <option value="megalovania">Megalovania — opening reference</option>
           <option value="trueHero">True Hero — opening reference</option>
         </select>
@@ -374,7 +503,8 @@
       <div class="note-picker-scroll">
         <button class="rest-choice" id="chooseRest" type="button">— Set this step to rest —</button>
         <div id="noteGrid"></div>
-        <p class="note-picker-help">Click a note name to select it. Use ♪ to preview without closing this menu.</p>
+        <div class="drum-grid" id="drumGrid" hidden></div>
+        <p class="note-picker-help" id="pickerHelp">Click a note name to select it. Use ♪ to preview without closing this menu.</p>
       </div>
     </section>
   </div>

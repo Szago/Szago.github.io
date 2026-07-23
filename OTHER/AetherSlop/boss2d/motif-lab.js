@@ -21,6 +21,17 @@
     return holds;
   }
 
+  function arrangedLayer(instrument, length, events, accents, holds, volume, variance) {
+    return {
+      instrument,
+      volume,
+      notes: noteTimeline(length, events),
+      accents: accentTimeline(length, accents || []),
+      holds: holdTimeline(length, holds || []),
+      variance: variance || null
+    };
+  }
+
   const PRESETS = {
     grave: {
       name: 'Grave Signal', length: 10,
@@ -80,6 +91,85 @@
         bits: 9, drive: 16, cutoff: 6500, bass: 0, noise: 0, echo: 55,
         echoRate: 0.375
       }
+    },
+    sepulchre: {
+      name: 'Sepulchre Machine',
+      length: 16,
+      layers: [
+        arrangedLayer('lead', 16, [
+          [0, 'E4'], [2, 'F4'], [4, 'A#3'], [6, 'E4'], [7, 'D#4'],
+          [9, 'F4'], [11, 'C#4'], [12, 'E4'], [15, 'A#3']
+        ], [0, 12], [[0, 2], [4, 2], [12, 2]], 78),
+        arrangedLayer('guitar', 16, [
+          [0, 'E2'], [4, 'F2'], [8, 'A#1'], [12, 'E2']
+        ], [0, 8], [[0, 4], [4, 3], [8, 4], [12, 4]], 72),
+        arrangedLayer('bass', 16, [
+          [0, 'E2'], [2, 'E2'], [3, 'F2'], [4, 'E2'], [6, 'D#2'],
+          [8, 'A#1'], [10, 'B1'], [12, 'E2'], [14, 'F2'], [15, 'D#2']
+        ], [0, 8, 12], [[0, 2], [8, 2], [12, 2]], 76),
+        arrangedLayer('drums', 16, [
+          [0, 'KICK'], [2, 'HAT'], [4, 'SNARE'], [6, 'HAT'],
+          [8, 'KICK'], [10, 'OPEN_HAT'], [12, 'SNARE'], [14, 'HAT'], [15, 'TOM']
+        ], [0, 4, 8, 12], [], 78)
+      ],
+      settings: {
+        bpm: 116, division: 4, gate: 68, voice: 'pulse12', transpose: 0,
+        bits: 5, drive: 70, cutoff: 2100, bass: 0, noise: 8, echo: 20,
+        echoRate: 0.5
+      }
+    },
+    rustCathedral: {
+      name: 'Rust Cathedral',
+      length: 16,
+      layers: [
+        arrangedLayer('lead', 16, [
+          [0, 'D4'], [1, 'D#4'], [3, 'A3'], [4, 'G#4'], [7, 'D4'],
+          [8, 'C#4'], [10, 'G4'], [12, 'D#4'], [14, 'A3'], [15, 'D4']
+        ], [0, 4, 8, 12], [[4, 2], [10, 2]], 80),
+        arrangedLayer('guitar', 16, [
+          [0, 'D2'], [4, 'G#1'], [8, 'C#2'], [12, 'D2']
+        ], [0, 4, 12], [[0, 3], [4, 4], [8, 3], [12, 4]], 80),
+        arrangedLayer('bass', 16, [
+          [0, 'D2'], [2, 'D2'], [4, 'G#1'], [5, 'A1'], [7, 'C#2'],
+          [8, 'D2'], [10, 'C#2'], [12, 'G#1'], [14, 'A1'], [15, 'C#2']
+        ], [0, 4, 8, 12], [], 72),
+        arrangedLayer('drums', 16, [
+          [0, 'CRASH'], [2, 'KICK'], [3, 'HAT'], [4, 'SNARE'],
+          [6, 'KICK'], [7, 'HAT'], [8, 'KICK'], [10, 'OPEN_HAT'],
+          [12, 'SNARE'], [14, 'KICK'], [15, 'TOM']
+        ], [0, 4, 8, 12], [], 82)
+      ],
+      settings: {
+        bpm: 144, division: 4, gate: 58, voice: 'pulse37', transpose: 0,
+        bits: 4, drive: 78, cutoff: 2900, bass: 0, noise: 6, echo: 10,
+        echoRate: 0.25
+      }
+    },
+    itKnows: {
+      name: 'It Knows Your Name',
+      length: 16,
+      layers: [
+        arrangedLayer('lead', 16, [
+          [0, 'C#5'], [4, 'C5'], [7, 'G4'], [8, 'C#5'], [13, 'D5'], [15, 'G#4']
+        ], [0, 8, 15], [[0, 4], [4, 2], [8, 4], [13, 2]], 72, {
+          cycleTranspose: 'rise', noteVariance: 0.03, varianceRange: 1, dropout: 0.04
+        }),
+        arrangedLayer('guitar', 16, [
+          [0, 'C#2'], [8, 'C2']
+        ], [0, 8], [[0, 8], [8, 8]], 58),
+        arrangedLayer('bass', 16, [
+          [0, 'C#2'], [3, 'C#2'], [8, 'C2'], [11, 'B1'], [14, 'C#2']
+        ], [0, 3, 8, 11], [[0, 2], [3, 2], [8, 2], [11, 2]], 82),
+        arrangedLayer('drums', 16, [
+          [0, 'KICK'], [3, 'KICK'], [7, 'OPEN_HAT'],
+          [8, 'KICK'], [11, 'KICK'], [15, 'SNARE']
+        ], [0, 3, 8, 11, 15], [], 64)
+      ],
+      settings: {
+        bpm: 100, division: 4, gate: 72, voice: 'warblePulse', transpose: 0,
+        bits: 4, drive: 48, cutoff: 2000, bass: 0, noise: 3, echo: 38,
+        echoRate: 0.75
+      }
     }
   };
 
@@ -89,26 +179,78 @@
     echoRate: 0.75
   };
 
+  const INSTRUMENTS = {
+    lead: { label: 'Lead chip', pitched: true },
+    guitar: { label: 'Metal guitar', pitched: true },
+    bass: { label: 'Bass', pitched: true },
+    drums: { label: 'Drums', pitched: false }
+  };
+
+  const DRUM_SOUNDS = [
+    { id: 'KICK', label: 'Kick' },
+    { id: 'SNARE', label: 'Snare' },
+    { id: 'HAT', label: 'Closed hat' },
+    { id: 'OPEN_HAT', label: 'Open hat' },
+    { id: 'TOM', label: 'War tom' },
+    { id: 'CRASH', label: 'Crash' }
+  ];
+
+  function emptyStep() {
+    return { note: null, accent: false, hold: 1 };
+  }
+
+  function defaultVariance() {
+    return { cycleTranspose: 'off', noteVariance: 0, varianceRange: 1, dropout: 0 };
+  }
+
+  function makeTrack(index, instrument) {
+    return {
+      id: 'layer' + (index + 1),
+      name: 'Layer ' + (index + 1),
+      instrument,
+      volume: instrument === 'bass' ? 70 : instrument === 'drums' ? 76 : 82,
+      muted: false,
+      variance: defaultVariance(),
+      steps: Array.from({ length: 10 }, emptyStep)
+    };
+  }
+
+  const leadSteps = Array.from({ length: 10 }, emptyStep);
   const state = {
     length: 10,
-    steps: Array.from({ length: 10 }, () => ({ note: null, accent: false, hold: 1 })),
+    steps: leadSteps,
+    tracks: [
+      { ...makeTrack(0, 'lead'), steps: leadSteps },
+      makeTrack(1, 'guitar'),
+      makeTrack(2, 'bass'),
+      makeTrack(3, 'drums')
+    ],
     looping: false,
     playOnce: false,
     currentStep: 0,
     nextNoteTime: 0,
+    cycleIndex: 0,
     timer: 0,
     visualTimers: [],
-    pickerStep: 0
+    pickerStep: 0,
+    pickerTrack: 0,
+    varianceTrack: 0
   };
 
   let audio = null;
   let periodicWaves = null;
   const $ = (id) => document.getElementById(id);
-  const controlIds = ['bpm', 'division', 'gate', 'voice', 'transpose', 'bits', 'drive', 'cutoff', 'bass', 'noise', 'echo', 'echoRate'];
+  const controlIds = [
+    'bpm', 'division', 'gate', 'voice', 'transpose', 'bits', 'drive',
+    'cutoff', 'bass', 'noise', 'echo', 'echoRate'
+  ];
+  const varianceControlIds = ['loopTranspose', 'noteVariance', 'varianceRange', 'dropout'];
   const HOLD_VALUES = [1, 2, 3, 4, 6, 8, 12, 16];
 
   function ensureStepCount(count) {
-    while (state.steps.length < count) state.steps.push({ note: null, accent: false, hold: 1 });
+    state.tracks.forEach((track) => {
+      while (track.steps.length < count) track.steps.push(emptyStep());
+    });
   }
 
   function setLength(value) {
@@ -124,68 +266,203 @@
   function buildSteps() {
     const host = $('steps');
     ensureStepCount(state.length);
+    const previousScroll = host.scrollLeft;
     host.innerHTML = '';
-    state.steps.slice(0, state.length).forEach((step, index) => {
-      const card = document.createElement('div');
-      card.className = 'step';
-      card.dataset.step = index;
+    const columns = '150px repeat(' + state.length + ', 76px)';
+    const division = Math.max(1, Number($('division').value));
 
-      const number = document.createElement('span');
-      number.className = 'step-number';
-      number.textContent = 'STEP ' + String(index + 1).padStart(2, '0');
+    const ruler = document.createElement('div');
+    ruler.className = 'timeline-ruler';
+    ruler.style.gridTemplateColumns = columns;
+    const corner = document.createElement('div');
+    corner.className = 'ruler-corner';
+    corner.textContent = 'LAYERS / STEPS';
+    ruler.appendChild(corner);
+    for (let index = 0; index < state.length; index++) {
+      const marker = document.createElement('div');
+      marker.className = 'ruler-step' + (index % division === 0 ? ' beat' : '');
+      marker.textContent = index + 1;
+      marker.title = 'Step ' + (index + 1) + (index % division === 0 ? ' · beat ' + (Math.floor(index / division) + 1) : '');
+      ruler.appendChild(marker);
+    }
+    host.appendChild(ruler);
 
-      const noteButton = document.createElement('button');
-      noteButton.type = 'button';
-      noteButton.className = 'note-button';
-      noteButton.setAttribute('aria-label', 'Choose note for step ' + (index + 1));
-      noteButton.addEventListener('click', () => openNotePicker(index));
+    state.tracks.forEach((track, trackIndex) => {
+      const row = document.createElement('div');
+      row.className = 'timeline-track';
+      row.dataset.track = trackIndex;
+      row.dataset.instrument = track.instrument;
+      row.style.gridTemplateColumns = columns;
+      row.appendChild(buildTrackLabel(track, trackIndex));
 
-      const actions = document.createElement('div');
-      actions.className = 'step-actions';
-      const accent = document.createElement('button');
-      accent.type = 'button';
-      accent.className = 'accent';
-      accent.textContent = 'ACC';
-      accent.title = 'Toggle accent';
-      accent.addEventListener('click', () => {
-        step.accent = !step.accent;
-        syncSteps();
-        updateConfigPreview();
+      track.steps.slice(0, state.length).forEach((step, index) => {
+        const card = document.createElement('div');
+        card.className = 'step' + (index % division === 0 ? ' beat' : '');
+        card.dataset.track = trackIndex;
+        card.dataset.step = index;
+
+        const noteButton = document.createElement('button');
+        noteButton.type = 'button';
+        noteButton.className = 'note-button';
+        noteButton.setAttribute('aria-label', 'Choose event for ' + track.name + ', step ' + (index + 1));
+        noteButton.addEventListener('click', () => openNotePicker(trackIndex, index));
+
+        const actions = document.createElement('div');
+        actions.className = 'step-actions';
+        const accent = document.createElement('button');
+        accent.type = 'button';
+        accent.className = 'accent';
+        accent.textContent = 'ACC';
+        accent.title = 'Toggle accent';
+        accent.addEventListener('click', () => {
+          step.accent = !step.accent;
+          syncSteps();
+          updateConfigPreview();
+        });
+        const hold = document.createElement('button');
+        hold.type = 'button';
+        hold.className = 'hold';
+        hold.title = 'Cycle note hold length';
+        hold.disabled = !INSTRUMENTS[track.instrument].pitched;
+        hold.addEventListener('click', () => {
+          const current = HOLD_VALUES.indexOf(step.hold || 1);
+          step.hold = HOLD_VALUES[(current + 1) % HOLD_VALUES.length];
+          syncSteps();
+          updateConfigPreview();
+        });
+        const audition = document.createElement('button');
+        audition.type = 'button';
+        audition.className = 'audition';
+        audition.textContent = '♪';
+        audition.title = 'Audition this event';
+        audition.setAttribute('aria-label', 'Audition ' + track.name + ', step ' + (index + 1));
+        audition.addEventListener('click', () => auditionStep(trackIndex, index));
+
+        actions.append(accent, hold, audition);
+        card.append(noteButton, actions);
+        row.appendChild(card);
       });
-      const hold = document.createElement('button');
-      hold.type = 'button';
-      hold.className = 'hold';
-      hold.title = 'Cycle note hold length';
-      hold.addEventListener('click', () => {
-        const current = HOLD_VALUES.indexOf(step.hold || 1);
-        step.hold = HOLD_VALUES[(current + 1) % HOLD_VALUES.length];
-        syncSteps();
-        updateConfigPreview();
-      });
-      const audition = document.createElement('button');
-      audition.type = 'button';
-      audition.className = 'audition';
-      audition.textContent = '♪';
-      audition.title = 'Audition this note';
-      audition.setAttribute('aria-label', 'Audition step ' + (index + 1));
-      audition.addEventListener('click', () => auditionStep(index));
-
-      actions.append(accent, hold, audition);
-      card.append(number, noteButton, actions);
-      host.appendChild(card);
+      host.appendChild(row);
     });
     syncSteps();
+    syncVarianceLayerOptions();
+    host.scrollLeft = previousScroll;
+  }
+
+  function syncVarianceLayerOptions() {
+    const select = $('varianceLayer');
+    state.varianceTrack = Math.max(0, Math.min(state.tracks.length - 1, state.varianceTrack));
+    state.tracks.forEach((track, trackIndex) => {
+      const option = select.options[trackIndex];
+      if (option) option.textContent = track.name + ' \u2014 ' + INSTRUMENTS[track.instrument].label;
+    });
+    select.value = String(state.varianceTrack);
+  }
+
+  function syncVarianceControls() {
+    const variance = state.tracks[state.varianceTrack].variance;
+    $('loopTranspose').value = variance.cycleTranspose;
+    $('noteVariance').value = String(Math.round(variance.noteVariance * 100));
+    $('varianceRange').value = String(variance.varianceRange);
+    $('dropout').value = String(Math.round(variance.dropout * 100));
+    updateReadouts();
+  }
+
+  function saveVarianceControls() {
+    const variance = state.tracks[state.varianceTrack].variance;
+    variance.cycleTranspose = $('loopTranspose').value;
+    variance.noteVariance = Number($('noteVariance').value) / 100;
+    variance.varianceRange = Number($('varianceRange').value);
+    variance.dropout = Number($('dropout').value) / 100;
+    updateReadouts();
+  }
+
+  function buildTrackLabel(track, trackIndex) {
+    const label = document.createElement('div');
+    label.className = 'track-label';
+    const name = document.createElement('div');
+    name.className = 'track-name';
+    name.innerHTML = '<span>' + track.name.toUpperCase() + '</span>';
+    const mute = document.createElement('button');
+    mute.type = 'button';
+    mute.className = 'track-mute' + (track.muted ? ' on' : '');
+    mute.textContent = track.muted ? 'MUTED' : 'MUTE';
+    mute.addEventListener('click', () => {
+      track.muted = !track.muted;
+      buildSteps();
+      updateTrackMix();
+      updateConfigPreview();
+    });
+    name.appendChild(mute);
+
+    const instrument = document.createElement('select');
+    instrument.setAttribute('aria-label', track.name + ' instrument');
+    Object.entries(INSTRUMENTS).forEach(([value, definition]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = definition.label;
+      instrument.appendChild(option);
+    });
+    instrument.value = track.instrument;
+    instrument.addEventListener('change', () => {
+      const wasPitched = INSTRUMENTS[track.instrument].pitched;
+      const willBePitched = INSTRUMENTS[instrument.value].pitched;
+      track.instrument = instrument.value;
+      if (wasPitched !== willBePitched) {
+        track.steps.forEach((step) => {
+          step.note = null;
+          step.accent = false;
+          step.hold = 1;
+        });
+        setStatus(track.name + ' cleared incompatible events', state.looping);
+      }
+      buildSteps();
+      updateTrackMix();
+      updateConfigPreview();
+    });
+
+    const volume = document.createElement('label');
+    volume.className = 'track-volume';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '100';
+    slider.value = String(track.volume);
+    slider.setAttribute('aria-label', track.name + ' volume');
+    const output = document.createElement('span');
+    output.textContent = track.volume + '%';
+    slider.addEventListener('input', () => {
+      track.volume = Number(slider.value);
+      output.textContent = track.volume + '%';
+      updateTrackMix();
+      updateConfigPreview();
+    });
+    volume.append(slider, output);
+    label.append(name, instrument, volume);
+    return label;
   }
 
   function syncSteps() {
     document.querySelectorAll('.step').forEach((card, index) => {
-      const note = state.steps[index].note;
+      const trackIndex = Number(card.dataset.track);
+      const stepIndex = Number(card.dataset.step);
+      const track = state.tracks[trackIndex];
+      const step = track.steps[stepIndex];
+      const note = step.note;
       const noteButton = card.querySelector('.note-button');
-      noteButton.textContent = note || '— REST —';
+      noteButton.textContent = eventLabel(note, track.instrument);
       noteButton.classList.toggle('is-rest', !note);
-      card.querySelector('.accent').classList.toggle('on', state.steps[index].accent);
-      card.querySelector('.hold').textContent = '×' + (state.steps[index].hold || 1);
+      card.classList.toggle('has-event', Boolean(note));
+      card.querySelector('.accent').classList.toggle('on', step.accent);
+      card.querySelector('.hold').textContent = INSTRUMENTS[track.instrument].pitched ? '×' + (step.hold || 1) : '—';
     });
+  }
+
+  function eventLabel(note, instrument) {
+    if (!note) return '— REST —';
+    if (instrument !== 'drums') return note;
+    const sound = DRUM_SOUNDS.find((item) => item.id === note);
+    return sound ? sound.label.toUpperCase() : note;
   }
 
   function buildNotePicker() {
@@ -216,7 +493,7 @@
         preview.textContent = '♪';
         preview.title = 'Preview ' + note;
         preview.setAttribute('aria-label', 'Preview ' + note);
-        preview.addEventListener('click', () => auditionNote(note));
+        preview.addEventListener('click', () => auditionValue(note));
         choice.append(choose, preview);
         notes.appendChild(choice);
       });
@@ -225,9 +502,41 @@
     }
   }
 
-  function openNotePicker(index) {
+  function buildDrumPicker() {
+    const host = $('drumGrid');
+    host.innerHTML = '';
+    DRUM_SOUNDS.forEach((sound) => {
+      const choice = document.createElement('div');
+      choice.className = 'drum-choice';
+      choice.dataset.drum = sound.id;
+      const choose = document.createElement('button');
+      choose.type = 'button';
+      choose.className = 'choose-drum';
+      choose.textContent = sound.label;
+      choose.addEventListener('click', () => selectPickerNote(sound.id));
+      const preview = document.createElement('button');
+      preview.type = 'button';
+      preview.className = 'preview-drum';
+      preview.textContent = '♪';
+      preview.setAttribute('aria-label', 'Preview ' + sound.label);
+      preview.addEventListener('click', () => auditionValue(sound.id));
+      choice.append(choose, preview);
+      host.appendChild(choice);
+    });
+  }
+
+  function openNotePicker(trackIndex, index) {
+    state.pickerTrack = trackIndex;
     state.pickerStep = index;
-    $('notePickerStep').textContent = 'Step ' + String(index + 1).padStart(2, '0');
+    const track = state.tracks[trackIndex];
+    const drums = track.instrument === 'drums';
+    $('notePickerTitle').textContent = drums ? 'Choose drum' : 'Choose note';
+    $('notePickerStep').textContent = track.name + ' · Step ' + String(index + 1).padStart(2, '0');
+    $('noteGrid').hidden = drums;
+    $('drumGrid').hidden = !drums;
+    $('pickerHelp').textContent = drums
+      ? 'Choose a synthesized drum hit. Use ♪ to preview it without closing.'
+      : 'Click a note name to select it. Use ♪ to preview without closing.';
     refreshPickerSelection();
     $('notePickerOverlay').hidden = false;
     $('closeNotePicker').focus();
@@ -235,22 +544,28 @@
 
   function closeNotePicker() {
     $('notePickerOverlay').hidden = true;
-    const stepButton = document.querySelector('.step[data-step="' + state.pickerStep + '"] .note-button');
+    const stepButton = document.querySelector(
+      '.step[data-track="' + state.pickerTrack + '"][data-step="' + state.pickerStep + '"] .note-button'
+    );
     if (stepButton) stepButton.focus();
   }
 
   function refreshPickerSelection() {
-    const selected = state.steps[state.pickerStep] && state.steps[state.pickerStep].note;
+    const track = state.tracks[state.pickerTrack];
+    const selected = track.steps[state.pickerStep] && track.steps[state.pickerStep].note;
     document.querySelectorAll('.note-choice').forEach((choice) => {
       choice.classList.toggle('selected', choice.dataset.note === selected);
+    });
+    document.querySelectorAll('.drum-choice').forEach((choice) => {
+      choice.classList.toggle('selected', choice.dataset.drum === selected);
     });
   }
 
   function selectPickerNote(note) {
-    state.steps[state.pickerStep].note = note;
+    state.tracks[state.pickerTrack].steps[state.pickerStep].note = note;
     syncSteps();
     updateConfigPreview();
-    if (note) auditionNote(note);
+    if (note) auditionValue(note);
     closeNotePicker();
   }
 
@@ -279,9 +594,21 @@
       stepsPerBeat: sound.division,
       stepBeats: 1 / sound.division,
       length: state.length,
-      notes: state.steps.slice(0, state.length).map((step) => step.note),
-      accents: state.steps.slice(0, state.length).map((step) => step.accent),
-      holds: state.steps.slice(0, state.length).map((step) => step.hold || 1),
+      layers: state.tracks.map((track) => ({
+        name: track.name,
+        instrument: track.instrument,
+        volume: track.volume / 100,
+        muted: track.muted,
+        notes: track.steps.slice(0, state.length).map((step) => step.note),
+        accents: track.steps.slice(0, state.length).map((step) => step.accent),
+        holds: track.steps.slice(0, state.length).map((step) => step.hold || 1),
+        variance: {
+          cycleTranspose: track.variance.cycleTranspose,
+          noteMutationChance: track.variance.noteVariance,
+          mutationSemitones: track.variance.varianceRange,
+          nonAccentDropout: track.variance.dropout
+        }
+      })),
       synth: {
         voice: sound.voice,
         gate: sound.gate,
@@ -299,6 +626,7 @@
 
   function updateReadouts() {
     const settings = getSettings();
+    const variance = state.tracks[state.varianceTrack].variance;
     const seconds = state.length * (60 / settings.bpm / settings.division);
     const beats = state.length / settings.division;
     $('bpmOut').textContent = settings.bpm;
@@ -310,6 +638,8 @@
     $('bassOut').textContent = Math.round(settings.bass * 100) + '%';
     $('noiseOut').textContent = Math.round(settings.noise * 100) + '%';
     $('echoOut').textContent = Math.round(settings.echo * 100) + '%';
+    $('noteVarianceOut').textContent = Math.round(variance.noteVariance * 100) + '%';
+    $('dropoutOut').textContent = Math.round(variance.dropout * 100) + '%';
     $('lengthOut').textContent = state.length + (state.length === 1 ? ' step' : ' steps');
     $('tempoBig').textContent = settings.bpm + ' BPM';
     $('loopInfo').textContent = state.length + ' steps · ' + formatNumber(beats) + ' beats · ' + seconds.toFixed(2) + 's';
@@ -337,6 +667,7 @@
     const master = context.createGain();
     const compressor = context.createDynamicsCompressor();
     const analyser = context.createAnalyser();
+    const trackGains = state.tracks.map(() => context.createGain());
 
     filter.type = 'lowpass';
     filter.Q.value = 1.2;
@@ -349,13 +680,14 @@
     analyser.fftSize = 1024;
     analyser.smoothingTimeConstant = 0.25;
 
+    trackGains.forEach((gain) => gain.connect(input));
     input.connect(crusher).connect(drive).connect(filter);
     filter.connect(dry).connect(master);
     filter.connect(delay).connect(wet).connect(master);
     delay.connect(feedback).connect(delay);
     master.connect(compressor).connect(analyser).connect(context.destination);
 
-    audio = { context, input, crusher, drive, filter, dry, delay, feedback, wet, master, analyser };
+    audio = { context, input, crusher, drive, filter, dry, delay, feedback, wet, master, analyser, trackGains };
     periodicWaves = {
       pulse06: makePulseWave(context, 0.0625),
       pulse12: makePulseWave(context, 0.125),
@@ -363,6 +695,7 @@
       pulse25: makePulseWave(context, 0.25),
       pulse37: makePulseWave(context, 0.375)
     };
+    updateTrackMix();
     updateAudioEffects(getSettings());
     drawScope();
     return audio;
@@ -411,6 +744,15 @@
     audio.delay.delayTime.setTargetAtTime((60 / settings.bpm) * settings.echoRate, now, 0.01);
     audio.wet.gain.setTargetAtTime(settings.echo * 0.9, now, 0.01);
     audio.feedback.gain.setTargetAtTime(Math.min(0.6, settings.echo * 1.05), now, 0.01);
+  }
+
+  function updateTrackMix() {
+    if (!audio) return;
+    const now = audio.context.currentTime;
+    state.tracks.forEach((track, index) => {
+      const level = track.muted ? 0 : track.volume / 100;
+      audio.trackGains[index].gain.setTargetAtTime(level, now, 0.008);
+    });
   }
 
   function noteToMidi(note) {
@@ -500,24 +842,155 @@
     source.start(time);
   }
 
+  function scheduleGuitar(destination, frequency, time, duration, velocity) {
+    const context = audio.context;
+    scheduleOscillator(context, destination, 'sawtooth', frequency, time, duration, velocity * 0.48, { detune: -5 });
+    scheduleOscillator(context, destination, 'square', frequency, time, duration * 0.96, velocity * 0.28, { detune: 5 });
+    scheduleOscillator(context, destination, 'pulse18', frequency * 1.4983, time, duration * 0.88, velocity * 0.23);
+    scheduleOscillator(context, destination, 'pulse12', frequency * 2, time, duration * 0.72, velocity * 0.15);
+  }
+
+  function scheduleBass(destination, frequency, time, duration, velocity) {
+    const context = audio.context;
+    scheduleOscillator(context, destination, 'triangle', frequency, time, duration, velocity * 0.82);
+    scheduleOscillator(context, destination, 'pulse12', frequency, time, duration * 0.78, velocity * 0.22);
+  }
+
+  function scheduleDrum(destination, drum, time, accent) {
+    const context = audio.context;
+    const strength = accent ? 1.25 : 1;
+    if (drum === 'KICK') {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(165, time);
+      oscillator.frequency.exponentialRampToValueAtTime(43, time + 0.13);
+      gain.gain.setValueAtTime(0.58 * strength, time);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.2);
+      oscillator.connect(gain).connect(destination);
+      oscillator.start(time);
+      oscillator.stop(time + 0.22);
+      return;
+    }
+    if (drum === 'SNARE') {
+      scheduleFilteredNoise(destination, time, 0.15, 0.42 * strength, 'bandpass', 1800, 0.7);
+      scheduleOscillator(context, destination, 'triangle', 175, time, 0.09, 0.13 * strength);
+      return;
+    }
+    if (drum === 'HAT') {
+      scheduleFilteredNoise(destination, time, 0.055, 0.2 * strength, 'highpass', 5200, 0.8);
+      return;
+    }
+    if (drum === 'OPEN_HAT') {
+      scheduleFilteredNoise(destination, time, 0.25, 0.18 * strength, 'highpass', 4300, 0.7);
+      return;
+    }
+    if (drum === 'TOM') {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'triangle';
+      oscillator.frequency.setValueAtTime(190, time);
+      oscillator.frequency.exponentialRampToValueAtTime(82, time + 0.18);
+      gain.gain.setValueAtTime(0.38 * strength, time);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.26);
+      oscillator.connect(gain).connect(destination);
+      oscillator.start(time);
+      oscillator.stop(time + 0.28);
+      return;
+    }
+    if (drum === 'CRASH') {
+      scheduleFilteredNoise(destination, time, 0.65, 0.24 * strength, 'highpass', 2600, 0.5);
+    }
+  }
+
+  function scheduleFilteredNoise(destination, time, duration, amount, type, frequency, q) {
+    const context = audio.context;
+    const frames = Math.max(1, Math.ceil(context.sampleRate * duration));
+    const buffer = context.createBuffer(1, frames, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    let held = 0;
+    for (let i = 0; i < frames; i++) {
+      if (i % 3 === 0) held = Math.random() * 2 - 1;
+      data[i] = held;
+    }
+    const source = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    filter.type = type;
+    filter.frequency.value = frequency;
+    filter.Q.value = q;
+    gain.gain.setValueAtTime(amount, time);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    source.connect(filter).connect(gain).connect(destination);
+    source.start(time);
+  }
+
   function scheduleStep(index, time, settings) {
-    const step = state.steps[index];
-    scheduleTone(step.note, step.accent, time, settings, step.hold || 1);
+    state.tracks.forEach((track, trackIndex) => {
+      const step = track.steps[index];
+      const variance = track.variance;
+      if (!step.note || track.muted) return;
+      if (!step.accent && variance.dropout > 0 && Math.random() < variance.dropout) return;
+      let mutation = 0;
+      if (INSTRUMENTS[track.instrument].pitched &&
+          variance.noteVariance > 0 &&
+          Math.random() < variance.noteVariance) {
+        const distance = 1 + Math.floor(Math.random() * variance.varianceRange);
+        mutation = (Math.random() < 0.5 ? -1 : 1) * distance;
+      }
+      const cycleOffset = INSTRUMENTS[track.instrument].pitched
+        ? cycleTransposeOffset(variance.cycleTranspose, state.cycleIndex)
+        : 0;
+      scheduleEvent(
+        track.instrument,
+        step,
+        time,
+        settings,
+        audio.trackGains[trackIndex],
+        cycleOffset + mutation
+      );
+    });
     queueVisualStep(index, time);
   }
 
-  function scheduleTone(note, accent, time, settings, hold) {
+  function cycleTransposeOffset(mode, cycle) {
+    const patterns = {
+      off: [0],
+      uneasy: [0, 1, 0, -1],
+      rise: [0, 1, 2, 3],
+      menace: [0, 1, 3, 1],
+      sink: [0, -1, -2, -1],
+      octave: [0, 0, 12, 0]
+    };
+    const pattern = patterns[mode] || patterns.off;
+    return pattern[cycle % pattern.length];
+  }
+
+  function scheduleEvent(instrument, step, time, settings, destination, pitchOffset) {
+    if (instrument === 'drums') {
+      scheduleDrum(destination, step.note, time, step.accent);
+      return;
+    }
     const stepDuration = 60 / settings.bpm / settings.division;
-    const gateDuration = Math.max(0.035, stepDuration * settings.gate * (hold || 1));
-    if (note) {
-      const midi = noteToMidi(note) + settings.transpose;
+    const gateDuration = Math.max(0.035, stepDuration * settings.gate * (step.hold || 1));
+    if (step.note) {
+      const noteMidi = noteToMidi(step.note);
+      if (noteMidi === null) return;
+      const midi = noteMidi + settings.transpose + (pitchOffset || 0);
       const frequency = midiToFrequency(midi);
-      const velocity = accent ? 0.32 : 0.22;
-      scheduleLeadVoice(audio.context, audio.input, settings.voice, frequency, time, gateDuration, velocity);
-      if (settings.bass > 0) {
-        scheduleOscillator(audio.context, audio.input, 'triangle', frequency / 2, time, gateDuration * 0.94, settings.bass * (accent ? 0.3 : 0.23));
+      const velocity = step.accent ? 0.32 : 0.22;
+      if (instrument === 'guitar') {
+        scheduleGuitar(destination, frequency, time, gateDuration, velocity);
+      } else if (instrument === 'bass') {
+        scheduleBass(destination, frequency, time, gateDuration, velocity);
+      } else {
+        scheduleLeadVoice(audio.context, destination, settings.voice, frequency, time, gateDuration, velocity);
+        if (settings.bass > 0) {
+          scheduleOscillator(audio.context, destination, 'triangle', frequency / 2, time, gateDuration * 0.94, settings.bass * (step.accent ? 0.3 : 0.23));
+        }
+        if (step.accent) scheduleNoise(audio.context, destination, time, Math.min(0.075, gateDuration), settings.noise * 0.8);
       }
-      if (accent) scheduleNoise(audio.context, audio.input, time, Math.min(0.075, gateDuration), settings.noise * 0.8);
     }
   }
 
@@ -528,7 +1001,16 @@
   }
 
   function highlightStep(index) {
-    document.querySelectorAll('.step').forEach((card, cardIndex) => card.classList.toggle('current', cardIndex === index));
+    document.querySelectorAll('.step').forEach((card) => {
+      card.classList.toggle('current', Number(card.dataset.step) === index);
+    });
+    const timeline = $('steps');
+    const cellLeft = 150 + index * 76;
+    const visibleLeft = timeline.scrollLeft + 150;
+    const visibleRight = timeline.scrollLeft + timeline.clientWidth;
+    if (cellLeft < visibleLeft || cellLeft + 76 > visibleRight) {
+      timeline.scrollLeft = Math.max(0, cellLeft - 150);
+    }
   }
 
   function clearVisuals() {
@@ -549,12 +1031,14 @@
     state.looping = looping;
     state.playOnce = !looping;
     state.currentStep = 0;
+    state.cycleIndex = 0;
     state.nextNoteTime = audio.context.currentTime + 0.045;
     scheduler();
     state.timer = window.setInterval(scheduler, 25);
     $('playButton').classList.toggle('is-playing', looping);
     $('playButton').textContent = looping ? '■ Stop loop' : '▶ Play loop';
-    setStatus(looping ? 'Looping — edits are live' : 'Playing motif once', true);
+    if (looping) updateCycleStatus();
+    else setStatus('Playing motif once', true);
   }
 
   function scheduler() {
@@ -567,6 +1051,8 @@
       state.currentStep++;
       if (state.currentStep >= state.length) {
         state.currentStep = 0;
+        state.cycleIndex++;
+        if (state.looping) updateCycleStatus();
         if (state.playOnce) {
           state.playOnce = false;
           const remaining = Math.max(0, (state.nextNoteTime - audio.context.currentTime) * 1000 + 80);
@@ -575,6 +1061,21 @@
         }
       }
     }
+  }
+
+  function updateCycleStatus() {
+    const track = state.tracks[state.varianceTrack];
+    const variance = track.variance;
+    const offset = INSTRUMENTS[track.instrument].pitched
+      ? cycleTransposeOffset(variance.cycleTranspose, state.cycleIndex)
+      : 0;
+    const transposeText = offset === 0 ? 'base pitch' : (offset > 0 ? '+' : '') + offset + ' semitone' + (Math.abs(offset) === 1 ? '' : 's');
+    setStatus(
+      'Loop ' + (state.cycleIndex + 1) + ' · ' + track.name + ' · ' + transposeText +
+      ' · mutation ' + Math.round(variance.noteVariance * 100) + '%' +
+      ' · dropout ' + Math.round(variance.dropout * 100) + '%',
+      true
+    );
   }
 
   function stop(showStatus = true) {
@@ -588,17 +1089,25 @@
     if (showStatus) setStatus('Stopped', false);
   }
 
-  async function auditionStep(index) {
-    const step = state.steps[index];
+  async function auditionStep(trackIndex, index) {
+    const track = state.tracks[trackIndex];
+    const step = track.steps[index];
     if (!step.note) return;
     await ensureAudio();
-    scheduleStep(index, audio.context.currentTime + 0.012, getSettings());
+    scheduleEvent(track.instrument, step, audio.context.currentTime + 0.012, getSettings(), audio.input);
   }
 
-  async function auditionNote(note) {
-    if (!note) return;
+  async function auditionValue(value) {
+    if (!value) return;
     await ensureAudio();
-    scheduleTone(note, false, audio.context.currentTime + 0.012, getSettings());
+    const instrument = state.tracks[state.pickerTrack].instrument;
+    scheduleEvent(
+      instrument,
+      { note: value, accent: false, hold: 1 },
+      audio.context.currentTime + 0.012,
+      getSettings(),
+      audio.input
+    );
   }
 
   function setStatus(message, live) {
@@ -616,13 +1125,41 @@
     state.length = preset.length;
     ensureStepCount(preset.length);
     $('length').value = String(preset.length);
-    state.steps.slice(0, preset.length).forEach((step, index) => {
-      step.note = preset.notes[index] || null;
-      step.accent = Boolean(preset.accents[index]);
-      step.hold = preset.holds ? preset.holds[index] : 1;
+    state.tracks.forEach((track, trackIndex) => {
+      track.instrument = ['lead', 'guitar', 'bass', 'drums'][trackIndex];
+      track.muted = false;
+      track.variance = defaultVariance();
+      track.steps.forEach((step) => {
+        step.note = null;
+        step.accent = false;
+        step.hold = 1;
+      });
     });
+    if (preset.layers) {
+      preset.layers.forEach((layer, trackIndex) => {
+        const track = state.tracks[trackIndex];
+        track.instrument = layer.instrument;
+        track.volume = layer.volume;
+        track.variance = layer.variance
+          ? { ...defaultVariance(), ...layer.variance }
+          : defaultVariance();
+        track.steps.slice(0, preset.length).forEach((step, index) => {
+          step.note = layer.notes[index] || null;
+          step.accent = Boolean(layer.accents[index]);
+          step.hold = layer.holds[index] || 1;
+        });
+      });
+    } else {
+      state.steps.slice(0, preset.length).forEach((step, index) => {
+        step.note = preset.notes[index] || null;
+        step.accent = Boolean(preset.accents[index]);
+        step.hold = preset.holds ? preset.holds[index] : 1;
+      });
+    }
+    state.varianceTrack = 0;
     buildSteps();
-    updateReadouts();
+    syncVarianceControls();
+    updateTrackMix();
     setStatus('Loaded ' + preset.name, state.looping);
   }
 
@@ -713,13 +1250,25 @@
   }
 
   buildNotePicker();
+  buildDrumPicker();
   buildSteps();
   loadPreset('grave');
 
   controlIds.forEach((id) => {
     $(id).addEventListener('input', () => {
       updateReadouts();
+      if (id === 'division') buildSteps();
     });
+  });
+
+  $('varianceLayer').addEventListener('change', () => {
+    state.varianceTrack = Number($('varianceLayer').value);
+    syncVarianceControls();
+    if (state.looping) updateCycleStatus();
+  });
+
+  varianceControlIds.forEach((id) => {
+    $(id).addEventListener('input', saveVarianceControls);
   });
 
   $('length').addEventListener('change', () => setLength($('length').value));
