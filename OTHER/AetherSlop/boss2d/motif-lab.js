@@ -148,6 +148,7 @@
     itKnows: {
       name: 'It Knows Your Name',
       length: 16,
+      layerOrder: [4, 3, 2, 1],
       layers: [
         arrangedLayer('lead', 16, [
           [0, 'C#5'], [4, 'C5'], [7, 'G4'], [8, 'C#5'], [13, 'D5'], [15, 'G#4']
@@ -166,9 +167,10 @@
         ], [0, 3, 8, 11, 15], [], 64)
       ],
       settings: {
-        bpm: 100, division: 4, gate: 72, voice: 'warblePulse', transpose: 0,
-        bits: 4, drive: 48, cutoff: 2000, bass: 0, noise: 3, echo: 38,
-        echoRate: 0.75
+        bpm: 80, division: 4, gate: 80, voice: 'warblePulse',
+        guitarVoice: 'doomStack', bassVoice: 'deepSub', pianoVoice: 'toyPiano',
+        drumsVoice: 'machine', transpose: 0, bits: 4, drive: 15,
+        cutoff: 2000, bass: 0, noise: 3, echo: 30, echoRate: 0.75
       }
     },
     testlOg: {
@@ -336,6 +338,7 @@
       id: 'layer' + (index + 1),
       name: 'Layer ' + (index + 1),
       instrument,
+      order: index + 1,
       volume: instrument === 'bass' ? 86 : instrument === 'drums' ? 76 : instrument === 'piano' ? 78 : 82,
       muted: false,
       variance: defaultVariance(),
@@ -536,6 +539,20 @@
     updateReadouts();
   }
 
+  function setLayerOrder(trackIndex, nextOrder) {
+    const track = state.tracks[trackIndex];
+    const previousOrder = track.order;
+    const displaced = state.tracks.find((candidate) => candidate !== track && candidate.order === nextOrder);
+    track.order = nextOrder;
+    if (displaced) displaced.order = previousOrder;
+    buildSteps();
+    updateConfigPreview();
+    setStatus(
+      track.name + ' will enter #' + nextOrder + (displaced ? ' · swapped with ' + displaced.name : ''),
+      state.looping
+    );
+  }
+
   function buildTrackLabel(track, trackIndex) {
     const label = document.createElement('div');
     label.className = 'track-label';
@@ -594,6 +611,22 @@
       updateConfigPreview();
     });
 
+    const order = document.createElement('select');
+    order.className = 'track-order';
+    order.title = 'Entrance order for ' + track.name;
+    order.setAttribute('aria-label', 'Entrance order for ' + track.name);
+    state.tracks.forEach((candidate, orderIndex) => {
+      const option = document.createElement('option');
+      option.value = String(orderIndex + 1);
+      option.textContent = '#' + (orderIndex + 1);
+      order.appendChild(option);
+    });
+    order.value = String(track.order);
+    order.addEventListener('change', () => setLayerOrder(trackIndex, Number(order.value)));
+    const selects = document.createElement('div');
+    selects.className = 'track-selects';
+    selects.append(instrument, order);
+
     const volume = document.createElement('label');
     volume.className = 'track-volume';
     const slider = document.createElement('input');
@@ -611,7 +644,7 @@
       updateConfigPreview();
     });
     volume.append(slider, output);
-    label.append(name, instrument, volume);
+    label.append(name, selects, volume);
     return label;
   }
 
@@ -771,6 +804,10 @@
       stepsPerBeat: sound.division,
       stepBeats: 1 / sound.division,
       length: state.length,
+      layerOrder: state.tracks
+        .map((track, trackIndex) => ({ track, layerNumber: trackIndex + 1 }))
+        .sort((a, b) => a.track.order - b.track.order)
+        .map((entry) => entry.layerNumber),
       layers: state.tracks.map((track) => ({
         name: track.name,
         instrument: track.instrument,
@@ -1410,6 +1447,7 @@
     $('length').value = String(preset.length);
     state.tracks.forEach((track, trackIndex) => {
       track.instrument = ['lead', 'guitar', 'bass', 'drums'][trackIndex];
+      track.order = trackIndex + 1;
       track.muted = false;
       track.variance = defaultVariance();
       track.steps.forEach((step) => {
@@ -1437,6 +1475,12 @@
         step.note = preset.notes[index] || null;
         step.accent = Boolean(preset.accents[index]);
         step.hold = preset.holds ? preset.holds[index] : 1;
+      });
+    }
+    if (preset.layerOrder) {
+      preset.layerOrder.forEach((layerNumber, orderIndex) => {
+        const track = state.tracks[layerNumber - 1];
+        if (track) track.order = orderIndex + 1;
       });
     }
     state.varianceTrack = 0;
@@ -1613,6 +1657,7 @@
   function updateConfigPreview() {
     if (!$('configPreview')) return;
     $('configPreview').textContent = 'const BOSS_MOTIF = ' + JSON.stringify(getConfig(), null, 2) + ';\n\n' +
+      '// layerOrder contains 1-based layer numbers in their intended entrance order.\n' +
       '// At runtime, note seconds = (60 / currentCombatBpm) * BOSS_MOTIF.stepBeats;\n' +
       '// Call your future music player\'s setBpm(currentCombatBpm) whenever combat BPM changes.';
   }

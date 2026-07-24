@@ -199,6 +199,8 @@
     }
 
     .track-label select { width: 100%; min-width: 0; height: 27px; padding: 2px 4px; font-size: 10px; }
+    .track-selects { display: grid; grid-template-columns: minmax(0, 1fr) 66px; gap: 4px; }
+    .track-label .track-order { color: #d7a2ff; border-color: #56326f; text-align: center; }
     .track-name { display: flex; align-items: center; gap: 4px; color: #fff; font-size: 10px; letter-spacing: .08em; }
     .track-name span { flex: 1; min-width: 0; }
     .track-mute, .track-randomize, .track-clear { min-height: 24px; padding: 2px 4px; color: var(--dim); font-size: 8px; }
@@ -502,7 +504,7 @@
 
       <div class="sequencer-head">
         <h2>Layer timeline</h2>
-        <p>Scroll sideways · assign any instrument per layer · ACC = accent · ×N = hold</p>
+        <p>Scroll sideways · #N = entrance order · ACC = accent · ×N = hold</p>
         <button id="addLayer" type="button">+ Add layer</button>
       </div>
       <div class="steps" id="steps" aria-label="Layered motif timeline"></div>
