@@ -283,7 +283,7 @@
   };
   const BOSS_MUSIC_MASTER_GAIN = 0.58;
   const BOSS_MUSIC_LOOKAHEAD = 0.11;
-  const BOSS_MUSIC_PATTERNS_PER_LAYER = 3;
+  const BOSS_MUSIC_PATTERNS_PER_LAYER = 2;
   let bossMusic = null;
   let bossMusicTimer = 0;
   let bossMusicPlaying = false;
