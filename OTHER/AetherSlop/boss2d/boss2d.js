@@ -172,87 +172,25 @@
   // Exported from the adjacent motif lab. `bpm` is the audition tempo only;
   // combat playback uses the live fight BPM so the loop follows wrath.
   const BOSS_MOTIF = {
-    name: 'It Knows Your Name',
-    bpm: 99,
-    stepsPerBeat: 4,
-    stepBeats: 0.25,
+    name: '[OG] Death Encounter',
+    bpm: 60,
+    stepsPerBeat: 2,
+    stepBeats: 0.5,
     length: 16,
+    layerOrder: [3, 4, 2, 1],
     layers: [
       {
         name: 'Layer 1',
         instrument: 'lead',
-        volume: 0.72,
-        muted: false,
-        notes: [
-          null, null, null, null, null, null, null, null,
-          null, null, null, null, null, null, null, null,
-        ],
-        accents: [
-          false, false, false, false, false, false, false, false,
-          false, false, false, false, false, false, false, false,
-        ],
-        holds: [4, 1, 1, 1, 2, 1, 1, 1, 4, 1, 1, 1, 1, 2, 1, 1],
-        variance: {
-          cycleTranspose: 'rise',
-          noteMutationChance: 0.03,
-          mutationSemitones: 1,
-          nonAccentDropout: 0.04,
-        },
-      },
-      {
-        name: 'Layer 2',
-        instrument: 'guitar',
-        volume: 0.58,
-        muted: false,
-        notes: [
-          'C#2', null, null, null, null, null, null, null,
-          'C2', null, null, null, null, null, null, null,
-        ],
-        accents: [
-          true, false, false, false, false, false, false, false,
-          true, false, false, false, false, false, false, false,
-        ],
-        holds: [8, 1, 1, 1, 1, 1, 1, 1, 8, 1, 1, 1, 1, 1, 1, 1],
-        variance: {
-          cycleTranspose: 'uneasy',
-          noteMutationChance: 0,
-          mutationSemitones: 1,
-          nonAccentDropout: 0.13,
-        },
-      },
-      {
-        name: 'Layer 3',
-        instrument: 'bass',
         volume: 0.82,
         muted: false,
         notes: [
-          'C#2', null, null, 'C#2', null, null, null, null,
-          'C2', null, null, 'B1', null, null, 'C#2', null,
+          'E4', 'E4', 'E4', 'E4', 'F4', 'F4', 'D5', 'D5',
+          'E4', 'E4', 'E4', 'E4', 'F4', 'F4', 'F5', 'F5',
         ],
         accents: [
-          true, false, false, true, false, false, false, false,
-          true, false, false, true, false, false, false, false,
-        ],
-        holds: [2, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1],
-        variance: {
-          cycleTranspose: 'off',
-          noteMutationChance: 0,
-          mutationSemitones: 1,
-          nonAccentDropout: 0,
-        },
-      },
-      {
-        name: 'Layer 4',
-        instrument: 'drums',
-        volume: 0.64,
-        muted: false,
-        notes: [
-          'KICK', null, null, 'KICK', null, null, null, 'OPEN_HAT',
-          'KICK', null, null, 'KICK', null, null, null, 'SNARE',
-        ],
-        accents: [
-          true, false, false, true, false, false, false, false,
-          true, false, false, true, false, false, false, true,
+          true, false, false, false, false, false, false, false,
+          true, false, false, false, false, false, false, false,
         ],
         holds: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         variance: {
@@ -262,25 +200,95 @@
           nonAccentDropout: 0,
         },
       },
+      {
+        name: 'Layer 2',
+        instrument: 'guitar',
+        volume: 0.82,
+        muted: false,
+        notes: [
+          'E2', 'E2', null, null, 'B2', 'B2', null, null,
+          'E2', 'E2', null, null, 'B2', 'B2', null, null,
+        ],
+        accents: [
+          true, false, false, false, false, false, false, false,
+          true, false, false, false, false, false, false, false,
+        ],
+        holds: [2, 1, 1, 1, 2, 1, 1, 1, 2, 1, 1, 1, 2, 1, 1, 1],
+        variance: {
+          cycleTranspose: 'off',
+          noteMutationChance: 0,
+          mutationSemitones: 1,
+          nonAccentDropout: 0,
+        },
+      },
+      {
+        name: 'Layer 3',
+        instrument: 'bass',
+        volume: 0.86,
+        muted: false,
+        notes: [
+          'E2', 'E2', 'E2', 'E2', 'A#2', 'A#2', 'F2', 'F2',
+          'E2', 'E2', 'E2', 'E2', 'A#2', 'A#2', 'F#2', 'F#2',
+        ],
+        accents: [
+          true, false, false, false, false, false, false, false,
+          true, false, false, false, false, false, false, false,
+        ],
+        holds: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        variance: {
+          cycleTranspose: 'off',
+          noteMutationChance: 0,
+          mutationSemitones: 1,
+          nonAccentDropout: 0,
+        },
+      },
+      {
+        name: 'Layer 4',
+        instrument: 'piano',
+        volume: 1,
+        muted: false,
+        notes: [
+          'E4', 'E4', 'G4', 'G4', 'E4', 'E4', 'D5', 'D5',
+          'E4', 'E4', 'G4', 'G4', 'E4', 'E4', 'F5', 'F5',
+        ],
+        accents: [
+          true, false, false, false, false, false, false, false,
+          true, false, false, false, false, false, false, false,
+        ],
+        holds: [2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1],
+        variance: {
+          cycleTranspose: 'off',
+          noteMutationChance: 0,
+          mutationSemitones: 1,
+          nonAccentDropout: 0,
+        },
+      },
     ],
     synth: {
-      voice: 'warblePulse',
-      gate: 0.45,
-      transpose: 0,
-      bitDepth: 4,
-      drive: 0.48,
-      cutoffHz: 2000,
-      bass: 0,
-      noise: 0.03,
-      echo: 0.4,
-      echoBeats: 0.75,
+      voice: 'pulse25',
+      guitarVoice: 'doomStack',
+      bassVoice: 'deepSub',
+      pianoVoice: 'toyPiano',
+      drumsVoice: 'machine',
+      gate: 1,
+      transpose: -2,
+      bitDepth: 6,
+      drive: 0.01,
+      cutoffHz: 2550,
+      bass: 0.4,
+      noise: 0,
+      echo: 0,
+      echoBeats: 1,
     },
   };
   const BOSS_MUSIC_MASTER_GAIN = 0.58;
   const BOSS_MUSIC_LOOKAHEAD = 0.11;
+  const BOSS_MUSIC_PATTERNS_PER_LAYER = 3;
   let bossMusic = null;
   let bossMusicTimer = 0;
   let bossMusicPlaying = false;
+  let bossMusicLayerCount = 0;
+  let phaseOnePatternsCompleted = 0;
   let bossMusicStep = 0;
   let bossMusicCycle = 0;
   let bossMusicNextNoteTime = 0;
@@ -4390,9 +4398,8 @@
     compressor.attack.value = 0.003;
     compressor.release.value = 0.12;
 
-    trackGains.forEach((gain, index) => {
-      const layer = BOSS_MOTIF.layers[index];
-      gain.gain.value = layer.muted ? 0 : layer.volume;
+    trackGains.forEach((gain) => {
+      gain.gain.value = 0;
       gain.connect(input);
     });
     input.connect(crusher).connect(drive).connect(filter);
@@ -4409,9 +4416,43 @@
       waves: {
         pulse12: makeBossMusicPulseWave(context, 0.125),
         pulse18: makeBossMusicPulseWave(context, 0.1875),
+        pulse25: makeBossMusicPulseWave(context, 0.25),
       },
     };
     return bossMusic;
+  }
+
+  function setBossMusicParam(param, value, time, transitionSeconds) {
+    if (typeof param.cancelAndHoldAtTime === 'function') {
+      param.cancelAndHoldAtTime(time);
+    } else {
+      const currentValue = param.value;
+      param.cancelScheduledValues(time);
+      param.setValueAtTime(currentValue, time);
+    }
+    if (transitionSeconds > 0) {
+      param.linearRampToValueAtTime(value, time + transitionSeconds);
+    } else {
+      param.setValueAtTime(value, time);
+    }
+  }
+
+  function setBossMusicLayerCount(count, transitionSeconds) {
+    bossMusicLayerCount = Math.max(0, Math.min(BOSS_MOTIF.layers.length, Math.floor(count)));
+    if (!bossMusic) return bossMusicLayerCount;
+
+    const activeLayers = new Set(
+      BOSS_MOTIF.layerOrder
+        .slice(0, bossMusicLayerCount)
+        .map((layerNumber) => layerNumber - 1)
+    );
+    const now = bossMusic.context.currentTime;
+    bossMusic.trackGains.forEach((gain, layerIndex) => {
+      const layer = BOSS_MOTIF.layers[layerIndex];
+      const target = activeLayers.has(layerIndex) && !layer.muted ? layer.volume : 0;
+      setBossMusicParam(gain.gain, target, now, Math.max(0, transitionSeconds || 0));
+    });
+    return bossMusicLayerCount;
   }
 
   function updateBossMusicTempo(force) {
@@ -4468,9 +4509,14 @@
   }
 
   function startBossMusic(fadeSeconds) {
+    phaseOnePatternsCompleted = 0;
     const music = createBossMusic();
-    if (!music) return;
+    if (!music) {
+      bossMusicLayerCount = 1;
+      return;
+    }
     bossMusicPlaying = true;
+    setBossMusicLayerCount(1, 0);
     bossMusicStep = 0;
     bossMusicCycle = 0;
     bossMusicLastBpm = -1;
@@ -4596,6 +4642,8 @@
       scheduleBossMusicGuitar(destination, frequency, time, duration, velocity);
     } else if (instrument === 'bass') {
       scheduleBossMusicBass(destination, frequency, time, duration, velocity);
+    } else if (instrument === 'piano') {
+      scheduleBossMusicPiano(destination, frequency, time, duration, velocity);
     } else {
       scheduleBossMusicLead(destination, frequency, time, duration, velocity);
       if (BOSS_MOTIF.synth.bass > 0) {
@@ -4666,15 +4714,37 @@
   }
 
   function scheduleBossMusicGuitar(destination, frequency, time, duration, velocity) {
-    scheduleBossMusicOscillator(destination, 'sawtooth', frequency, time, duration, velocity * 0.48, { detune: -5 });
-    scheduleBossMusicOscillator(destination, 'square', frequency, time, duration * 0.96, velocity * 0.28, { detune: 5 });
-    scheduleBossMusicOscillator(destination, 'pulse18', frequency * 1.4983, time, duration * 0.88, velocity * 0.23);
-    scheduleBossMusicOscillator(destination, 'pulse12', frequency * 2, time, duration * 0.72, velocity * 0.15);
+    scheduleBossMusicOscillator(destination, 'sawtooth', frequency, time, duration, velocity * 0.55, { detune: -5 });
+    scheduleBossMusicOscillator(destination, 'square', frequency, time, duration * 0.96, velocity * 0.34, { detune: 5 });
+    scheduleBossMusicOscillator(destination, 'pulse18', frequency * 1.4983, time, duration * 0.88, velocity * 0.25);
+    scheduleBossMusicOscillator(destination, 'pulse12', frequency * 2, time, duration * 0.72, velocity * 0.17);
   }
 
   function scheduleBossMusicBass(destination, frequency, time, duration, velocity) {
-    scheduleBossMusicOscillator(destination, 'triangle', frequency, time, duration, velocity * 0.82);
-    scheduleBossMusicOscillator(destination, 'pulse12', frequency, time, duration * 0.78, velocity * 0.22);
+    scheduleBossMusicOscillator(destination, 'sine', frequency / 2, time, duration, velocity * 0.72);
+    scheduleBossMusicOscillator(destination, 'triangle', frequency, time, duration, velocity * 1.3);
+    scheduleBossMusicOscillator(destination, 'square', frequency, time, duration * 0.88, velocity * 0.46);
+    scheduleBossMusicOscillator(destination, 'pulse12', frequency * 2, time, duration * 0.76, velocity * 0.34);
+  }
+
+  function scheduleBossMusicPianoPartial(destination, type, frequency, time, duration, amount) {
+    const context = bossMusic.context;
+    const oscillator = context.createOscillator();
+    const envelope = context.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, time);
+    envelope.gain.setValueAtTime(0.0001, time);
+    envelope.gain.exponentialRampToValueAtTime(amount, time + 0.003);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    oscillator.connect(envelope).connect(destination);
+    oscillator.start(time);
+    oscillator.stop(time + duration + 0.02);
+  }
+
+  function scheduleBossMusicPiano(destination, frequency, time, duration, velocity) {
+    const ring = Math.max(0.22, Math.min(1.4, duration * 1.8));
+    scheduleBossMusicPianoPartial(destination, 'square', frequency * 2, time, ring * 0.55, velocity * 0.72);
+    scheduleBossMusicPianoPartial(destination, 'sine', frequency * 4.02, time, ring * 0.42, velocity * 0.34);
   }
 
   function scheduleBossMusicDrum(destination, drum, time, accent) {
@@ -4826,6 +4896,16 @@
     // Arm/rearm only if a wave actually spawned (the stage might not be
     // measurable yet); otherwise retry on the next beat.
     if (spawnWave(beat)) updateNextAttackBeat();
+  }
+
+  function registerCompletedPhaseOnePattern() {
+    if (phase !== PHASE.ACTIVE) return;
+    phaseOnePatternsCompleted++;
+    const layerCount = Math.min(
+      BOSS_MOTIF.layers.length,
+      1 + Math.floor(phaseOnePatternsCompleted / BOSS_MUSIC_PATTERNS_PER_LAYER)
+    );
+    if (layerCount > bossMusicLayerCount) setBossMusicLayerCount(layerCount, 0.65);
   }
 
   // Dev shortcut: skip the scripted intro and drop straight into the fight
@@ -8288,6 +8368,7 @@
       let singleNextBeat = null;
       for (const { slot, nextBeat } of completedSlots) {
         slot.nextBeat = nextBeat;
+        if (slot.done) registerCompletedPhaseOnePattern();
         if (!combining && slot.done) singleNextBeat = nextBeat;
       }
       if (singleNextBeat != null) {
@@ -11078,6 +11159,8 @@
     beatMs = 60000 / bpm;
     beatPhase = 0;
     beatIndex = 0;
+    phaseOnePatternsCompleted = 0;
+    bossMusicLayerCount = 0;
     lastAnimBpm = -1;
     attacks = [];
     phase2Attacks = [];

@@ -174,8 +174,9 @@
       }
     },
     testlOg: {
-      name: '[OG] testl',
+      name: '[OG] Death Encounter',
       length: 16,
+      layerOrder: [3, 4, 2, 1],
       layers: [
         {
           instrument: 'lead',
@@ -223,10 +224,10 @@
         }
       ],
       settings: {
-        bpm: 225, division: 2, gate: 100, voice: 'pulse25',
+        bpm: 60, division: 2, gate: 100, voice: 'pulse25',
         guitarVoice: 'doomStack', bassVoice: 'deepSub', pianoVoice: 'toyPiano',
-        drumsVoice: 'machine', transpose: 0, bits: 6, drive: 32,
-        cutoff: 2600, bass: 24, noise: 11, echo: 5, echoRate: 1
+        drumsVoice: 'machine', transpose: -2, bits: 6, drive: 1,
+        cutoff: 2550, bass: 40, noise: 0, echo: 0, echoRate: 1
       }
     },
     redWake: {

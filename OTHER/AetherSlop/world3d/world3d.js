@@ -1,4 +1,5 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.min.js';
+import { createItKnowsYourNamePlayer } from './world3d-music.js';
 
 const EYE_HEIGHT = 1.7;
 const WORLD_LIMIT = 180;
@@ -60,6 +61,7 @@ const OPEN_GATE_DEPTH = 16;
 const GATE_FADE_DURATION = 2000;
 const ENDGAME_SCENE_STORAGE_KEY = 'aetherEndgameScene';
 const DEBUG_GUARDIAN_PASSCODE = '2137';
+const guardianMusic = createItKnowsYourNamePlayer();
 const gateHoleUniforms = {
   opened: { value: 0 },
   radiusSq: { value: OPEN_GATE_RADIUS * OPEN_GATE_RADIUS }
@@ -2101,6 +2103,7 @@ function triggerAttack(time = performance.now()) {
 
 function onMouseDown(event) {
   if (!active) return;
+  guardianMusic.resume();
   if (event.button === 0) {
     triggerAttack();
     return;
@@ -2182,6 +2185,7 @@ function onKeyDown(event) {
     return;
   }
   if (!active) return;
+  guardianMusic.resume();
   if (gateTransitioning) {
     event.preventDefault();
     return;
@@ -2599,6 +2603,7 @@ function damageEyeGuardian(guardian, time) {
   guardian.root.visible = false;
   createCombatBurst(guardian.root.position, 0xff001f, time, 4.5);
   wardensSlain++;
+  guardianMusic.setLayerCount(wardensSlain + 1);
   updateWardenStatus();
 
   if (wardensSlain >= eyeGuardians.length) {
@@ -2630,6 +2635,7 @@ function killAllGuardiansDebug(time = performance.now()) {
 
   clearEyeBolts(time);
   wardensSlain = eyeGuardians.filter(guardian => !guardian.alive).length;
+  guardianMusic.setLayerCount(wardensSlain + 1);
   updateWardenStatus();
   if (wardensSlain >= eyeGuardians.length) setOpenedGateState(true);
   setCombatStatus('DEBUG // GUARDIANS SLAIN', 1500, time);
@@ -3135,6 +3141,7 @@ function beginWorldRun(time = performance.now()) {
   setOpenedGateState(false);
   updateWardenStatus();
   resetEyeGuardians(time);
+  guardianMusic.start(1);
   playerDead = false;
   setPlayerHp(PLAYER_MAX_HP);
   worldEnteredAt = time;
@@ -3159,6 +3166,7 @@ function open(options = {}) {
 
   if (!overlay) makeOverlay();
   setSavedEndgameScene('world3d');
+  guardianMusic.prime();
 
   overlay.classList.remove('hidden');
   document.body.classList.add('aether-world-active');
@@ -3202,6 +3210,7 @@ function close() {
   playerDead = false;
   attackUntil = 0;
   attackCooldownUntil = 0;
+  guardianMusic.stop(0.18);
   if (renderer && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
   setLoadingVisible(false);
   clearTentacles();
