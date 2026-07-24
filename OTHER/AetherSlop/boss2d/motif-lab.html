@@ -56,8 +56,8 @@
     button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
 
     .lab {
-      width: min(1180px, 100%);
-      margin: 0 auto;
+      width: 100%;
+      margin: 0;
       border: 2px solid #54121c;
       box-shadow: 0 0 0 4px #080307, 0 0 55px rgba(152, 12, 28, .2);
       background: rgba(5, 2, 5, .94);
@@ -199,9 +199,12 @@
     }
 
     .track-label select { width: 100%; min-width: 0; height: 27px; padding: 2px 4px; font-size: 10px; }
-    .track-name { display: flex; justify-content: space-between; align-items: center; gap: 5px; color: #fff; font-size: 10px; letter-spacing: .08em; }
-    .track-mute { min-height: 24px; padding: 2px 5px; color: var(--dim); font-size: 9px; }
+    .track-name { display: flex; align-items: center; gap: 4px; color: #fff; font-size: 10px; letter-spacing: .08em; }
+    .track-name span { flex: 1; min-width: 0; }
+    .track-mute, .track-randomize, .track-clear { min-height: 24px; padding: 2px 4px; color: var(--dim); font-size: 8px; }
     .track-mute.on { color: #090204; border-color: var(--red); background: var(--red); }
+    .track-randomize { color: #d7a2ff; border-color: #56326f; }
+    .track-clear { color: #e9a0a6; border-color: #63303a; }
     .track-volume { display: grid; grid-template-columns: 1fr 31px; gap: 4px; align-items: center; color: var(--dim); font-size: 9px; }
     .track-volume input { min-width: 0; }
 
@@ -221,6 +224,7 @@
     .timeline-track[data-instrument="guitar"] .step.has-event { background: linear-gradient(180deg, #30110d, #110705); }
     .timeline-track[data-instrument="bass"] .step.has-event { background: linear-gradient(180deg, #101d29, #060a0f); }
     .timeline-track[data-instrument="drums"] .step.has-event { background: linear-gradient(180deg, #241d0a, #0d0a04); }
+    .timeline-track[data-instrument="piano"] .step.has-event { background: linear-gradient(180deg, #17162d, #080711); }
     .note-button { width: 100%; min-height: 34px; padding: 4px; overflow: hidden; color: #fff; border-color: #552635; background: #0a0509; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
     .note-button::after { content: "▦"; float: right; color: var(--red); }
     .note-button.is-rest { color: var(--dim); }
@@ -396,7 +400,7 @@
         </div>
       </div>
 
-      <h2>Sound chip</h2>
+      <h2>Sound banks</h2>
       <div class="controls">
         <div class="control">
           <label for="voice">Lead voice</label>
@@ -418,6 +422,42 @@
               <option value="metalSquare">Metal square — clang</option>
               <option value="warblePulse">Warble pulse — unstable</option>
             </optgroup>
+          </select>
+        </div>
+        <div class="control">
+          <label for="guitarVoice">Guitar voice</label>
+          <select id="guitarVoice">
+            <option value="doomStack" selected>Doom stack — wide</option>
+            <option value="palmChug">Palm chug — tight</option>
+            <option value="razorLead">Razor guitar — cutting</option>
+            <option value="octaveGuitar">Octave guitar — huge</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="bassVoice">Bass voice</label>
+          <select id="bassVoice">
+            <option value="deepSub" selected>Deep sub — rich</option>
+            <option value="growlBass">Growl bass — distorted</option>
+            <option value="pulseBass">Pulse bass — retro</option>
+            <option value="hollowBass">Hollow bass — cavernous</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="pianoVoice">Piano voice</label>
+          <select id="pianoVoice">
+            <option value="darkPiano" selected>Dark piano — heavy</option>
+            <option value="toyPiano">Toy piano — cursed</option>
+            <option value="glassPiano">Glass piano — cold</option>
+            <option value="detunedPiano">Detuned piano — broken</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="drumsVoice">Drum bank</label>
+          <select id="drumsVoice">
+            <option value="machine" selected>Machine kit — punchy</option>
+            <option value="industrial">Industrial kit — metal</option>
+            <option value="hollow">Hollow kit — distant</option>
+            <option value="bitKit">Bit kit — crushed</option>
           </select>
         </div>
         <div class="control">
@@ -461,10 +501,11 @@
       </div>
 
       <div class="sequencer-head">
-        <h2>Four-layer timeline</h2>
+        <h2>Layer timeline</h2>
         <p>Scroll sideways · assign any instrument per layer · ACC = accent · ×N = hold</p>
+        <button id="addLayer" type="button">+ Add layer</button>
       </div>
-      <div class="steps" id="steps" aria-label="Four-layer motif timeline"></div>
+      <div class="steps" id="steps" aria-label="Layered motif timeline"></div>
 
       <div class="actions">
         <select id="preset" aria-label="Motif preset">
@@ -474,10 +515,19 @@
           <option value="sepulchre">Sepulchre Machine — 4 layers</option>
           <option value="rustCathedral">Rust Cathedral — 4 layers</option>
           <option value="itKnows">It Knows Your Name — 4 layers</option>
+          <option value="testlOg">[OG] testl — 4 layers</option>
+          <option value="redWake">Red Wake Protocol — high BPM</option>
+          <option value="glassSaint">Glass Saint Pursuit — high BPM</option>
+          <option value="choirTeeth">The Choir Has Teeth — high BPM</option>
           <option value="megalovania">Megalovania — opening reference</option>
           <option value="trueHero">True Hero — opening reference</option>
         </select>
         <button id="loadPreset" type="button">Load preset</button>
+        <select id="randomDensity" aria-label="Randomization density">
+          <option value="sparse">Sparse randomize</option>
+          <option value="steady" selected>Steady randomize</option>
+          <option value="driving">Driving randomize</option>
+        </select>
         <button id="randomize" type="button">Dark randomize</button>
         <button id="copyJson" type="button">Copy JSON</button>
         <button id="copyJs" type="button">Copy JS config</button>

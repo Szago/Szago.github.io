@@ -170,11 +170,138 @@
         bits: 4, drive: 48, cutoff: 2000, bass: 0, noise: 3, echo: 38,
         echoRate: 0.75
       }
+    },
+    testlOg: {
+      name: '[OG] testl',
+      length: 16,
+      layers: [
+        {
+          instrument: 'lead',
+          volume: 82,
+          notes: [
+            'E4', 'E4', 'E4', 'E4', 'F4', 'F4', 'D5', 'D5',
+            'E4', 'E4', 'E4', 'E4', 'F4', 'F4', 'F5', 'F5'
+          ],
+          accents: accentTimeline(16, [0, 8]),
+          holds: Array(16).fill(1),
+          variance: { cycleTranspose: 'off', noteVariance: 0, varianceRange: 1, dropout: 0 }
+        },
+        {
+          instrument: 'guitar',
+          volume: 82,
+          notes: [
+            'E2', 'E2', null, null, 'B2', 'B2', null, null,
+            'E2', 'E2', null, null, 'B2', 'B2', null, null
+          ],
+          accents: accentTimeline(16, [0, 8]),
+          holds: holdTimeline(16, [[0, 2], [4, 2], [8, 2], [12, 2]]),
+          variance: { cycleTranspose: 'off', noteVariance: 0, varianceRange: 1, dropout: 0 }
+        },
+        {
+          instrument: 'bass',
+          volume: 86,
+          notes: [
+            'E2', 'E2', 'E2', 'E2', 'A#2', 'A#2', 'F2', 'F2',
+            'E2', 'E2', 'E2', 'E2', 'A#2', 'A#2', 'F#2', 'F#2'
+          ],
+          accents: accentTimeline(16, [0, 8]),
+          holds: Array(16).fill(1),
+          variance: { cycleTranspose: 'off', noteVariance: 0, varianceRange: 1, dropout: 0 }
+        },
+        {
+          instrument: 'piano',
+          volume: 100,
+          notes: [
+            'E4', 'E4', 'G4', 'G4', 'E4', 'E4', 'D5', 'D5',
+            'E4', 'E4', 'G4', 'G4', 'E4', 'E4', 'F5', 'F5'
+          ],
+          accents: accentTimeline(16, [0, 8]),
+          holds: holdTimeline(16, [[0, 2], [2, 2], [4, 2], [6, 2], [8, 2], [10, 2], [12, 2], [14, 2]]),
+          variance: { cycleTranspose: 'off', noteVariance: 0, varianceRange: 1, dropout: 0 }
+        }
+      ],
+      settings: {
+        bpm: 225, division: 2, gate: 100, voice: 'pulse25',
+        guitarVoice: 'doomStack', bassVoice: 'deepSub', pianoVoice: 'toyPiano',
+        drumsVoice: 'machine', transpose: 0, bits: 6, drive: 32,
+        cutoff: 2600, bass: 24, noise: 11, echo: 5, echoRate: 1
+      }
+    },
+    redWake: {
+      name: 'Red Wake Protocol',
+      length: 16,
+      layers: [
+        arrangedLayer('lead', 16, [
+          [0, 'D5'], [1, 'D5'], [4, 'F5'], [5, 'F5'], [7, 'D#5'],
+          [8, 'D5'], [9, 'D5'], [12, 'C5'], [13, 'C5'], [15, 'G#4']
+        ], [0, 4, 8, 12, 15], [], 76),
+        arrangedLayer('guitar', 16, [], [], [], 68),
+        arrangedLayer('bass', 16, [
+          [0, 'D2'], [1, 'D2'], [4, 'D2'], [5, 'D2'],
+          [8, 'D2'], [9, 'D2'], [12, 'C2'], [13, 'C2'], [14, 'C#2'], [15, 'D2']
+        ], [0, 8, 12], [], 84),
+        arrangedLayer('drums', 16, [
+          [0, 'KICK'], [4, 'SNARE'], [8, 'KICK'], [12, 'SNARE'], [15, 'OPEN_HAT']
+        ], [0, 4, 8, 12], [], 70)
+      ],
+      settings: {
+        bpm: 250, division: 4, gate: 68, voice: 'metalSquare', transpose: 0,
+        bits: 4, drive: 68, cutoff: 2500, bass: 0, noise: 4, echo: 10,
+        echoRate: 0.5
+      }
+    },
+    glassSaint: {
+      name: 'Glass Saint Pursuit',
+      length: 16,
+      layers: [
+        arrangedLayer('lead', 16, [
+          [0, 'C#5'], [1, 'C#5'], [4, 'G5'], [5, 'G5'],
+          [8, 'F#5'], [9, 'F#5'], [12, 'E5'], [13, 'E5'], [15, 'C#5']
+        ], [0, 4, 8, 12], [[15, 2]], 80),
+        arrangedLayer('guitar', 16, [
+          [0, 'C#2'], [1, 'C#2'], [4, 'C#2'], [5, 'C#2'],
+          [8, 'G1'], [9, 'G1'], [12, 'A#1'], [13, 'A#1']
+        ], [0, 4, 8, 12], [], 72),
+        arrangedLayer('bass', 16, [], [], [], 72),
+        arrangedLayer('drums', 16, [
+          [0, 'KICK'], [4, 'SNARE'], [8, 'KICK'], [12, 'SNARE'], [14, 'KICK']
+        ], [0, 4, 8, 12], [], 74)
+      ],
+      settings: {
+        bpm: 232, division: 4, gate: 72, voice: 'dualPulse', transpose: 0,
+        bits: 5, drive: 58, cutoff: 3100, bass: 0, noise: 3, echo: 18,
+        echoRate: 0.5
+      }
+    },
+    choirTeeth: {
+      name: 'The Choir Has Teeth',
+      length: 16,
+      layers: [
+        arrangedLayer('lead', 16, [
+          [4, 'C5'], [5, 'C5'], [8, 'G#4'], [9, 'G#4'],
+          [12, 'D5'], [13, 'D5'], [15, 'C#5']
+        ], [4, 8, 12, 15], [[15, 2]], 78),
+        arrangedLayer('guitar', 16, [], [], [], 68),
+        arrangedLayer('bass', 16, [
+          [0, 'C2'], [1, 'C3'], [2, 'C2'], [4, 'C2'], [5, 'C3'], [6, 'C2'],
+          [8, 'C2'], [9, 'C3'], [10, 'C2'], [12, 'G1'], [13, 'G#1'], [14, 'A1'], [15, 'A#1']
+        ], [0, 4, 8, 12], [], 86),
+        arrangedLayer('drums', 16, [
+          [0, 'KICK'], [8, 'SNARE'], [12, 'KICK'], [15, 'OPEN_HAT']
+        ], [0, 8, 12], [], 68)
+      ],
+      settings: {
+        bpm: 250, division: 4, gate: 66, voice: 'warblePulse', transpose: 0,
+        bits: 4, drive: 52, cutoff: 2100, bass: 0, noise: 5, echo: 20,
+        echoRate: 0.5
+      }
     }
   };
 
   const DEFAULT_SOUND = {
     bpm: 150, division: 2, gate: 72, voice: 'pulse25', transpose: 0,
+    guitarVoice: 'doomStack', bassVoice: 'deepSub', pianoVoice: 'darkPiano',
+    drumsVoice: 'machine',
     bits: 6, drive: 32, cutoff: 2600, bass: 24, noise: 11, echo: 18,
     echoRate: 0.75
   };
@@ -183,6 +310,7 @@
     lead: { label: 'Lead chip', pitched: true },
     guitar: { label: 'Metal guitar', pitched: true },
     bass: { label: 'Bass', pitched: true },
+    piano: { label: 'Piano', pitched: true },
     drums: { label: 'Drums', pitched: false }
   };
 
@@ -208,7 +336,7 @@
       id: 'layer' + (index + 1),
       name: 'Layer ' + (index + 1),
       instrument,
-      volume: instrument === 'bass' ? 70 : instrument === 'drums' ? 76 : 82,
+      volume: instrument === 'bass' ? 86 : instrument === 'drums' ? 76 : instrument === 'piano' ? 78 : 82,
       muted: false,
       variance: defaultVariance(),
       steps: Array.from({ length: 10 }, emptyStep)
@@ -241,16 +369,44 @@
   let periodicWaves = null;
   const $ = (id) => document.getElementById(id);
   const controlIds = [
-    'bpm', 'division', 'gate', 'voice', 'transpose', 'bits', 'drive',
+    'bpm', 'division', 'gate', 'voice', 'guitarVoice', 'bassVoice', 'pianoVoice',
+    'drumsVoice', 'transpose', 'bits', 'drive',
     'cutoff', 'bass', 'noise', 'echo', 'echoRate'
   ];
   const varianceControlIds = ['loopTranspose', 'noteVariance', 'varianceRange', 'dropout'];
   const HOLD_VALUES = [1, 2, 3, 4, 6, 8, 12, 16];
+  const TRACK_LABEL_WIDTH = 180;
 
   function ensureStepCount(count) {
     state.tracks.forEach((track) => {
       while (track.steps.length < count) track.steps.push(emptyStep());
     });
+  }
+
+  function addLayer() {
+    if (state.tracks.length >= 16) {
+      setStatus('Layer limit reached (16)', state.looping);
+      return;
+    }
+    const instruments = ['lead', 'guitar', 'bass', 'drums', 'piano'];
+    const trackIndex = state.tracks.length;
+    const track = makeTrack(trackIndex, instruments[trackIndex % instruments.length]);
+    track.steps = Array.from({ length: state.length }, emptyStep);
+    state.tracks.push(track);
+    ensureAudioTrackGains();
+    buildSteps();
+    updateTrackMix();
+    updateConfigPreview();
+    setStatus('Added ' + track.name, state.looping);
+  }
+
+  function clearLayer(trackIndex) {
+    const track = state.tracks[trackIndex];
+    if (!track) return;
+    clearTrack(track);
+    syncSteps();
+    updateConfigPreview();
+    setStatus('Cleared ' + track.name, state.looping);
   }
 
   function setLength(value) {
@@ -268,7 +424,7 @@
     ensureStepCount(state.length);
     const previousScroll = host.scrollLeft;
     host.innerHTML = '';
-    const columns = '150px repeat(' + state.length + ', 76px)';
+    const columns = TRACK_LABEL_WIDTH + 'px repeat(' + state.length + ', 76px)';
     const division = Math.max(1, Number($('division').value));
 
     const ruler = document.createElement('div');
@@ -352,9 +508,12 @@
   function syncVarianceLayerOptions() {
     const select = $('varianceLayer');
     state.varianceTrack = Math.max(0, Math.min(state.tracks.length - 1, state.varianceTrack));
+    select.innerHTML = '';
     state.tracks.forEach((track, trackIndex) => {
-      const option = select.options[trackIndex];
-      if (option) option.textContent = track.name + ' \u2014 ' + INSTRUMENTS[track.instrument].label;
+      const option = document.createElement('option');
+      option.value = String(trackIndex);
+      option.textContent = track.name + ' \u2014 ' + INSTRUMENTS[track.instrument].label;
+      select.appendChild(option);
     });
     select.value = String(state.varianceTrack);
   }
@@ -393,7 +552,21 @@
       updateTrackMix();
       updateConfigPreview();
     });
-    name.appendChild(mute);
+    const randomizeButton = document.createElement('button');
+    randomizeButton.type = 'button';
+    randomizeButton.className = 'track-randomize';
+    randomizeButton.textContent = 'RND';
+    randomizeButton.title = 'Dark-randomize only ' + track.name;
+    randomizeButton.setAttribute('aria-label', 'Dark-randomize only ' + track.name);
+    randomizeButton.addEventListener('click', () => randomizeTrack(trackIndex));
+    const clearButton = document.createElement('button');
+    clearButton.type = 'button';
+    clearButton.className = 'track-clear';
+    clearButton.textContent = 'CLR';
+    clearButton.title = 'Clear every event from ' + track.name;
+    clearButton.setAttribute('aria-label', 'Clear every event from ' + track.name);
+    clearButton.addEventListener('click', () => clearLayer(trackIndex));
+    name.append(mute, randomizeButton, clearButton);
 
     const instrument = document.createElement('select');
     instrument.setAttribute('aria-label', track.name + ' instrument');
@@ -575,6 +748,10 @@
       division: Number($('division').value),
       gate: Number($('gate').value) / 100,
       voice: $('voice').value,
+      guitarVoice: $('guitarVoice').value,
+      bassVoice: $('bassVoice').value,
+      pianoVoice: $('pianoVoice').value,
+      drumsVoice: $('drumsVoice').value,
       transpose: Number($('transpose').value),
       bits: Number($('bits').value),
       drive: Number($('drive').value) / 100,
@@ -611,6 +788,10 @@
       })),
       synth: {
         voice: sound.voice,
+        guitarVoice: sound.guitarVoice,
+        bassVoice: sound.bassVoice,
+        pianoVoice: sound.pianoVoice,
+        drumsVoice: sound.drumsVoice,
         gate: sound.gate,
         transpose: sound.transpose,
         bitDepth: sound.bits,
@@ -746,8 +927,19 @@
     audio.feedback.gain.setTargetAtTime(Math.min(0.6, settings.echo * 1.05), now, 0.01);
   }
 
+  function ensureAudioTrackGains() {
+    if (!audio) return;
+    while (audio.trackGains.length < state.tracks.length) {
+      const gain = audio.context.createGain();
+      gain.gain.value = 0;
+      gain.connect(audio.input);
+      audio.trackGains.push(gain);
+    }
+  }
+
   function updateTrackMix() {
     if (!audio) return;
+    ensureAudioTrackGains();
     const now = audio.context.currentTime;
     state.tracks.forEach((track, index) => {
       const level = track.muted ? 0 : track.volume / 100;
@@ -842,64 +1034,147 @@
     source.start(time);
   }
 
-  function scheduleGuitar(destination, frequency, time, duration, velocity) {
+  function scheduleGuitar(destination, frequency, time, duration, velocity, voice) {
     const context = audio.context;
-    scheduleOscillator(context, destination, 'sawtooth', frequency, time, duration, velocity * 0.48, { detune: -5 });
-    scheduleOscillator(context, destination, 'square', frequency, time, duration * 0.96, velocity * 0.28, { detune: 5 });
-    scheduleOscillator(context, destination, 'pulse18', frequency * 1.4983, time, duration * 0.88, velocity * 0.23);
-    scheduleOscillator(context, destination, 'pulse12', frequency * 2, time, duration * 0.72, velocity * 0.15);
+    if (voice === 'palmChug') {
+      scheduleOscillator(context, destination, 'sawtooth', frequency, time, duration * 0.62, velocity * 0.7);
+      scheduleOscillator(context, destination, 'square', frequency * 2, time, duration * 0.42, velocity * 0.2);
+      return;
+    }
+    if (voice === 'razorLead') {
+      scheduleOscillator(context, destination, 'pulse12', frequency, time, duration, velocity * 0.72, { detune: -4 });
+      scheduleOscillator(context, destination, 'sawtooth', frequency * 2, time, duration * 0.85, velocity * 0.3, { detune: 6 });
+      return;
+    }
+    if (voice === 'octaveGuitar') {
+      scheduleOscillator(context, destination, 'sawtooth', frequency, time, duration, velocity * 0.62, { detune: -5 });
+      scheduleOscillator(context, destination, 'square', frequency * 2, time, duration * 0.9, velocity * 0.42, { detune: 5 });
+      scheduleOscillator(context, destination, 'pulse18', frequency / 2, time, duration, velocity * 0.24);
+      return;
+    }
+    scheduleOscillator(context, destination, 'sawtooth', frequency, time, duration, velocity * 0.55, { detune: -5 });
+    scheduleOscillator(context, destination, 'square', frequency, time, duration * 0.96, velocity * 0.34, { detune: 5 });
+    scheduleOscillator(context, destination, 'pulse18', frequency * 1.4983, time, duration * 0.88, velocity * 0.25);
+    scheduleOscillator(context, destination, 'pulse12', frequency * 2, time, duration * 0.72, velocity * 0.17);
   }
 
-  function scheduleBass(destination, frequency, time, duration, velocity) {
+  function scheduleBass(destination, frequency, time, duration, velocity, voice) {
     const context = audio.context;
-    scheduleOscillator(context, destination, 'triangle', frequency, time, duration, velocity * 0.82);
-    scheduleOscillator(context, destination, 'pulse12', frequency, time, duration * 0.78, velocity * 0.22);
+    if (voice === 'growlBass') {
+      scheduleOscillator(context, destination, 'sawtooth', frequency, time, duration, velocity * 1.05, { detune: -5 });
+      scheduleOscillator(context, destination, 'square', frequency, time, duration * 0.94, velocity * 0.72, { detune: 5 });
+      scheduleOscillator(context, destination, 'triangle', frequency / 2, time, duration, velocity * 0.5);
+      return;
+    }
+    if (voice === 'pulseBass') {
+      scheduleOscillator(context, destination, 'pulse25', frequency, time, duration, velocity * 1.2);
+      scheduleOscillator(context, destination, 'pulse12', frequency * 2, time, duration * 0.82, velocity * 0.5);
+      scheduleOscillator(context, destination, 'triangle', frequency / 2, time, duration, velocity * 0.38);
+      return;
+    }
+    if (voice === 'hollowBass') {
+      scheduleOscillator(context, destination, 'sine', frequency / 2, time, duration, velocity * 0.82);
+      scheduleOscillator(context, destination, 'triangle', frequency, time, duration, velocity * 1.0);
+      scheduleOscillator(context, destination, 'sine', frequency * 2, time, duration * 0.9, velocity * 0.32);
+      return;
+    }
+    // A strong fundamental plus audible upper harmonics: still deep on
+    // headphones, but present on small speakers that cannot reproduce the sub.
+    scheduleOscillator(context, destination, 'sine', frequency / 2, time, duration, velocity * 0.72);
+    scheduleOscillator(context, destination, 'triangle', frequency, time, duration, velocity * 1.3);
+    scheduleOscillator(context, destination, 'square', frequency, time, duration * 0.88, velocity * 0.46);
+    scheduleOscillator(context, destination, 'pulse12', frequency * 2, time, duration * 0.76, velocity * 0.34);
   }
 
-  function scheduleDrum(destination, drum, time, accent) {
+  function schedulePianoPartial(destination, type, frequency, time, duration, amount, detune) {
     const context = audio.context;
-    const strength = accent ? 1.25 : 1;
+    const oscillator = context.createOscillator();
+    const envelope = context.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, time);
+    oscillator.detune.value = detune || 0;
+    envelope.gain.setValueAtTime(0.0001, time);
+    envelope.gain.exponentialRampToValueAtTime(amount, time + 0.003);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    oscillator.connect(envelope).connect(destination);
+    oscillator.start(time);
+    oscillator.stop(time + duration + 0.02);
+  }
+
+  function schedulePiano(destination, frequency, time, duration, velocity, voice) {
+    const ring = Math.max(0.22, Math.min(1.4, duration * 1.8));
+    if (voice === 'toyPiano') {
+      schedulePianoPartial(destination, 'square', frequency * 2, time, ring * 0.55, velocity * 0.72);
+      schedulePianoPartial(destination, 'sine', frequency * 4.02, time, ring * 0.42, velocity * 0.34);
+      return;
+    }
+    if (voice === 'glassPiano') {
+      schedulePianoPartial(destination, 'sine', frequency, time, ring, velocity * 0.8);
+      schedulePianoPartial(destination, 'sine', frequency * 2.01, time, ring * 0.92, velocity * 0.5);
+      schedulePianoPartial(destination, 'sine', frequency * 4.03, time, ring * 0.72, velocity * 0.24);
+      return;
+    }
+    if (voice === 'detunedPiano') {
+      schedulePianoPartial(destination, 'triangle', frequency, time, ring, velocity * 0.72, -9);
+      schedulePianoPartial(destination, 'triangle', frequency, time, ring * 0.96, velocity * 0.72, 9);
+      schedulePianoPartial(destination, 'sine', frequency * 2, time, ring * 0.7, velocity * 0.28);
+      return;
+    }
+    schedulePianoPartial(destination, 'triangle', frequency, time, ring, velocity * 0.95);
+    schedulePianoPartial(destination, 'sine', frequency * 2, time, ring * 0.78, velocity * 0.42);
+    schedulePianoPartial(destination, 'sine', frequency * 3, time, ring * 0.5, velocity * 0.2);
+  }
+
+  function scheduleDrum(destination, drum, time, accent, voice) {
+    const context = audio.context;
+    const kit = {
+      machine: { gain: 1, pitch: 1, decay: 1, noise: 1 },
+      industrial: { gain: 1.08, pitch: 1.32, decay: 1.28, noise: 1.3 },
+      hollow: { gain: 0.94, pitch: 0.68, decay: 1.5, noise: 0.72 },
+      bitKit: { gain: 0.9, pitch: 1.7, decay: 0.62, noise: 0.9 }
+    }[voice] || { gain: 1, pitch: 1, decay: 1, noise: 1 };
+    const strength = (accent ? 1.25 : 1) * kit.gain;
     if (drum === 'KICK') {
       const oscillator = context.createOscillator();
       const gain = context.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(165, time);
-      oscillator.frequency.exponentialRampToValueAtTime(43, time + 0.13);
+      oscillator.type = voice === 'industrial' ? 'triangle' : 'sine';
+      oscillator.frequency.setValueAtTime(165 * kit.pitch, time);
+      oscillator.frequency.exponentialRampToValueAtTime(43 * kit.pitch, time + 0.13 * kit.decay);
       gain.gain.setValueAtTime(0.58 * strength, time);
-      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.2);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.2 * kit.decay);
       oscillator.connect(gain).connect(destination);
       oscillator.start(time);
-      oscillator.stop(time + 0.22);
+      oscillator.stop(time + 0.22 * kit.decay);
       return;
     }
     if (drum === 'SNARE') {
-      scheduleFilteredNoise(destination, time, 0.15, 0.42 * strength, 'bandpass', 1800, 0.7);
-      scheduleOscillator(context, destination, 'triangle', 175, time, 0.09, 0.13 * strength);
+      scheduleFilteredNoise(destination, time, 0.15 * kit.decay, 0.42 * strength * kit.noise, 'bandpass', 1800 * kit.pitch, 0.7);
+      scheduleOscillator(context, destination, 'triangle', 175 * kit.pitch, time, 0.09 * kit.decay, 0.13 * strength);
       return;
     }
     if (drum === 'HAT') {
-      scheduleFilteredNoise(destination, time, 0.055, 0.2 * strength, 'highpass', 5200, 0.8);
+      scheduleFilteredNoise(destination, time, 0.055 * kit.decay, 0.2 * strength * kit.noise, 'highpass', Math.min(7600, 5200 * kit.pitch), 0.8);
       return;
     }
     if (drum === 'OPEN_HAT') {
-      scheduleFilteredNoise(destination, time, 0.25, 0.18 * strength, 'highpass', 4300, 0.7);
+      scheduleFilteredNoise(destination, time, 0.25 * kit.decay, 0.18 * strength * kit.noise, 'highpass', Math.min(7200, 4300 * kit.pitch), 0.7);
       return;
     }
     if (drum === 'TOM') {
       const oscillator = context.createOscillator();
       const gain = context.createGain();
       oscillator.type = 'triangle';
-      oscillator.frequency.setValueAtTime(190, time);
-      oscillator.frequency.exponentialRampToValueAtTime(82, time + 0.18);
+      oscillator.frequency.setValueAtTime(190 * kit.pitch, time);
+      oscillator.frequency.exponentialRampToValueAtTime(82 * kit.pitch, time + 0.18 * kit.decay);
       gain.gain.setValueAtTime(0.38 * strength, time);
-      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.26);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.26 * kit.decay);
       oscillator.connect(gain).connect(destination);
       oscillator.start(time);
-      oscillator.stop(time + 0.28);
+      oscillator.stop(time + 0.28 * kit.decay);
       return;
     }
     if (drum === 'CRASH') {
-      scheduleFilteredNoise(destination, time, 0.65, 0.24 * strength, 'highpass', 2600, 0.5);
+      scheduleFilteredNoise(destination, time, 0.65 * kit.decay, 0.24 * strength * kit.noise, 'highpass', 2600 * kit.pitch, 0.5);
     }
   }
 
@@ -969,7 +1244,7 @@
 
   function scheduleEvent(instrument, step, time, settings, destination, pitchOffset) {
     if (instrument === 'drums') {
-      scheduleDrum(destination, step.note, time, step.accent);
+      scheduleDrum(destination, step.note, time, step.accent, settings.drumsVoice);
       return;
     }
     const stepDuration = 60 / settings.bpm / settings.division;
@@ -981,9 +1256,11 @@
       const frequency = midiToFrequency(midi);
       const velocity = step.accent ? 0.32 : 0.22;
       if (instrument === 'guitar') {
-        scheduleGuitar(destination, frequency, time, gateDuration, velocity);
+        scheduleGuitar(destination, frequency, time, gateDuration, velocity, settings.guitarVoice);
       } else if (instrument === 'bass') {
-        scheduleBass(destination, frequency, time, gateDuration, velocity);
+        scheduleBass(destination, frequency, time, gateDuration, velocity, settings.bassVoice);
+      } else if (instrument === 'piano') {
+        schedulePiano(destination, frequency, time, gateDuration, velocity, settings.pianoVoice);
       } else {
         scheduleLeadVoice(audio.context, destination, settings.voice, frequency, time, gateDuration, velocity);
         if (settings.bass > 0) {
@@ -1005,11 +1282,11 @@
       card.classList.toggle('current', Number(card.dataset.step) === index);
     });
     const timeline = $('steps');
-    const cellLeft = 150 + index * 76;
-    const visibleLeft = timeline.scrollLeft + 150;
+    const cellLeft = TRACK_LABEL_WIDTH + index * 76;
+    const visibleLeft = timeline.scrollLeft + TRACK_LABEL_WIDTH;
     const visibleRight = timeline.scrollLeft + timeline.clientWidth;
     if (cellLeft < visibleLeft || cellLeft + 76 > visibleRight) {
-      timeline.scrollLeft = Math.max(0, cellLeft - 150);
+      timeline.scrollLeft = Math.max(0, cellLeft - TRACK_LABEL_WIDTH);
     }
   }
 
@@ -1123,6 +1400,12 @@
       });
     }
     state.length = preset.length;
+    while (state.tracks.length < 4) {
+      const trackIndex = state.tracks.length;
+      state.tracks.push(makeTrack(trackIndex, ['lead', 'guitar', 'bass', 'drums'][trackIndex]));
+    }
+    if (state.tracks.length > 4) state.tracks.splice(4);
+    state.steps = state.tracks[0].steps;
     ensureStepCount(preset.length);
     $('length').value = String(preset.length);
     state.tracks.forEach((track, trackIndex) => {
@@ -1163,22 +1446,154 @@
     setStatus('Loaded ' + preset.name, state.looping);
   }
 
-  function randomize() {
-    ensureStepCount(state.length);
-    const roots = [38, 40, 41, 43, 45]; // D2, E2, F2, G2, A2
-    const root = roots[Math.floor(Math.random() * roots.length)];
-    const darkIntervals = [0, 1, 3, 5, 6, 7, 10, 12, 13, 15];
-    for (let i = 0; i < state.length; i++) {
-      const rest = i > 0 && Math.random() < 0.1;
-      let midi = root + darkIntervals[Math.floor(Math.random() * darkIntervals.length)];
-      if (i === 0 || i === state.length - 1) midi = root + (Math.random() < 0.7 ? 12 : 0);
-      state.steps[i].note = rest ? null : midiToNote(midi);
-      state.steps[i].accent = i === 0 || Math.random() < 0.25;
-      state.steps[i].hold = 1;
+  function randomChoice(values) {
+    return values[Math.floor(Math.random() * values.length)];
+  }
+
+  function makeRandomContext(root) {
+    const turn = randomChoice([1, 3, 6]);
+    const answer = randomChoice([3, 6, 7, 10]);
+    return {
+      root: root === undefined ? randomChoice([36, 38, 40, 41, 43, 45]) : root,
+      density: $('randomDensity').value,
+      leadPattern: [24, 24, 24 + turn, 24 + answer],
+      pianoPattern: [24, 24 + turn, 24, 24 + answer],
+      bassPattern: [0, 0, randomChoice([1, 3, 6]), randomChoice([0, 1, 6, 10])],
+      guitarPattern: [
+        0,
+        randomChoice([1, 3, 5]),
+        randomChoice([6, 7, 10]),
+        randomChoice([-1, 1, 3, 5])
+      ],
+      development: randomChoice([1, 3]),
+      counterDevelopment: randomChoice([-1, 1, 3])
+    };
+  }
+
+  function inferCurrentRoot() {
+    const preferred = ['bass', 'guitar', 'piano', 'lead'];
+    for (const instrument of preferred) {
+      const track = state.tracks.find((candidate) => candidate.instrument === instrument);
+      const event = track && track.steps.slice(0, state.length).find((step) => step.note);
+      const midi = event && noteToMidi(event.note);
+      if (midi !== null && midi !== false && midi !== undefined) {
+        return 36 + ((midi % 12) + 12) % 12;
+      }
     }
+    return undefined;
+  }
+
+  function clearTrack(track) {
+    track.steps.forEach((step) => {
+      step.note = null;
+      step.accent = false;
+      step.hold = 1;
+    });
+  }
+
+  function randomizeTrackData(trackIndex, context) {
+    const track = state.tracks[trackIndex];
+    const division = Math.max(1, Number($('division').value));
+    clearTrack(track);
+
+    if (track.instrument === 'drums') {
+      for (let start = 0, beat = 0; start < state.length; start += division, beat++) {
+        const phrase = Math.floor(beat / 4);
+        const phraseBeat = beat % 4;
+        const downbeat = track.steps[start];
+        downbeat.note = beat % 4 === 1 || beat % 4 === 3 ? 'SNARE' : 'KICK';
+        downbeat.accent = beat % 4 === 0;
+        const addHat = context.density === 'driving' ||
+          (context.density === 'steady' && phraseBeat % 2 === 0);
+        if (addHat && division > 1 && start + Math.floor(division / 2) < state.length) {
+          track.steps[start + Math.floor(division / 2)].note = 'HAT';
+        }
+        if (phraseBeat === 3 && phrase % 2 === 1 && start + division - 1 < state.length) {
+          track.steps[start + division - 1].note = phrase % 4 === 1 ? 'OPEN_HAT' : 'TOM';
+        } else if (context.density === 'driving' && division > 2 && start + division - 1 < state.length) {
+          track.steps[start + division - 1].note = 'KICK';
+        }
+      }
+      return;
+    }
+
+    const pattern = track.instrument === 'lead'
+      ? context.leadPattern
+      : track.instrument === 'piano'
+        ? context.pianoPattern
+      : track.instrument === 'bass'
+        ? context.bassPattern
+        : context.guitarPattern;
+    const masks = {
+      sparse: {
+        lead: [true, false, true, true],
+        piano: [true, false, true, true],
+        bass: [true, true, false, true],
+        guitar: [true, false, true, true]
+      },
+      steady: {
+        lead: [true, true, true, true],
+        piano: [true, true, true, true],
+        bass: [true, true, true, true],
+        guitar: [true, true, true, true]
+      },
+      driving: {
+        lead: [true, true, true, true],
+        piano: [true, true, true, true],
+        bass: [true, true, true, true],
+        guitar: [true, true, true, true]
+      }
+    };
+    const mask = masks[context.density][track.instrument];
+
+    for (let start = 0, beat = 0; start < state.length; start += division, beat++) {
+      const phrase = Math.floor(beat / 4);
+      const phraseBeat = beat % 4;
+      if (!mask[phraseBeat]) continue;
+      let interval = pattern[phraseBeat];
+      if (phrase % 2 === 1 && phraseBeat === 3) interval += context.development;
+      if (phrase % 4 === 3 && phraseBeat === 2) interval += context.counterDevelopment;
+      const midi = context.root + interval;
+      const first = track.steps[start];
+      first.note = midiToNote(midi);
+      first.accent = phraseBeat === 0;
+      first.hold = track.instrument === 'guitar'
+        ? Math.min(4, division)
+        : track.instrument === 'piano' ? Math.min(2, division) : 1;
+
+      const repeatIndex = start + 1;
+      const repeat = track.instrument === 'guitar'
+        ? context.density === 'driving' || phraseBeat % 2 === 0
+        : context.density !== 'sparse' || phraseBeat === 0 || phraseBeat === 3;
+      if (repeat && division > 1 && repeatIndex < state.length) {
+        track.steps[repeatIndex].note = first.note;
+        track.steps[repeatIndex].accent = false;
+        track.steps[repeatIndex].hold = 1;
+      }
+      if (context.density === 'driving' && division > 2 && start + 2 < state.length) {
+        track.steps[start + 2].note = first.note;
+        track.steps[start + 2].hold = 1;
+      }
+    }
+  }
+
+  function randomizeTrack(trackIndex) {
+    ensureStepCount(state.length);
+    randomizeTrackData(trackIndex, makeRandomContext(inferCurrentRoot()));
     syncSteps();
     updateConfigPreview();
-    setStatus('Generated a new dark motif', state.looping);
+    setStatus('Randomized ' + state.tracks[trackIndex].name, state.looping);
+  }
+
+  function randomizeAll() {
+    ensureStepCount(state.length);
+    const context = makeRandomContext();
+    state.tracks.forEach((track, trackIndex) => {
+      randomizeTrackData(trackIndex, context);
+    });
+    syncSteps();
+    updateConfigPreview();
+    setStatus('Developed one motif across ' + state.tracks.length + ' layers', state.looping);
   }
 
   function midiToNote(midi) {
@@ -1280,12 +1695,13 @@
   });
   $('removeStep').addEventListener('click', () => setLength(state.length - 1));
   $('addStep').addEventListener('click', () => setLength(state.length + 1));
+  $('addLayer').addEventListener('click', addLayer);
 
   $('playButton').addEventListener('click', () => state.looping ? stop() : start(true));
   $('onceButton').addEventListener('click', () => start(false));
   $('panicButton').addEventListener('click', () => stop());
   $('loadPreset').addEventListener('click', () => loadPreset($('preset').value));
-  $('randomize').addEventListener('click', randomize);
+  $('randomize').addEventListener('click', randomizeAll);
   $('copyJson').addEventListener('click', () => copyConfig(false));
   $('copyJs').addEventListener('click', () => copyConfig(true));
   $('reset').addEventListener('click', resetSound);
