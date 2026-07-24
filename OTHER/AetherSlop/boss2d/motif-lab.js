@@ -153,7 +153,7 @@
         arrangedLayer('lead', 16, [
           [0, 'C#5'], [4, 'C5'], [7, 'G4'], [8, 'C#5'], [13, 'D5'], [15, 'G#4']
         ], [0, 8, 15], [[0, 4], [4, 2], [8, 4], [13, 2]], 72, {
-          cycleTranspose: 'rise', noteVariance: 0.03, varianceRange: 1, dropout: 0.04
+          cycleTranspose: 'rise', noteVariance: 0, varianceRange: 1, dropout: 0
         }),
         arrangedLayer('guitar', 16, [
           [0, 'C#2'], [8, 'C2']
