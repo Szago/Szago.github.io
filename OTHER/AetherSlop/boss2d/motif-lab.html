@@ -361,6 +361,52 @@
         </div>
       </div>
 
+      <h2>Composer DNA</h2>
+      <div class="controls">
+        <div class="control">
+          <label for="composerPreset">Writing profile</label>
+          <select id="composerPreset">
+            <option value="balanced" selected>Boss riff workshop</option>
+            <option value="riff">Relentless locked riff</option>
+            <option value="echo">Evolving heroic sequence</option>
+            <option value="horror">Unstable horror hybrid</option>
+            <option value="custom">Custom DNA</option>
+          </select>
+        </div>
+        <div class="control">
+          <label for="riffBias">Locked-riff bias <output id="riffBiasOut">70%</output></label>
+          <input id="riffBias" type="range" min="0" max="100" value="70" step="1">
+        </div>
+        <div class="control">
+          <label for="echoBias">Evolving-sequence bias <output id="echoBiasOut">5%</output></label>
+          <input id="echoBias" type="range" min="0" max="100" value="5" step="1">
+        </div>
+        <div class="control">
+          <label for="motifLock">Motif preservation <output id="motifLockOut">86%</output></label>
+          <input id="motifLock" type="range" min="0" max="100" value="86" step="1">
+        </div>
+        <div class="control">
+          <label for="development">Phrase development <output id="developmentOut">42%</output></label>
+          <input id="development" type="range" min="0" max="100" value="42" step="1">
+        </div>
+        <div class="control">
+          <label for="syncopation">Syncopation <output id="syncopationOut">64%</output></label>
+          <input id="syncopation" type="range" min="0" max="100" value="64" step="1">
+        </div>
+        <div class="control">
+          <label for="ornaments">Repeats + chromaticism <output id="ornamentsOut">34%</output></label>
+          <input id="ornaments" type="range" min="0" max="100" value="34" step="1">
+        </div>
+        <div class="control">
+          <label for="leaps">Wide leaps <output id="leapsOut">58%</output></label>
+          <input id="leaps" type="range" min="0" max="100" value="58" step="1">
+        </div>
+        <div class="control">
+          <label for="sustain">Sustain <output id="sustainOut">26%</output></label>
+          <input id="sustain" type="range" min="0" max="100" value="26" step="1">
+        </div>
+      </div>
+
       <h2>Loop variance</h2>
       <div class="controls">
         <div class="control">

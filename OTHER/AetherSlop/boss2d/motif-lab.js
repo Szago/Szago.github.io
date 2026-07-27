@@ -378,6 +378,32 @@
     'cutoff', 'bass', 'noise', 'echo', 'echoRate'
   ];
   const varianceControlIds = ['loopTranspose', 'noteVariance', 'varianceRange', 'dropout'];
+  const composerControlIds = [
+    'riffBias', 'echoBias', 'motifLock', 'development',
+    'syncopation', 'ornaments', 'leaps', 'sustain'
+  ];
+  const COMPOSER_PRESETS = {
+    balanced: {
+      riffBias: 70, echoBias: 5, motifLock: 86, development: 42,
+      syncopation: 64, ornaments: 34, leaps: 58, sustain: 26,
+      randomDensity: 'steady'
+    },
+    riff: {
+      riffBias: 85, echoBias: 5, motifLock: 93, development: 28,
+      syncopation: 76, ornaments: 38, leaps: 72, sustain: 18,
+      randomDensity: 'driving'
+    },
+    echo: {
+      riffBias: 10, echoBias: 65, motifLock: 76, development: 62,
+      syncopation: 58, ornaments: 30, leaps: 68, sustain: 64,
+      randomDensity: 'steady'
+    },
+    horror: {
+      riffBias: 55, echoBias: 15, motifLock: 62, development: 76,
+      syncopation: 74, ornaments: 58, leaps: 64, sustain: 42,
+      randomDensity: 'steady'
+    }
+  };
   const HOLD_VALUES = [1, 2, 3, 4, 6, 8, 12, 16];
   const TRACK_LABEL_WIDTH = 180;
 
@@ -876,6 +902,7 @@
     if (!AudioContext) throw new Error('This browser does not support the Web Audio API.');
     const context = new AudioContext();
     const input = context.createGain();
+    const preCompressor = context.createDynamicsCompressor();
     const crusher = context.createWaveShaper();
     const drive = context.createWaveShaper();
     const filter = context.createBiquadFilter();
@@ -888,6 +915,12 @@
     const analyser = context.createAnalyser();
     const trackGains = state.tracks.map(() => context.createGain());
 
+    input.gain.value = 0.68;
+    preCompressor.threshold.value = -10;
+    preCompressor.knee.value = 8;
+    preCompressor.ratio.value = 3;
+    preCompressor.attack.value = 0.002;
+    preCompressor.release.value = 0.08;
     filter.type = 'lowpass';
     filter.Q.value = 1.2;
     master.gain.value = 0.58;
@@ -900,13 +933,16 @@
     analyser.smoothingTimeConstant = 0.25;
 
     trackGains.forEach((gain) => gain.connect(input));
-    input.connect(crusher).connect(drive).connect(filter);
+    input.connect(preCompressor).connect(crusher).connect(drive).connect(filter);
     filter.connect(dry).connect(master);
     filter.connect(delay).connect(wet).connect(master);
     delay.connect(feedback).connect(delay);
     master.connect(compressor).connect(analyser).connect(context.destination);
 
-    audio = { context, input, crusher, drive, filter, dry, delay, feedback, wet, master, analyser, trackGains };
+    audio = {
+      context, input, preCompressor, crusher, drive, filter,
+      dry, delay, feedback, wet, master, analyser, trackGains
+    };
     periodicWaves = {
       pulse06: makePulseWave(context, 0.0625),
       pulse12: makePulseWave(context, 0.125),
@@ -945,10 +981,12 @@
   function makeDriveCurve(amount) {
     const size = 32768;
     const curve = new Float32Array(size);
-    const k = 1 + amount * 75;
+    const k = amount * 35;
     for (let i = 0; i < size; i++) {
       const x = i / (size - 1) * 2 - 1;
-      curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
+      curve[i] = k < 0.0001
+        ? x
+        : ((1 + k) * x) / (1 + k * Math.abs(x));
     }
     return curve;
   }
@@ -1495,23 +1533,486 @@
     return values[Math.floor(Math.random() * values.length)];
   }
 
+  function getComposerSettings() {
+    return Object.fromEntries(composerControlIds.map((id) => [
+      id,
+      Number($(id).value) / 100
+    ]));
+  }
+
+  function updateComposerReadouts() {
+    composerControlIds.forEach((id) => {
+      $(id + 'Out').textContent = $(id).value + '%';
+    });
+  }
+
+  function applyComposerPreset(name) {
+    const preset = COMPOSER_PRESETS[name];
+    if (!preset) return;
+    Object.entries(preset).forEach(([id, value]) => {
+      $(id).value = String(value);
+    });
+    updateComposerReadouts();
+    setStatus('Composer profile: ' + $('composerPreset').selectedOptions[0].textContent, state.looping);
+  }
+
+  function weightedChoice(entries) {
+    const total = entries.reduce((sum, entry) => sum + Math.max(0, entry.weight), 0);
+    let cursor = Math.random() * total;
+    for (const entry of entries) {
+      cursor -= Math.max(0, entry.weight);
+      if (cursor <= 0) return entry.value;
+    }
+    return entries[entries.length - 1].value;
+  }
+
+  function chooseArchetype(settings) {
+    return weightedChoice([
+      {
+        value: 'phrase',
+        weight: Math.max(0, 1 - settings.riffBias - settings.echoBias)
+      },
+      { value: 'riff', weight: settings.riffBias },
+      { value: 'sequence', weight: settings.echoBias }
+    ]);
+  }
+
+  const COMPOSITION_WEIGHTS = {
+    repeatTechnique: {
+      sparse: 0.36,
+      steady: 0.5,
+      driving: 0.64
+    },
+    chromaticTechnique: {
+      lead: 0.42,
+      piano: 0.35,
+      guitar: 0.26,
+      bass: 0.16
+    },
+    chromaticPhrase: {
+      lead: 0.24,
+      piano: 0.2,
+      guitar: 0.13,
+      bass: 0.08
+    },
+    repeatedBeat: {
+      sparse: 0.16,
+      steady: 0.25,
+      driving: 0.36
+    },
+    thirdStrike: {
+      sparse: 0,
+      steady: 0.05,
+      driving: 0.16
+    }
+  };
+
+  function chance(probability) {
+    return Math.random() < Math.max(0, Math.min(1, probability));
+  }
+
+  function chooseDifferent(values, current) {
+    const alternatives = values.filter((value) => value !== current);
+    return randomChoice(alternatives.length ? alternatives : values);
+  }
+
+  function rhythmTemplates(instrument, density) {
+    const templates = {
+      sparse: {
+        lead: [[true, false, true, false], [true, false, true, true], [true, true, false, false], [true, false, false, true]],
+        piano: [[true, false, true, true], [true, true, false, true], [true, false, false, true], [true, true, true, false]],
+        bass: [[true, true, false, true], [true, false, true, true], [true, true, true, false], [true, false, true, false]],
+        guitar: [[true, false, true, true], [true, true, false, true], [true, false, true, false], [true, true, true, false]]
+      },
+      steady: {
+        lead: [[true, true, true, true], [true, true, false, true], [true, false, true, true], [true, true, true, false]],
+        piano: [[true, true, true, true], [true, false, true, true], [true, true, false, true], [true, true, true, false]],
+        bass: [[true, true, true, true], [true, true, false, true], [true, false, true, true], [true, true, true, false]],
+        guitar: [[true, true, true, true], [true, false, true, true], [true, true, false, true], [true, true, true, false]]
+      },
+      driving: {
+        lead: [[true, true, true, true], [true, true, false, true], [true, false, true, true], [true, true, true, false]],
+        piano: [[true, true, true, true], [true, false, true, true], [true, true, false, true], [true, true, true, false]],
+        bass: [[true, true, true, true], [true, true, true, false], [true, false, true, true], [true, true, false, true]],
+        guitar: [[true, true, true, true], [true, true, false, true], [true, false, true, true], [true, true, true, false]]
+      }
+    };
+    return templates[density][instrument];
+  }
+
+  function makePhraseForms(phraseCount, settings) {
+    const forms = [];
+    for (let phrase = 0; phrase < phraseCount; phrase++) {
+      const position = phrase % 4;
+      if (phrase === 0) {
+        forms.push('statement');
+      } else if (position === 3 || phrase === phraseCount - 1) {
+        forms.push('cadence');
+      } else if (position === 2) {
+        forms.push(chance(0.2 + settings.development * 0.75) ? 'contrast' : 'return');
+      } else if (chance(0.62 - settings.development * 0.55)) {
+        forms.push('return');
+      } else {
+        forms.push('answer');
+      }
+    }
+    return forms;
+  }
+
+  function makeProgression(phraseCount, settings) {
+    const progressions = [
+      [0, -2, -5, -1],
+      [0, 3, -2, -1],
+      [0, -5, -2, 1],
+      [0, 1, -2, -1],
+      [0, 0, 3, -1]
+    ];
+    const progression = randomChoice(progressions);
+    const secondSectionShift = chance(settings.development)
+      ? randomChoice([-2, 0, 3])
+      : 0;
+    return Array.from({ length: phraseCount }, (_, phrase) => {
+      const sectionShift = phrase >= 4 ? secondSectionShift : 0;
+      return progression[phrase % progression.length] + sectionShift;
+    });
+  }
+
+  function transformPitchCell(baseCell, form, harmonicOffset, instrument) {
+    const cell = baseCell.slice();
+    if (form === 'answer') {
+      cell[2] += randomChoice([-2, 1, 3]);
+      cell[3] += randomChoice([-1, 1, 3]);
+    } else if (form === 'contrast') {
+      const pivot = cell[1];
+      cell[0] = pivot;
+      cell[1] = baseCell[3];
+      cell[2] = baseCell[0] + randomChoice([1, 3, 6]);
+      cell[3] = baseCell[2];
+    } else if (form === 'cadence') {
+      cell[1] = baseCell[1] + randomChoice([-1, 1]);
+      cell[2] = baseCell[3] + randomChoice([-2, 1]);
+      cell[3] = instrument === 'lead' || instrument === 'piano'
+        ? 24
+        : 0;
+    }
+    return cell.map((interval) => interval + harmonicOffset);
+  }
+
+  function buildInstrumentPlan(instrument, density, phraseCount, forms, progression, baseCell, settings) {
+    const rhythmChoices = rhythmTemplates(instrument, density);
+    const baseRhythm = randomChoice(rhythmChoices);
+    const pitches = [];
+    const rhythms = [];
+    const repeats = [];
+    const thirdStrikes = [];
+    const chromaticTargets = [];
+    const ornamentScale = settings.ornaments / 0.35;
+    const useRepeatedAttacks = chance(
+      COMPOSITION_WEIGHTS.repeatTechnique[density] * ornamentScale
+    );
+    const useChromaticApproaches = chance(
+      COMPOSITION_WEIGHTS.chromaticTechnique[instrument] * ornamentScale
+    );
+
+    for (let phrase = 0; phrase < phraseCount; phrase++) {
+      const form = forms[phrase];
+      pitches.push(transformPitchCell(baseCell, form, progression[phrase], instrument));
+
+      const shouldVaryRhythm = form === 'contrast' ||
+        (form !== 'return' && chance(0.12 + settings.development * 0.5));
+      rhythms.push(shouldVaryRhythm
+        ? chooseDifferent(rhythmChoices, baseRhythm)
+        : baseRhythm.slice());
+
+      const phraseRepeats = [false, false, false, false];
+      const phraseThirdStrikes = [false, false, false, false];
+      for (let beat = 0; beat < 4; beat++) {
+        phraseRepeats[beat] = useRepeatedAttacks && chance(
+          COMPOSITION_WEIGHTS.repeatedBeat[density] * (0.45 + settings.ornaments)
+        );
+        phraseThirdStrikes[beat] = phraseRepeats[beat] &&
+          chance(COMPOSITION_WEIGHTS.thirdStrike[density]);
+      }
+      repeats.push(phraseRepeats);
+      thirdStrikes.push(phraseThirdStrikes);
+
+      const chromaticChance = COMPOSITION_WEIGHTS.chromaticPhrase[instrument] *
+        (0.45 + settings.ornaments);
+      chromaticTargets.push(useChromaticApproaches && chance(chromaticChance)
+        ? randomChoice([1, 2, 3])
+        : null);
+    }
+
+    return { pitches, rhythms, repeats, thirdStrikes, chromaticTargets };
+  }
+
+  function makeIdentityContour(count, instrument, settings) {
+    const bassLike = instrument === 'bass';
+    const lowerBound = bassLike ? -7 : -5;
+    const upperBound = bassLike ? 7 : 12;
+    const leapPool = bassLike
+      ? [3, 5, 7]
+      : [5, 6, 7, 10, ...(chance(settings.leaps) ? [12] : [])];
+    const pickup = chance(0.48)
+      ? [0, 0]
+      : [0, randomChoice([-1, 1, 3])];
+    const leapDirection = bassLike || chance(0.82) ? 1 : -1;
+    const contour = [...pickup, randomChoice(leapPool) * leapDirection];
+    let current = contour[contour.length - 1];
+    const cadenceChoices = bassLike
+      ? [[0, -2, 0], [-5, -2, 0], [3, 1, 0], [0, 3, -2]]
+      : [[0, 3, 5], [5, 3, 0], [3, 1, 0], [-2, 0, 3], [6, 5, 3]];
+    const cadence = randomChoice(cadenceChoices);
+    while (contour.length < Math.max(3, count - cadence.length)) {
+      const repeatChance = 0.08 + settings.ornaments * 0.18;
+      const movement = chance(repeatChance)
+        ? 0
+        : randomChoice([-3, -2, -1, 1, 2]);
+      current = Math.max(lowerBound, Math.min(upperBound, current + movement));
+      contour.push(current);
+    }
+    return [...contour, ...cadence].slice(0, count);
+  }
+
+  function makeRiffEvents(instrument, division, settings, density) {
+    const onsetTemplates = {
+      sparse: [
+        [0, 0.5, 1.5, 2.5, 3.5, 4.5, 6, 7, 7.5],
+        [0, 1, 1.5, 3, 4, 5, 6.5, 7.5]
+      ],
+      steady: [
+        [0, 0.5, 1, 1.5, 2.5, 3, 4, 4.5, 5.5, 6.5, 7, 7.5],
+        [0, 0.5, 1.5, 2, 2.5, 3.5, 4.5, 5, 6, 6.5, 7.5],
+        [0, 1, 1.5, 2, 3, 3.5, 4, 5, 5.5, 6.5, 7, 7.5],
+        [0, 0.5, 1, 2, 2.5, 3, 4.5, 5, 5.5, 6.5, 7.5]
+      ],
+      driving: [
+        [0, 0.5, 1, 1.5, 2, 2.5, 3.5, 4, 4.5, 5, 5.5, 6.5, 7, 7.5],
+        [0, 0.5, 1, 1.5, 2.5, 3, 3.5, 4, 4.5, 5.5, 6, 6.5, 7, 7.5],
+        [0, 0.5, 1.5, 2, 2.5, 3, 3.5, 4.5, 5, 5.5, 6, 7, 7.5]
+      ]
+    };
+    const straightTemplates = {
+      sparse: [0, 1, 2, 3, 4, 5, 6, 7],
+      steady: [0, 0.5, 1, 2, 2.5, 3, 4, 5, 6, 7, 7.5],
+      driving: [0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 4.5, 5, 5.5, 6, 7, 7.5]
+    };
+    const beatOffsets = (chance(settings.syncopation)
+      ? randomChoice(onsetTemplates[density])
+      : straightTemplates[density]).slice();
+    if (chance(settings.development * 0.7) && beatOffsets.length > 5) {
+      const movableIndex = 2 + Math.floor(Math.random() * (beatOffsets.length - 3));
+      const shifted = beatOffsets[movableIndex] + randomChoice([-0.5, 0.5]);
+      if (shifted > beatOffsets[movableIndex - 1] &&
+        shifted < beatOffsets[movableIndex + 1]) {
+        beatOffsets[movableIndex] = shifted;
+      }
+    }
+    const cellSteps = Math.max(1, division * 8);
+    const offsets = [...new Set(beatOffsets.map((beat) => Math.min(
+      cellSteps - 1,
+      Math.max(0, Math.round(beat * division))
+    )))];
+    const register = instrument === 'lead'
+      ? 12
+      : instrument === 'piano' ? 24 : 0;
+    const pitchCell = makeIdentityContour(offsets.length, instrument, settings);
+    const anchorDescent = randomChoice([
+      [0, -2, -3, -4],
+      [0, -2, -5, -1],
+      [0, -1, -3, -5],
+      [0, 3, -2, -1],
+      [0, 0, -2, 1]
+    ]);
+    const events = [];
+
+    for (let cellStart = 0, cycle = 0; cellStart < state.length; cellStart += cellSteps, cycle++) {
+      offsets.forEach((offset, eventIndex) => {
+        let step = cellStart + offset;
+        if (step >= state.length) return;
+        let interval = register + pitchCell[eventIndex];
+        if (eventIndex < 2) {
+          interval += anchorDescent[cycle % anchorDescent.length];
+        } else if (cycle > 0 && chance(1 - settings.motifLock)) {
+          interval += randomChoice([-2, -1, 1, 3]);
+        }
+        if (cycle > 0 && chance((1 - settings.motifLock) * settings.syncopation) &&
+          step + 1 < Math.min(state.length, cellStart + cellSteps)) {
+          step += 1;
+        }
+        const nextOffset = offsets[eventIndex + 1] === undefined
+          ? cellSteps
+          : offsets[eventIndex + 1];
+        const available = Math.max(1, nextOffset - offset);
+        const hold = Math.max(1, Math.min(
+          available,
+          Math.round(available * (0.15 + settings.sustain * 0.45))
+        ));
+        events.push({
+          step,
+          interval,
+          hold,
+          accent: eventIndex === 0
+        });
+      });
+    }
+    return events;
+  }
+
+  function makeSequenceEvents(instrument, division, settings, density) {
+    const spacingPatterns = {
+      sparse: [
+        [0.5, 0.75, 0.5, 1, 0.5, 0.75],
+        [0.75, 0.5, 1, 0.5, 0.75, 0.5]
+      ],
+      steady: [
+        [0.25, 0.5, 0.25, 0.75, 0.5, 0.25, 0.5],
+        [0.5, 0.25, 0.5, 0.25, 0.75, 0.25, 0.5],
+        [0.25, 0.25, 0.5, 0.75, 0.25, 0.5, 0.5]
+      ],
+      driving: [
+        [0.25, 0.25, 0.5, 0.25, 0.25, 0.5, 0.25, 0.5],
+        [0.25, 0.5, 0.25, 0.25, 0.5, 0.25, 0.25, 0.5]
+      ]
+    };
+    const straightPatterns = {
+      sparse: [1, 0.5, 1, 0.5],
+      steady: [0.5, 0.5, 0.5, 0.5],
+      driving: [0.25, 0.25, 0.5, 0.25, 0.25, 0.5]
+    };
+    const spacingBeats = chance(settings.syncopation)
+      ? randomChoice(spacingPatterns[density])
+      : straightPatterns[density];
+    const spacings = spacingBeats.map((beats) => Math.max(1, Math.round(beats * division)));
+    const register = instrument === 'lead'
+      ? (chance(settings.leaps * 0.55) ? 36 : 24)
+      : instrument === 'piano'
+        ? 24
+        : instrument === 'bass' ? 0 : 12;
+    const pitchCell = makeIdentityContour(spacings.length, instrument, settings);
+    const sectionShift = chance(settings.development)
+      ? randomChoice([-2, 1, 3])
+      : 0;
+    const events = [];
+    let step = 0;
+    let eventIndex = 0;
+
+    while (step < state.length) {
+      const cycle = Math.floor(eventIndex / pitchCell.length);
+      const spacing = spacings[eventIndex % spacings.length];
+      let interval = register + pitchCell[eventIndex % pitchCell.length];
+      if (cycle % 2 === 1) interval += sectionShift;
+      if (cycle > 1 && chance(settings.development * 0.35)) {
+        interval += randomChoice([-2, 1, 3]);
+      }
+      events.push({
+        step,
+        interval,
+        hold: Math.max(1, Math.round(spacing * (0.2 + settings.sustain * 0.55))),
+        accent: eventIndex % pitchCell.length === 0
+      });
+      step += spacing;
+      eventIndex++;
+    }
+    return events;
+  }
+
   function makeRandomContext(root) {
-    const turn = randomChoice([1, 3, 6]);
-    const answer = randomChoice([3, 6, 7, 10]);
+    const composer = getComposerSettings();
+    const archetype = chooseArchetype(composer);
+    const turn = randomChoice([1, 3, 6, ...(chance(composer.leaps) ? [12] : [])]);
+    const answer = randomChoice([3, 6, 7, 10, ...(chance(composer.leaps) ? [12] : [])]);
+    const guitarTurn = randomChoice([1, 3, 5]);
+    const guitarTension = randomChoice([6, 7, 10]);
+    const guitarAnswer = randomChoice([-1, 1, 3, 5]);
+    const shape = Math.floor(Math.random() * 4);
+    const leadShapes = [
+      [24, 24, 24 + turn, 24 + answer],
+      [24, 24 + turn, 24 + turn, 24 + answer],
+      [24 + answer, 24 + answer, 24 + turn, 24],
+      [24, 24 + turn, 24, 24 + answer]
+    ];
+    const pianoShapes = [
+      [24, 24 + turn, 24, 24 + answer],
+      [24, 24, 24 + answer, 24 + turn],
+      [24 + turn, 24 + turn, 24, 24 + answer],
+      [24 + answer, 24, 24 + turn, 24]
+    ];
+    const bassTurn = randomChoice([1, 3, 5, 6]);
+    const bassAnswer = randomChoice([-1, 0, 1, 6, 10]);
+    const bassShapes = [
+      [0, 0, bassTurn, bassAnswer],
+      [0, bassTurn, 0, bassAnswer],
+      [0, 0, bassAnswer, bassTurn],
+      [bassTurn, bassTurn, 0, bassAnswer]
+    ];
+    const guitarShapes = [
+      [0, guitarTurn, guitarTension, guitarAnswer],
+      [0, 0, guitarTurn, guitarTension],
+      [0, guitarTension, 0, guitarAnswer],
+      [guitarTurn, guitarTurn, 0, guitarTension]
+    ];
+    const drumPatterns = [
+      ['KICK', 'SNARE', 'KICK', 'SNARE'],
+      ['KICK', 'KICK', 'SNARE', 'KICK'],
+      ['KICK', 'SNARE', 'KICK', 'KICK'],
+      ['KICK', 'KICK', 'KICK', 'SNARE']
+    ];
+    const division = Math.max(1, Number($('division').value));
+    const phraseCount = Math.max(1, Math.ceil(state.length / division / 4));
+    const density = $('randomDensity').value;
+    const forms = makePhraseForms(phraseCount, composer);
+    const progression = makeProgression(phraseCount, composer);
+    const baseCells = {
+      lead: leadShapes[shape],
+      piano: pianoShapes[(shape + Math.floor(Math.random() * 3)) % pianoShapes.length],
+      bass: bassShapes[(shape + Math.floor(Math.random() * 3)) % bassShapes.length],
+      guitar: guitarShapes[(shape + Math.floor(Math.random() * 3)) % guitarShapes.length]
+    };
+    const plans = {};
+    Object.keys(baseCells).forEach((instrument) => {
+      plans[instrument] = buildInstrumentPlan(
+        instrument,
+        density,
+        phraseCount,
+        forms,
+        progression,
+        baseCells[instrument],
+        composer
+      );
+    });
+    const baseDrumPattern = randomChoice(drumPatterns);
+    const drumPlans = forms.map((form) => {
+      if (form === 'statement' || form === 'return') return baseDrumPattern.slice();
+      return form === 'cadence'
+        ? ['KICK', 'SNARE', 'KICK', 'SNARE']
+        : chooseDifferent(drumPatterns, baseDrumPattern).slice();
+    });
+    const eventPlans = {};
+    if (archetype === 'riff' || archetype === 'sequence') {
+      Object.keys(baseCells).forEach((instrument) => {
+        eventPlans[instrument] = archetype === 'riff'
+          ? makeRiffEvents(instrument, division, composer, density)
+          : makeSequenceEvents(instrument, division, composer, density);
+      });
+    }
     return {
       root: root === undefined ? randomChoice([36, 38, 40, 41, 43, 45]) : root,
-      density: $('randomDensity').value,
-      leadPattern: [24, 24, 24 + turn, 24 + answer],
-      pianoPattern: [24, 24 + turn, 24, 24 + answer],
-      bassPattern: [0, 0, randomChoice([1, 3, 6]), randomChoice([0, 1, 6, 10])],
-      guitarPattern: [
-        0,
-        randomChoice([1, 3, 5]),
-        randomChoice([6, 7, 10]),
-        randomChoice([-1, 1, 3, 5])
-      ],
-      development: randomChoice([1, 3]),
-      counterDevelopment: randomChoice([-1, 1, 3])
+      density,
+      archetype,
+      composer,
+      forms,
+      progression,
+      plans,
+      eventPlans,
+      drumPlans,
+      hatOffset: Math.floor(Math.random() * 2),
+      syncopation: randomChoice([
+        [false, false, false, false],
+        [false, true, false, false],
+        [false, false, false, true],
+        [false, true, false, true]
+      ])
     };
   }
 
@@ -1541,93 +2042,163 @@
     const division = Math.max(1, Number($('division').value));
     clearTrack(track);
 
+    if (track.instrument !== 'drums' && context.eventPlans[track.instrument]) {
+      context.eventPlans[track.instrument].forEach((event) => {
+        if (event.step < 0 || event.step >= state.length) return;
+        const step = track.steps[event.step];
+        step.note = midiToNote(context.root + event.interval);
+        step.accent = event.accent;
+        step.hold = Math.max(1, Math.min(16, event.hold));
+      });
+      return;
+    }
+
     if (track.instrument === 'drums') {
+      if (context.archetype === 'riff') {
+        for (let start = 0, beat = 0; start < state.length; start += division, beat++) {
+          const phraseBeat = beat % 4;
+          track.steps[start].note = phraseBeat === 1 || phraseBeat === 3
+            ? 'SNARE'
+            : 'KICK';
+          track.steps[start].accent = beat % 4 === 0;
+          if (division > 1 && (context.density !== 'sparse' || beat % 2 === 0)) {
+            const hatStep = start + Math.max(1, Math.floor(division / 2));
+            if (hatStep < state.length) track.steps[hatStep].note = 'HAT';
+          }
+          if (phraseBeat === 3 && beat % 8 === 7 && start + division - 1 < state.length) {
+            track.steps[start + division - 1].note = 'TOM';
+          }
+        }
+        return;
+      }
+      if (context.archetype === 'sequence') {
+        for (let start = 0, beat = 0; start < state.length; start += division, beat++) {
+          if (beat % 4 === 0) {
+            track.steps[start].note = 'KICK';
+            track.steps[start].accent = true;
+          } else if (beat % 4 === 2) {
+            track.steps[start].note = 'SNARE';
+          } else if (context.density === 'driving') {
+            track.steps[start].note = 'HAT';
+          }
+        }
+        return;
+      }
       for (let start = 0, beat = 0; start < state.length; start += division, beat++) {
         const phrase = Math.floor(beat / 4);
         const phraseBeat = beat % 4;
         const downbeat = track.steps[start];
-        downbeat.note = beat % 4 === 1 || beat % 4 === 3 ? 'SNARE' : 'KICK';
+        const drumPattern = context.drumPlans[phrase] || context.drumPlans[0];
+        downbeat.note = drumPattern[phraseBeat];
         downbeat.accent = beat % 4 === 0;
         const addHat = context.density === 'driving' ||
-          (context.density === 'steady' && phraseBeat % 2 === 0);
+          (context.density === 'steady' && (phraseBeat + context.hatOffset) % 2 === 0);
         if (addHat && division > 1 && start + Math.floor(division / 2) < state.length) {
           track.steps[start + Math.floor(division / 2)].note = 'HAT';
         }
         if (phraseBeat === 3 && phrase % 2 === 1 && start + division - 1 < state.length) {
-          track.steps[start + division - 1].note = phrase % 4 === 1 ? 'OPEN_HAT' : 'TOM';
-        } else if (context.density === 'driving' && division > 2 && start + division - 1 < state.length) {
+          track.steps[start + division - 1].note = context.forms[phrase] === 'cadence'
+            ? 'TOM'
+            : 'OPEN_HAT';
+        } else if (context.density === 'driving' && division > 2 &&
+          phraseBeat !== 3 && start + division - 1 < state.length) {
           track.steps[start + division - 1].note = 'KICK';
         }
       }
       return;
     }
 
-    const pattern = track.instrument === 'lead'
-      ? context.leadPattern
-      : track.instrument === 'piano'
-        ? context.pianoPattern
-      : track.instrument === 'bass'
-        ? context.bassPattern
-        : context.guitarPattern;
-    const masks = {
-      sparse: {
-        lead: [true, false, true, true],
-        piano: [true, false, true, true],
-        bass: [true, true, false, true],
-        guitar: [true, false, true, true]
-      },
-      steady: {
-        lead: [true, true, true, true],
-        piano: [true, true, true, true],
-        bass: [true, true, true, true],
-        guitar: [true, true, true, true]
-      },
-      driving: {
-        lead: [true, true, true, true],
-        piano: [true, true, true, true],
-        bass: [true, true, true, true],
-        guitar: [true, true, true, true]
-      }
-    };
-    const mask = masks[context.density][track.instrument];
+    const plan = context.plans[track.instrument] || context.plans.lead;
 
     for (let start = 0, beat = 0; start < state.length; start += division, beat++) {
       const phrase = Math.floor(beat / 4);
       const phraseBeat = beat % 4;
-      if (!mask[phraseBeat]) continue;
-      let interval = pattern[phraseBeat];
-      if (phrase % 2 === 1 && phraseBeat === 3) interval += context.development;
-      if (phrase % 4 === 3 && phraseBeat === 2) interval += context.counterDevelopment;
+      const phrasePitches = plan.pitches[phrase] || plan.pitches[0];
+      const phraseRhythm = plan.rhythms[phrase] || plan.rhythms[0];
+      if (!phraseRhythm[phraseBeat]) continue;
+      const interval = phrasePitches[phraseBeat];
       const midi = context.root + interval;
-      const first = track.steps[start];
+      const attackIndex = division >= 4 && context.syncopation[phraseBeat]
+        ? start + 1
+        : start;
+      const first = track.steps[attackIndex];
       first.note = midiToNote(midi);
       first.accent = phraseBeat === 0;
-      first.hold = track.instrument === 'guitar'
-        ? Math.min(4, division)
-        : track.instrument === 'piano' ? Math.min(2, division) : 1;
+      first.hold = track.instrument === 'piano' ? Math.min(2, division) : 1;
 
-      const repeatIndex = start + 1;
-      const repeat = track.instrument === 'guitar'
-        ? context.density === 'driving' || phraseBeat % 2 === 0
-        : context.density !== 'sparse' || phraseBeat === 0 || phraseBeat === 3;
-      if (repeat && division > 1 && repeatIndex < state.length) {
+      const repeatIndex = attackIndex + 1;
+      if (plan.repeats[phrase][phraseBeat] &&
+        repeatIndex < start + division && repeatIndex < state.length) {
         track.steps[repeatIndex].note = first.note;
         track.steps[repeatIndex].accent = false;
         track.steps[repeatIndex].hold = 1;
       }
-      if (context.density === 'driving' && division > 2 && start + 2 < state.length) {
-        track.steps[start + 2].note = first.note;
-        track.steps[start + 2].hold = 1;
+      const driveIndex = attackIndex + 2;
+      if (plan.thirdStrikes[phrase][phraseBeat] &&
+        driveIndex < start + division && driveIndex < state.length) {
+        track.steps[driveIndex].note = first.note;
+        track.steps[driveIndex].hold = 1;
       }
+    }
+
+    if (division > 1) {
+      plan.chromaticTargets.forEach((targetBeat, phrase) => {
+        if (targetBeat === null) return;
+        const targetIndex = (phrase * 4 + targetBeat) * division;
+        const approachIndex = targetIndex - 1;
+        if (targetIndex >= state.length || approachIndex < 0 ||
+          track.steps[approachIndex].note) return;
+        const targetNote = track.steps[targetIndex].note;
+        const targetMidi = targetNote && noteToMidi(targetNote);
+        if (targetMidi === null || targetMidi === false || targetMidi === undefined) return;
+        track.steps[approachIndex].note = midiToNote(targetMidi + randomChoice([-1, 1]));
+        track.steps[approachIndex].accent = false;
+        track.steps[approachIndex].hold = 1;
+      });
+    }
+  }
+
+  const BANK_CONTROL_BY_INSTRUMENT = {
+    lead: 'voice',
+    guitar: 'guitarVoice',
+    bass: 'bassVoice',
+    piano: 'pianoVoice',
+    drums: 'drumsVoice'
+  };
+
+  function randomizeBankVoice(instrument) {
+    const select = $(BANK_CONTROL_BY_INSTRUMENT[instrument]);
+    if (!select) return;
+    const alternatives = Array.from(select.options)
+      .map((option) => option.value)
+      .filter((value) => value !== select.value);
+    if (alternatives.length) select.value = randomChoice(alternatives);
+  }
+
+  function applyArchetypeSound(context) {
+    if (context.archetype === 'riff') {
+      $('gate').value = String(Math.round(48 + context.composer.sustain * 28));
+      $('echo').value = String(Math.round(4 + context.composer.sustain * 12));
+      $('echoRate').value = '0.5';
+    } else if (context.archetype === 'sequence') {
+      $('gate').value = String(Math.round(58 + context.composer.sustain * 32));
+      $('echo').value = String(Math.round(8 + context.composer.sustain * 22));
+      $('echoRate').value = randomChoice(['0.25', '0.5', '0.75']);
     }
   }
 
   function randomizeTrack(trackIndex) {
     ensureStepCount(state.length);
-    randomizeTrackData(trackIndex, makeRandomContext(inferCurrentRoot()));
+    const track = state.tracks[trackIndex];
+    const context = makeRandomContext(inferCurrentRoot());
+    randomizeTrackData(trackIndex, context);
+    randomizeBankVoice(track.instrument);
     syncSteps();
-    updateConfigPreview();
-    setStatus('Randomized ' + state.tracks[trackIndex].name, state.looping);
+    updateReadouts();
+    setStatus(
+      'Randomized ' + track.name + ' · ' + context.archetype + ' writing',
+      state.looping
+    );
   }
 
   function randomizeAll() {
@@ -1636,9 +2207,15 @@
     state.tracks.forEach((track, trackIndex) => {
       randomizeTrackData(trackIndex, context);
     });
+    applyArchetypeSound(context);
+    Object.keys(BANK_CONTROL_BY_INSTRUMENT).forEach(randomizeBankVoice);
     syncSteps();
-    updateConfigPreview();
-    setStatus('Developed one motif across ' + state.tracks.length + ' layers', state.looping);
+    updateReadouts();
+    setStatus(
+      'Generated ' + context.archetype + ' motif across ' +
+        state.tracks.length + ' layers',
+      state.looping
+    );
   }
 
   function midiToNote(midi) {
@@ -1714,6 +2291,7 @@
   buildDrumPicker();
   buildSteps();
   loadPreset('grave');
+  updateComposerReadouts();
 
   controlIds.forEach((id) => {
     $(id).addEventListener('input', () => {
@@ -1730,6 +2308,18 @@
 
   varianceControlIds.forEach((id) => {
     $(id).addEventListener('input', saveVarianceControls);
+  });
+
+  $('composerPreset').addEventListener('change', () => {
+    if ($('composerPreset').value !== 'custom') {
+      applyComposerPreset($('composerPreset').value);
+    }
+  });
+  composerControlIds.forEach((id) => {
+    $(id).addEventListener('input', () => {
+      $('composerPreset').value = 'custom';
+      updateComposerReadouts();
+    });
   });
 
   $('length').addEventListener('change', () => setLength($('length').value));
