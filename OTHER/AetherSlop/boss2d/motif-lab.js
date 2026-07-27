@@ -230,6 +230,151 @@
         cutoff: 2550, bass: 40, noise: 0, echo: 0, echoRate: 1
       }
     },
+    townBase1: {
+      name: '[TOWN] base1',
+      length: 32,
+      layerOrder: [1, 2, 3, 4],
+      layers: [
+        arrangedLayer('lead', 32, [
+          [0, 'D3'], [2, 'D3'], [6, 'G#2'], [8, 'A2'], [10, 'A#2'],
+          [14, 'A#2'], [18, 'A#2'], [20, 'A#2'], [24, 'F3'],
+          [26, 'D#3'], [30, 'D3']
+        ], [0], [[2, 2], [10, 2], [14, 2], [20, 2], [26, 2]], 82, {
+          cycleTranspose: 'uneasy', noteVariance: 0, varianceRange: 1, dropout: 0
+        }),
+        arrangedLayer('guitar', 32, [
+          [0, 'D2'], [2, 'D2'], [4, 'G1'], [8, 'A1'], [10, 'A1'],
+          [14, 'A1'], [18, 'B1'], [20, 'A1'], [22, 'G#2'],
+          [26, 'G2'], [30, 'F2']
+        ], [0], [[4, 2], [10, 2], [14, 2], [22, 2], [26, 2]], 82),
+        arrangedLayer('bass', 32, [
+          [0, 'D2'], [2, 'D2'], [4, 'F2'], [8, 'F#2'], [10, 'G2'],
+          [12, 'F#2'], [18, 'F#2'], [20, 'E2'], [22, 'A1'],
+          [26, 'C2'], [30, 'D2']
+        ], [0], [[4, 2], [12, 4], [22, 2], [26, 2]], 86),
+        arrangedLayer('drums', 32, [
+          [0, 'KICK'], [2, 'HAT'], [4, 'SNARE'], [6, 'HAT'],
+          [8, 'KICK'], [10, 'HAT'], [12, 'SNARE'], [14, 'HAT'],
+          [16, 'KICK'], [18, 'HAT'], [20, 'SNARE'], [22, 'HAT'],
+          [24, 'KICK'], [26, 'HAT'], [28, 'SNARE'], [30, 'HAT'], [31, 'TOM']
+        ], [0, 16], [], 76)
+      ],
+      settings: {
+        bpm: 201, division: 4, gate: 76, voice: 'octavePulse',
+        guitarVoice: 'palmChug', bassVoice: 'hollowBass',
+        pianoVoice: 'toyPiano', drumsVoice: 'hollow', transpose: 0,
+        bits: 9, drive: 1, cutoff: 6250, bass: 39, noise: 0,
+        echo: 16, echoRate: 0.5
+      }
+    },
+    bossWip1: {
+      name: '[BOSS] wip1',
+      length: 64,
+      layerOrder: [1, 2, 3, 4],
+      layers: [
+        {
+          instrument: 'lead',
+          volume: 82,
+          notes: Array.from({ length: 64 }, (_, index) =>
+            ['C5', 'C5', 'F#5', 'D#5'][index % 4]),
+          accents: accentTimeline(64, Array.from({ length: 16 }, (_, index) => index * 4)),
+          holds: Array(64).fill(1),
+          variance: { cycleTranspose: 'off', noteVariance: 0, varianceRange: 1, dropout: 0 }
+        },
+        {
+          instrument: 'guitar',
+          volume: 82,
+          notes: Array.from({ length: 64 }, (_, index) =>
+            ['C3', 'C3', 'D2', 'D#3'][index % 4]),
+          accents: accentTimeline(64, Array.from({ length: 16 }, (_, index) => index * 4)),
+          holds: Array(64).fill(1),
+          variance: { cycleTranspose: 'off', noteVariance: 0, varianceRange: 1, dropout: 0 }
+        },
+        {
+          instrument: 'piano',
+          volume: 100,
+          notes: Array.from({ length: 64 }, (_, index) =>
+            ['C4', 'C4', 'C5', 'A#3'][index % 4]),
+          accents: accentTimeline(64, Array.from({ length: 16 }, (_, index) => index * 4)),
+          holds: Array(64).fill(1),
+          variance: { cycleTranspose: 'off', noteVariance: 0, varianceRange: 1, dropout: 0 }
+        },
+        {
+          instrument: 'drums',
+          volume: 100,
+          notes: Array.from({ length: 64 }, (_, index) =>
+            ['KICK', null, null, null, 'SNARE', null, null, null][index % 8]),
+          accents: accentTimeline(64, Array.from({ length: 8 }, (_, index) => index * 8)),
+          holds: Array(64).fill(1),
+          variance: { cycleTranspose: 'off', noteVariance: 0, varianceRange: 1, dropout: 0 }
+        }
+      ],
+      settings: {
+        bpm: 136, division: 2, gate: 90, voice: 'octavePulse',
+        guitarVoice: 'doomStack', bassVoice: 'pulseBass',
+        pianoVoice: 'glassPiano', drumsVoice: 'machine', transpose: -12,
+        bits: 12, drive: 20, cutoff: 5150, bass: 21, noise: 7,
+        echo: 10, echoRate: 0.75
+      }
+    },
+    otherUneasy: {
+      name: '[OTHER] uneasy',
+      length: 64,
+      layerOrder: [1, 2, 3, 4],
+      layers: [
+        {
+          instrument: 'bass', volume: 76,
+          notes: [
+            'G2', 'F#2', null, 'A#2', 'A2', 'A2', null, 'A#2', null, 'A#2', 'A#2', null, 'A#2', 'G#2', null, 'G2',
+            'A#2', 'A2', null, 'A#2', 'A2', 'A2', null, 'A#2', null, 'A#2', 'A#2', null, 'A#2', 'G#2', null, 'G2',
+            'F2', 'E2', null, 'A#2', 'A2', 'A2', null, 'A#2', null, 'A#2', 'A#2', null, 'A#2', 'G#2', null, 'G2',
+            'F#2', 'F2', null, 'A#2', 'A2', 'A2', null, 'A#2', null, 'A#2', 'A#2', null, 'A#2', 'G#2', null, 'G2'
+          ],
+          accents: accentTimeline(64, [0, 16, 32, 48]),
+          holds: Array(64).fill(1)
+        },
+        {
+          instrument: 'guitar', volume: 58,
+          notes: [
+            'G2', 'F#2', 'D3', 'E3', null, 'F#3', 'E3', null, 'F3', 'E3', null, 'C#3', null, 'G2', 'A#2', 'C3',
+            'A#2', 'A2', 'D3', 'E3', null, 'F#3', 'E3', null, 'F3', 'E3', null, 'C#3', null, 'G2', 'A#2', 'C3',
+            'F2', 'E2', 'D3', 'E3', null, 'F#3', 'E3', null, 'F3', 'E3', null, 'C#3', null, 'G2', 'A#2', 'C3',
+            'F#2', 'F2', 'D3', 'E3', null, 'F#3', 'E3', null, 'F3', 'E3', null, 'C#3', null, 'G2', 'A#2', 'C3'
+          ],
+          accents: accentTimeline(64, [0, 16, 32, 48]),
+          holds: Array(64).fill(1)
+        },
+        {
+          instrument: 'piano', volume: 100,
+          notes: [
+            'G4', 'A#4', 'C5', 'A4', null, 'A4', 'A4', null, 'A4', 'A4', null, 'A#4', null, 'C#5', 'C5', 'A#4',
+            'F4', 'G#4', 'C5', 'A4', null, 'A4', 'A4', null, 'A4', 'A4', null, 'A#4', null, 'C#5', 'C5', 'A#4',
+            'D4', 'F4', 'C5', 'A4', null, 'A4', 'A4', null, 'A4', 'A4', null, 'A#4', null, 'C#5', 'C5', 'A#4',
+            'F#4', 'A4', 'C5', 'A4', null, 'A4', 'A4', null, 'A4', 'A4', null, 'A#4', null, 'C#5', 'C5', 'A#4'
+          ],
+          accents: accentTimeline(64, [0, 16, 32, 48]),
+          holds: Array(64).fill(1)
+        },
+        {
+          instrument: 'drums', volume: 48, muted: true,
+          notes: [
+            'KICK', 'HAT', 'SNARE', 'KICK', null, 'HAT', 'KICK', 'SNARE', 'KICK', 'HAT', 'SNARE', null, 'KICK', 'KICK', 'SNARE', 'OPEN_HAT',
+            'KICK', null, 'SNARE', 'KICK', null, 'HAT', 'KICK', 'SNARE', 'KICK', 'HAT', 'SNARE', null, 'KICK', 'KICK', 'SNARE', null,
+            'CRASH', 'HAT', 'SNARE', 'KICK', null, null, 'KICK', 'SNARE', 'KICK', 'HAT', 'SNARE', null, 'KICK', 'KICK', 'SNARE', null,
+            'KICK', 'HAT', 'SNARE', 'KICK', null, 'HAT', 'KICK', 'SNARE', 'KICK', 'HAT', 'SNARE', null, 'KICK', 'KICK', 'TOM', 'SNARE'
+          ],
+          accents: accentTimeline(64, [0, 16, 32, 48]),
+          holds: Array(64).fill(1)
+        }
+      ],
+      settings: {
+        bpm: 240, division: 2, gate: 90, voice: 'sineBell',
+        guitarVoice: 'octaveGuitar', bassVoice: 'hollowBass',
+        pianoVoice: 'cleanPiano', drumsVoice: 'machine', transpose: -6,
+        bits: 8, drive: 5, cutoff: 3900, bass: 20, noise: 0,
+        echo: 20, echoRate: 0.5
+      }
+    },
     redWake: {
       name: 'Red Wake Protocol',
       length: 16,
@@ -1018,7 +1163,14 @@
     ensureAudioTrackGains();
     const now = audio.context.currentTime;
     state.tracks.forEach((track, index) => {
-      const level = track.muted ? 0 : track.volume / 100;
+      const instrumentTrim = {
+        lead: 1,
+        guitar: 0.9,
+        bass: 1.05,
+        piano: 0.94,
+        drums: 1.28
+      }[track.instrument] || 1;
+      const level = track.muted ? 0 : track.volume / 100 * instrumentTrim;
       audio.trackGains[index].gain.setTargetAtTime(level, now, 0.008);
     });
   }
@@ -1061,6 +1213,27 @@
   }
 
   function scheduleLeadVoice(context, destination, voice, frequency, time, duration, velocity) {
+    if (voice === 'cleanPulse') {
+      scheduleOscillator(context, destination, 'pulse25', frequency, time, duration, velocity * 0.82);
+      scheduleOscillator(context, destination, 'sine', frequency * 2, time, duration * 0.86, velocity * 0.16);
+      return;
+    }
+    if (voice === 'softSquare') {
+      scheduleOscillator(context, destination, 'square', frequency, time, duration, velocity * 0.54);
+      scheduleOscillator(context, destination, 'triangle', frequency, time, duration, velocity * 0.42);
+      return;
+    }
+    if (voice === 'brightChip') {
+      scheduleOscillator(context, destination, 'pulse37', frequency, time, duration, velocity * 0.78);
+      scheduleOscillator(context, destination, 'sine', frequency * 2, time, duration * 0.72, velocity * 0.22);
+      return;
+    }
+    if (voice === 'sineBell') {
+      scheduleOscillator(context, destination, 'sine', frequency, time, duration, velocity * 0.82);
+      scheduleOscillator(context, destination, 'sine', frequency * 2.01, time, duration * 0.78, velocity * 0.28);
+      scheduleOscillator(context, destination, 'sine', frequency * 3.99, time, duration * 0.52, velocity * 0.1);
+      return;
+    }
     if (voice === 'dualPulse') {
       scheduleOscillator(context, destination, 'pulse25', frequency, time, duration, velocity * 0.56, { detune: -7 });
       scheduleOscillator(context, destination, 'pulse18', frequency, time, duration, velocity * 0.56, { detune: 7 });
@@ -1112,6 +1285,24 @@
 
   function scheduleGuitar(destination, frequency, time, duration, velocity, voice) {
     const context = audio.context;
+    if (voice === 'cleanElectric') {
+      scheduleOscillator(context, destination, 'triangle', frequency, time, duration, velocity * 0.82);
+      scheduleOscillator(context, destination, 'sine', frequency * 2, time, duration * 0.82, velocity * 0.28);
+      scheduleOscillator(context, destination, 'sine', frequency * 3, time, duration * 0.58, velocity * 0.12);
+      return;
+    }
+    if (voice === 'powerChord') {
+      scheduleOscillator(context, destination, 'sawtooth', frequency, time, duration, velocity * 0.52, { detune: -3 });
+      scheduleOscillator(context, destination, 'square', frequency * 1.4983, time, duration * 0.92, velocity * 0.38, { detune: 3 });
+      scheduleOscillator(context, destination, 'triangle', frequency, time, duration, velocity * 0.3);
+      return;
+    }
+    if (voice === 'mutedPick') {
+      const pluck = Math.min(duration, 0.15);
+      scheduleOscillator(context, destination, 'triangle', frequency, time, pluck, velocity * 0.9);
+      scheduleOscillator(context, destination, 'pulse12', frequency * 2, time, pluck * 0.58, velocity * 0.32);
+      return;
+    }
     if (voice === 'palmChug') {
       scheduleOscillator(context, destination, 'sawtooth', frequency, time, duration * 0.62, velocity * 0.7);
       scheduleOscillator(context, destination, 'square', frequency * 2, time, duration * 0.42, velocity * 0.2);
@@ -1136,30 +1327,69 @@
 
   function scheduleBass(destination, frequency, time, duration, velocity, voice) {
     const context = audio.context;
+    const tone = context.createBiquadFilter();
+    const cutoffByVoice = {
+      cleanSub: 1200,
+      punchBass: 1900,
+      roundBass: 1050,
+      pickedBass: 2600,
+      deepSub: 1250,
+      growlBass: 1800,
+      pulseBass: 2100,
+      hollowBass: 950
+    };
+    tone.type = 'lowpass';
+    tone.frequency.value = cutoffByVoice[voice] || 1400;
+    tone.Q.value = voice === 'growlBass' ? 1.1 : 0.65;
+    tone.connect(destination);
+    window.setTimeout(() => tone.disconnect(), Math.max(
+      0,
+      (time + duration + 0.08 - context.currentTime) * 1000
+    ));
+
+    if (voice === 'cleanSub') {
+      scheduleOscillator(context, tone, 'sine', frequency, time, duration, velocity * 1.1);
+      scheduleOscillator(context, tone, 'triangle', frequency * 2, time, duration * 0.9, velocity * 0.34);
+      return;
+    }
+    if (voice === 'punchBass') {
+      scheduleOscillator(context, tone, 'sine', frequency, time, duration, velocity * 0.82);
+      scheduleOscillator(context, tone, 'triangle', frequency, time, duration, velocity * 0.72);
+      scheduleOscillator(context, tone, 'square', frequency * 2, time, Math.min(duration, 0.13), velocity * 0.5);
+      return;
+    }
+    if (voice === 'roundBass') {
+      scheduleOscillator(context, tone, 'sine', frequency, time, duration, velocity * 0.94);
+      scheduleOscillator(context, tone, 'triangle', frequency * 2, time, duration * 0.88, velocity * 0.4);
+      return;
+    }
+    if (voice === 'pickedBass') {
+      scheduleOscillator(context, tone, 'triangle', frequency, time, duration, velocity * 0.88);
+      scheduleOscillator(context, tone, 'square', frequency * 2, time, Math.min(duration, 0.11), velocity * 0.58);
+      scheduleOscillator(context, tone, 'sine', frequency, time, duration, velocity * 0.32);
+      return;
+    }
     if (voice === 'growlBass') {
-      scheduleOscillator(context, destination, 'sawtooth', frequency, time, duration, velocity * 1.05, { detune: -5 });
-      scheduleOscillator(context, destination, 'square', frequency, time, duration * 0.94, velocity * 0.72, { detune: 5 });
-      scheduleOscillator(context, destination, 'triangle', frequency / 2, time, duration, velocity * 0.5);
+      scheduleOscillator(context, tone, 'sawtooth', frequency, time, duration, velocity * 0.72, { detune: -4 });
+      scheduleOscillator(context, tone, 'square', frequency, time, duration * 0.92, velocity * 0.38, { detune: 4 });
+      scheduleOscillator(context, tone, 'sine', frequency, time, duration, velocity * 0.45);
       return;
     }
     if (voice === 'pulseBass') {
-      scheduleOscillator(context, destination, 'pulse25', frequency, time, duration, velocity * 1.2);
-      scheduleOscillator(context, destination, 'pulse12', frequency * 2, time, duration * 0.82, velocity * 0.5);
-      scheduleOscillator(context, destination, 'triangle', frequency / 2, time, duration, velocity * 0.38);
+      scheduleOscillator(context, tone, 'pulse25', frequency, time, duration, velocity * 0.82);
+      scheduleOscillator(context, tone, 'triangle', frequency, time, duration, velocity * 0.48);
+      scheduleOscillator(context, tone, 'pulse12', frequency * 2, time, duration * 0.76, velocity * 0.24);
       return;
     }
     if (voice === 'hollowBass') {
-      scheduleOscillator(context, destination, 'sine', frequency / 2, time, duration, velocity * 0.82);
-      scheduleOscillator(context, destination, 'triangle', frequency, time, duration, velocity * 1.0);
-      scheduleOscillator(context, destination, 'sine', frequency * 2, time, duration * 0.9, velocity * 0.32);
+      scheduleOscillator(context, tone, 'sine', frequency, time, duration, velocity * 0.9);
+      scheduleOscillator(context, tone, 'triangle', frequency * 2, time, duration * 0.88, velocity * 0.42);
+      scheduleOscillator(context, tone, 'sine', frequency * 3, time, duration * 0.72, velocity * 0.16);
       return;
     }
-    // A strong fundamental plus audible upper harmonics: still deep on
-    // headphones, but present on small speakers that cannot reproduce the sub.
-    scheduleOscillator(context, destination, 'sine', frequency / 2, time, duration, velocity * 0.72);
-    scheduleOscillator(context, destination, 'triangle', frequency, time, duration, velocity * 1.3);
-    scheduleOscillator(context, destination, 'square', frequency, time, duration * 0.88, velocity * 0.46);
-    scheduleOscillator(context, destination, 'pulse12', frequency * 2, time, duration * 0.76, velocity * 0.34);
+    scheduleOscillator(context, tone, 'sine', frequency, time, duration, velocity * 1.0);
+    scheduleOscillator(context, tone, 'triangle', frequency, time, duration, velocity * 0.52);
+    scheduleOscillator(context, tone, 'square', frequency * 2, time, Math.min(duration, 0.14), velocity * 0.28);
   }
 
   function schedulePianoPartial(destination, type, frequency, time, duration, amount, detune) {
@@ -1179,6 +1409,23 @@
 
   function schedulePiano(destination, frequency, time, duration, velocity, voice) {
     const ring = Math.max(0.22, Math.min(1.4, duration * 1.8));
+    if (voice === 'cleanPiano') {
+      schedulePianoPartial(destination, 'triangle', frequency, time, ring * 1.08, velocity * 0.82);
+      schedulePianoPartial(destination, 'sine', frequency * 2, time, ring * 0.82, velocity * 0.3);
+      schedulePianoPartial(destination, 'sine', frequency * 3, time, ring * 0.55, velocity * 0.12);
+      return;
+    }
+    if (voice === 'brightPiano') {
+      schedulePianoPartial(destination, 'triangle', frequency, time, ring, velocity * 0.72);
+      schedulePianoPartial(destination, 'triangle', frequency * 2, time, ring * 0.72, velocity * 0.38);
+      schedulePianoPartial(destination, 'sine', frequency * 4, time, ring * 0.44, velocity * 0.16);
+      return;
+    }
+    if (voice === 'softPiano') {
+      schedulePianoPartial(destination, 'sine', frequency, time, ring * 1.12, velocity * 0.88);
+      schedulePianoPartial(destination, 'sine', frequency * 2, time, ring * 0.88, velocity * 0.2);
+      return;
+    }
     if (voice === 'toyPiano') {
       schedulePianoPartial(destination, 'square', frequency * 2, time, ring * 0.55, velocity * 0.72);
       schedulePianoPartial(destination, 'sine', frequency * 4.02, time, ring * 0.42, velocity * 0.34);
@@ -1204,36 +1451,101 @@
   function scheduleDrum(destination, drum, time, accent, voice) {
     const context = audio.context;
     const kit = {
-      machine: { gain: 1, pitch: 1, decay: 1, noise: 1 },
-      industrial: { gain: 1.08, pitch: 1.32, decay: 1.28, noise: 1.3 },
-      hollow: { gain: 0.94, pitch: 0.68, decay: 1.5, noise: 0.72 },
-      bitKit: { gain: 0.9, pitch: 1.7, decay: 0.62, noise: 0.9 }
-    }[voice] || { gain: 1, pitch: 1, decay: 1, noise: 1 };
+      machine: {
+        gain: 1.12, pitch: 1, decay: 0.92, noise: 1,
+        kick: 1.08, snare: 1.08, hat: 1
+      },
+      industrial: {
+        gain: 1.14, pitch: 1.24, decay: 1.18, noise: 1.25,
+        kick: 1.08, snare: 1.2, hat: 1.08
+      },
+      hollow: {
+        gain: 1.04, pitch: 0.7, decay: 1.42, noise: 0.82,
+        kick: 1.18, snare: 1.08, hat: 0.9
+      },
+      bitKit: {
+        gain: 1.02, pitch: 1.55, decay: 0.62, noise: 0.96,
+        kick: 1.05, snare: 1.06, hat: 1.05
+      },
+      studio: {
+        gain: 1.2, pitch: 0.94, decay: 0.86, noise: 0.96,
+        kick: 1.18, snare: 1.16, hat: 1.02
+      },
+      punchKit: {
+        gain: 1.3, pitch: 0.82, decay: 0.94, noise: 1.04,
+        kick: 1.42, snare: 1.28, hat: 1.08
+      },
+      subKit: {
+        gain: 1.3, pitch: 0.66, decay: 1.18, noise: 0.88,
+        kick: 1.55, snare: 1.14, hat: 0.94
+      },
+      arenaKit: {
+        gain: 1.22, pitch: 0.8, decay: 1.55, noise: 1.12,
+        kick: 1.32, snare: 1.4, hat: 1.05
+      }
+    }[voice] || {
+      gain: 1.12, pitch: 1, decay: 1, noise: 1,
+      kick: 1.1, snare: 1.1, hat: 1
+    };
     const strength = (accent ? 1.25 : 1) * kit.gain;
     if (drum === 'KICK') {
       const oscillator = context.createOscillator();
+      const body = context.createOscillator();
       const gain = context.createGain();
+      const bodyGain = context.createGain();
       oscillator.type = voice === 'industrial' ? 'triangle' : 'sine';
-      oscillator.frequency.setValueAtTime(165 * kit.pitch, time);
-      oscillator.frequency.exponentialRampToValueAtTime(43 * kit.pitch, time + 0.13 * kit.decay);
-      gain.gain.setValueAtTime(0.58 * strength, time);
-      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.2 * kit.decay);
+      body.type = 'triangle';
+      oscillator.frequency.setValueAtTime(150 * kit.pitch, time);
+      oscillator.frequency.exponentialRampToValueAtTime(39 * kit.pitch, time + 0.12 * kit.decay);
+      body.frequency.setValueAtTime(76 * kit.pitch, time);
+      body.frequency.exponentialRampToValueAtTime(48 * kit.pitch, time + 0.1 * kit.decay);
+      gain.gain.setValueAtTime(0.74 * strength * kit.kick, time);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.22 * kit.decay);
+      bodyGain.gain.setValueAtTime(0.24 * strength * kit.kick, time);
+      bodyGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.15 * kit.decay);
       oscillator.connect(gain).connect(destination);
+      body.connect(bodyGain).connect(destination);
       oscillator.start(time);
-      oscillator.stop(time + 0.22 * kit.decay);
+      body.start(time);
+      oscillator.stop(time + 0.24 * kit.decay);
+      body.stop(time + 0.18 * kit.decay);
+      scheduleFilteredNoise(
+        destination, time, 0.018, 0.13 * strength * kit.kick,
+        'highpass', 2200, 0.7
+      );
       return;
     }
     if (drum === 'SNARE') {
-      scheduleFilteredNoise(destination, time, 0.15 * kit.decay, 0.42 * strength * kit.noise, 'bandpass', 1800 * kit.pitch, 0.7);
-      scheduleOscillator(context, destination, 'triangle', 175 * kit.pitch, time, 0.09 * kit.decay, 0.13 * strength);
+      scheduleFilteredNoise(
+        destination, time, 0.17 * kit.decay,
+        0.58 * strength * kit.noise * kit.snare,
+        'bandpass', 1750 * kit.pitch, 0.72
+      );
+      scheduleFilteredNoise(
+        destination, time, 0.045 * kit.decay,
+        0.2 * strength * kit.snare,
+        'highpass', 4200, 0.65
+      );
+      scheduleOscillator(
+        context, destination, 'triangle', 178 * kit.pitch,
+        time, 0.11 * kit.decay, 0.2 * strength * kit.snare
+      );
       return;
     }
     if (drum === 'HAT') {
-      scheduleFilteredNoise(destination, time, 0.055 * kit.decay, 0.2 * strength * kit.noise, 'highpass', Math.min(7600, 5200 * kit.pitch), 0.8);
+      scheduleFilteredNoise(
+        destination, time, 0.06 * kit.decay,
+        0.27 * strength * kit.noise * kit.hat,
+        'highpass', Math.min(7800, 5200 * kit.pitch), 0.8
+      );
       return;
     }
     if (drum === 'OPEN_HAT') {
-      scheduleFilteredNoise(destination, time, 0.25 * kit.decay, 0.18 * strength * kit.noise, 'highpass', Math.min(7200, 4300 * kit.pitch), 0.7);
+      scheduleFilteredNoise(
+        destination, time, 0.3 * kit.decay,
+        0.24 * strength * kit.noise * kit.hat,
+        'highpass', Math.min(7400, 4300 * kit.pitch), 0.7
+      );
       return;
     }
     if (drum === 'TOM') {
@@ -1242,7 +1554,7 @@
       oscillator.type = 'triangle';
       oscillator.frequency.setValueAtTime(190 * kit.pitch, time);
       oscillator.frequency.exponentialRampToValueAtTime(82 * kit.pitch, time + 0.18 * kit.decay);
-      gain.gain.setValueAtTime(0.38 * strength, time);
+      gain.gain.setValueAtTime(0.5 * strength * kit.kick, time);
       gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.26 * kit.decay);
       oscillator.connect(gain).connect(destination);
       oscillator.start(time);
@@ -1250,7 +1562,11 @@
       return;
     }
     if (drum === 'CRASH') {
-      scheduleFilteredNoise(destination, time, 0.65 * kit.decay, 0.24 * strength * kit.noise, 'highpass', 2600 * kit.pitch, 0.5);
+      scheduleFilteredNoise(
+        destination, time, 0.72 * kit.decay,
+        0.34 * strength * kit.noise * kit.hat,
+        'highpass', 2500 * kit.pitch, 0.5
+      );
     }
   }
 
@@ -1500,6 +1816,7 @@
         const track = state.tracks[trackIndex];
         track.instrument = layer.instrument;
         track.volume = layer.volume;
+        track.muted = Boolean(layer.muted);
         track.variance = layer.variance
           ? { ...defaultVariance(), ...layer.variance }
           : defaultVariance();
@@ -1917,6 +2234,92 @@
     return events;
   }
 
+  function makeDrumEvents(division, density, archetype, settings) {
+    const grooveFamilies = [
+      {
+        kicks: [[0, 2], [0, 1.5, 2.75], [0, 0.75, 2, 2.5]],
+        snares: [[1, 3], [1, 3.5], [1, 2.75]]
+      },
+      {
+        kicks: [[0, 1.5, 3], [0, 2.5], [0, 0.5, 2.5, 3.5]],
+        snares: [[2], [1, 3], [1.5, 3]]
+      },
+      {
+        kicks: [[0, 0.5, 2, 2.5], [0, 1.75, 2, 3.5], [0, 1, 2.5]],
+        snares: [[1, 3], [1.5, 3], [1, 2.75]]
+      },
+      {
+        kicks: [[0, 1.25, 2.5], [0, 0.75, 2.25, 3.5], [0, 2, 3.25]],
+        snares: [[1.5, 3], [1, 2.5], [1.75, 3.5]]
+      }
+    ];
+    const family = randomChoice(grooveFamilies);
+    const baseKick = randomChoice(family.kicks);
+    const baseSnare = randomChoice(family.snares);
+    const alternateKick = chooseDifferent(family.kicks, baseKick);
+    const alternateSnare = chooseDifferent(family.snares, baseSnare);
+    const events = new Map();
+    const priority = { HAT: 1, OPEN_HAT: 2, KICK: 3, SNARE: 4, TOM: 5, CRASH: 6 };
+    const put = (step, note, accent) => {
+      const quantized = Math.round(step);
+      if (quantized < 0 || quantized >= state.length) return;
+      const previous = events.get(quantized);
+      if (!previous || priority[note] >= priority[previous.note]) {
+        events.set(quantized, { step: quantized, note, accent: Boolean(accent) });
+      }
+    };
+    const barSteps = Math.max(1, division * 4);
+    const barCount = Math.max(1, Math.ceil(state.length / barSteps));
+
+    for (let bar = 0; bar < barCount; bar++) {
+      const barStart = bar * barSteps;
+      const useAlternate = bar % 2 === 1 && chance(0.28 + settings.development * 0.52);
+      const kicks = useAlternate ? alternateKick : baseKick;
+      const snares = useAlternate ? alternateSnare : baseSnare;
+      kicks.forEach((beat, index) => {
+        put(barStart + beat * division, 'KICK', index === 0 && bar % 2 === 0);
+      });
+      snares.forEach((beat) => put(barStart + beat * division, 'SNARE', false));
+
+      const hatSpacing = density === 'driving'
+        ? 1
+        : density === 'steady' ? 2 : 4;
+      const hatOffset = division < 4 || density === 'sparse'
+        ? 0.5
+        : randomChoice([0.25, 0.5]);
+      for (let beat = hatOffset; beat < 4; beat += hatSpacing) {
+        const omissionChance = density === 'sparse'
+          ? 0.32
+          : density === 'steady' ? 0.22 : 0.08;
+        if (chance(omissionChance)) continue;
+        put(barStart + beat * division, 'HAT', false);
+      }
+
+      const fillBar = bar % 2 === 1 || bar === barCount - 1;
+      if (fillBar && chance(0.32 + settings.development * 0.42)) {
+        const fillStart = barStart + 3 * division;
+        const fillPatterns = division >= 4
+          ? [
+              [[0, 'SNARE'], [0.25, 'TOM'], [0.5, 'TOM'], [0.75, 'OPEN_HAT']],
+              [[0, 'KICK'], [0.25, 'KICK'], [0.5, 'SNARE'], [0.75, 'TOM']],
+              [[0, 'TOM'], [0.5, 'TOM'], [0.75, 'CRASH']]
+            ]
+          : [
+              [[0, 'SNARE'], [0.5, 'TOM']],
+              [[0, 'KICK'], [0.5, 'OPEN_HAT']],
+              [[0, 'TOM'], [0.5, 'SNARE']]
+            ];
+        randomChoice(fillPatterns).forEach(([beat, note]) => {
+          put(fillStart + beat * division, note, false);
+        });
+      }
+      if (bar > 0 && bar % 4 === 0 && archetype !== 'sequence') {
+        put(barStart, 'CRASH', true);
+      }
+    }
+    return Array.from(events.values()).sort((a, b) => a.step - b.step);
+  }
+
   function makeRandomContext(root) {
     const composer = getComposerSettings();
     const archetype = chooseArchetype(composer);
@@ -2005,6 +2408,7 @@
       progression,
       plans,
       eventPlans,
+      drumEvents: makeDrumEvents(division, density, archetype, composer),
       drumPlans,
       hatOffset: Math.floor(Math.random() * 2),
       syncopation: randomChoice([
@@ -2049,6 +2453,16 @@
         step.note = midiToNote(context.root + event.interval);
         step.accent = event.accent;
         step.hold = Math.max(1, Math.min(16, event.hold));
+      });
+      return;
+    }
+
+    if (track.instrument === 'drums' && context.drumEvents) {
+      context.drumEvents.forEach((event) => {
+        if (event.step < 0 || event.step >= state.length) return;
+        track.steps[event.step].note = event.note;
+        track.steps[event.step].accent = event.accent;
+        track.steps[event.step].hold = 1;
       });
       return;
     }
