@@ -190,6 +190,7 @@
 
     .track-label {
       z-index: 6;
+      grid-row: 1 / 3;
       display: grid;
       align-content: center;
       gap: 5px;
@@ -209,6 +210,40 @@
     .track-clear { color: #e9a0a6; border-color: #63303a; }
     .track-volume { display: grid; grid-template-columns: 1fr 31px; gap: 4px; align-items: center; color: var(--dim); font-size: 9px; }
     .track-volume input { min-width: 0; }
+    .track-sound-strip {
+      grid-column: 2 / -1;
+      grid-row: 2;
+      position: sticky;
+      left: 180px;
+      z-index: 5;
+      display: flex;
+      align-items: end;
+      gap: 12px;
+      width: var(--track-sound-width, 760px);
+      max-width: var(--track-sound-width, 760px);
+      min-height: 66px;
+      padding: 8px 10px 10px;
+      overflow-x: auto;
+      box-sizing: border-box;
+      border-top: 1px solid #25131b;
+      background: linear-gradient(90deg, #0b0609, #070407);
+      scrollbar-color: #5a2430 #080408;
+      scrollbar-width: thin;
+    }
+    .track-sound-control {
+      flex: 0 0 132px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 7px;
+      align-items: center;
+      color: #9d7782;
+      font-size: 9px;
+    }
+    .track-sound-control input,
+    .track-sound-control select { grid-column: 1 / -1; min-width: 0; }
+    .track-sound-control select { height: 25px; padding: 2px 5px; font-size: 9px; }
+    .track-sound-control output { color: #f0c5cd; font-variant-numeric: tabular-nums; }
+    .legacy-global-sound { display: none; }
 
     .step {
       position: relative;
@@ -528,35 +563,35 @@
             <option value="arenaKit">Arena kit — huge</option>
           </select>
         </div>
-        <div class="control">
+        <div class="control legacy-global-sound">
           <label for="transpose">Transpose <output id="transposeOut">+0</output></label>
           <input id="transpose" type="range" min="-12" max="12" value="0" step="1">
         </div>
-        <div class="control">
+        <div class="control legacy-global-sound">
           <label for="bits">Bit depth <output id="bitsOut">6-bit</output></label>
           <input id="bits" type="range" min="3" max="12" value="6" step="1">
         </div>
-        <div class="control">
+        <div class="control legacy-global-sound">
           <label for="drive">Overdrive <output id="driveOut">32%</output></label>
           <input id="drive" type="range" min="0" max="100" value="32" step="1">
         </div>
-        <div class="control">
+        <div class="control legacy-global-sound">
           <label for="cutoff">Dark filter <output id="cutoffOut">2600 Hz</output></label>
           <input id="cutoff" type="range" min="500" max="8000" value="2600" step="50">
         </div>
-        <div class="control">
+        <div class="control legacy-global-sound">
           <label for="bass">Triangle shadow <output id="bassOut">24%</output></label>
           <input id="bass" type="range" min="0" max="60" value="24" step="1">
         </div>
-        <div class="control">
+        <div class="control legacy-global-sound">
           <label for="noise">Noise strike <output id="noiseOut">11%</output></label>
           <input id="noise" type="range" min="0" max="40" value="11" step="1">
         </div>
-        <div class="control">
+        <div class="control legacy-global-sound">
           <label for="echo">Echo <output id="echoOut">18%</output></label>
           <input id="echo" type="range" min="0" max="55" value="18" step="1">
         </div>
-        <div class="control">
+        <div class="control legacy-global-sound">
           <label for="echoRate">Echo spacing</label>
           <select id="echoRate">
             <option value="0.25">1/4 beat</option>
@@ -587,6 +622,7 @@
           <option value="townBase1">[TOWN] base1 — 4 layers</option>
           <option value="bossWip1">[BOSS] wip1 — 4 layers</option>
           <option value="otherUneasy">[OTHER] uneasy — 4 layers</option>
+          <option value="otherEvil">[OTHER] evil — 4 layers</option>
           <option value="redWake">Red Wake Protocol — high BPM</option>
           <option value="glassSaint">Glass Saint Pursuit — high BPM</option>
           <option value="choirTeeth">The Choir Has Teeth — high BPM</option>

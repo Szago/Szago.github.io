@@ -375,6 +375,59 @@
         echo: 20, echoRate: 0.5
       }
     },
+    otherEvil: {
+      name: '[OTHER] evil',
+      length: 32,
+      layerOrder: [1, 2, 3, 4],
+      layers: [
+        {
+          instrument: 'lead', volume: 48,
+          notes: [
+            'D5', null, 'D5', null, 'A5', null, null, null,
+            'G#5', null, null, null, null, null, 'G5', null,
+            'F5', null, null, null, 'D5', null, null, null,
+            'D#5', null, 'D#5', null, 'A#5', null, null, null
+          ],
+          accents: accentTimeline(32, [0, 24]),
+          holds: [2, 1, 2, 1, 3, 1, 1, 1, 5, 1, 1, 1, 1, 1, 2, 1, 3, 1, 1, 1, 3, 1, 1, 1, 2, 1, 2, 1, 3, 1, 1, 1]
+        },
+        {
+          instrument: 'piano', volume: 100,
+          notes: [
+            'D4', null, 'D4', null, 'D3', null, null, null,
+            'A3', null, null, null, null, null, 'C4', null,
+            'D4', null, null, null, 'F4', null, null, null,
+            'F4', null, 'F4', null, 'F3', null, null, null
+          ],
+          accents: accentTimeline(32, [0, 24]),
+          holds: [2, 1, 2, 1, 3, 1, 1, 1, 5, 1, 1, 1, 1, 1, 2, 1, 3, 1, 1, 1, 3, 1, 1, 1, 2, 1, 2, 1, 3, 1, 1, 1]
+        },
+        {
+          instrument: 'bass', volume: 66,
+          notes: [
+            'D2', null, null, null, 'F2', null, null, null,
+            'G2', null, null, null, null, null, null, null,
+            'F2', null, null, null, 'D2', null, null, null,
+            'C#2', null, null, null, null, null, null, null
+          ],
+          accents: accentTimeline(32, [0]),
+          holds: [2, 1, 1, 1, 2, 1, 1, 1, 5, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 2, 1, 1, 1, 7, 1, 1, 1, 1, 1, 1, 1]
+        },
+        {
+          instrument: 'drums', volume: 76, muted: true,
+          notes: Array(32).fill(null),
+          accents: Array(32).fill(false),
+          holds: Array(32).fill(1)
+        }
+      ],
+      settings: {
+        bpm: 132, division: 4, gate: 90, voice: 'square',
+        guitarVoice: 'octaveGuitar', bassVoice: 'growlBass',
+        pianoVoice: 'toyPiano', drumsVoice: 'industrial', transpose: 0,
+        bits: 9, drive: 16, cutoff: 6500, bass: 0, noise: 0,
+        echo: 30, echoRate: 0.25
+      }
+    },
     redWake: {
       name: 'Red Wake Protocol',
       length: 16,
@@ -479,6 +532,43 @@
     return { cycleTranspose: 'off', noteVariance: 0, varianceRange: 1, dropout: 0 };
   }
 
+  function defaultLayerSound(instrument, settings) {
+    const source = settings || {
+      transpose: DEFAULT_SOUND.transpose,
+      bits: DEFAULT_SOUND.bits,
+      drive: DEFAULT_SOUND.drive / 100,
+      cutoff: DEFAULT_SOUND.cutoff,
+      bass: DEFAULT_SOUND.bass / 100,
+      noise: DEFAULT_SOUND.noise / 100,
+      echo: DEFAULT_SOUND.echo / 100,
+      echoRate: DEFAULT_SOUND.echoRate
+    };
+    return {
+      transpose: source.transpose,
+      bits: source.bits,
+      drive: source.drive,
+      cutoff: source.cutoff,
+      bass: instrument === 'lead' ? source.bass : 0,
+      noise: instrument === 'lead' ? source.noise : 0,
+      echo: source.echo,
+      echoRate: source.echoRate
+    };
+  }
+
+  function layerSoundFromConfig(config, fallback) {
+    if (!config) return { ...fallback };
+    return {
+      transpose: Number(config.transpose ?? fallback.transpose),
+      bits: Number(config.bitDepth ?? fallback.bits),
+      drive: Number(config.drive ?? fallback.drive),
+      cutoff: Number(config.cutoffHz ?? fallback.cutoff),
+      bass: Number(config.bass ?? fallback.bass),
+      noise: Number(config.noise ?? fallback.noise),
+      echo: Number(config.echo ?? fallback.echo),
+      echoRate: Number(config.echoBeats ?? fallback.echoRate)
+    };
+  }
+
   function makeTrack(index, instrument) {
     return {
       id: 'layer' + (index + 1),
@@ -488,6 +578,8 @@
       volume: instrument === 'bass' ? 86 : instrument === 'drums' ? 76 : instrument === 'piano' ? 78 : 82,
       muted: false,
       variance: defaultVariance(),
+      sound: defaultLayerSound(instrument),
+      soundCustomized: false,
       steps: Array.from({ length: 10 }, emptyStep)
     };
   }
@@ -567,6 +659,7 @@
     const trackIndex = state.tracks.length;
     const track = makeTrack(trackIndex, instruments[trackIndex % instruments.length]);
     track.steps = Array.from({ length: state.length }, emptyStep);
+    track.sound = defaultLayerSound(track.instrument, getSettings());
     state.tracks.push(track);
     ensureAudioTrackGains();
     buildSteps();
@@ -673,11 +766,20 @@
         card.append(noteButton, actions);
         row.appendChild(card);
       });
+      row.appendChild(buildTrackSoundStrip(track, trackIndex));
       host.appendChild(row);
     });
     syncSteps();
     syncVarianceLayerOptions();
+    updateSoundStripWidths();
     host.scrollLeft = previousScroll;
+  }
+
+  function updateSoundStripWidths() {
+    const timeline = $('steps');
+    if (!timeline) return;
+    const width = Math.max(240, timeline.clientWidth - TRACK_LABEL_WIDTH - 2);
+    timeline.style.setProperty('--track-sound-width', width + 'px');
   }
 
   function syncVarianceLayerOptions() {
@@ -818,6 +920,111 @@
     volume.append(slider, output);
     label.append(name, selects, volume);
     return label;
+  }
+
+  function buildTrackSoundStrip(track, trackIndex) {
+    const strip = document.createElement('div');
+    strip.className = 'track-sound-strip';
+    const controls = [
+      {
+        key: 'transpose', label: 'Transpose', min: -24, max: 24, step: 1,
+        toValue: (value) => value,
+        fromValue: Number,
+        format: (value) => (value >= 0 ? '+' : '') + value + ' st'
+      },
+      {
+        key: 'bits', label: 'Bit depth', min: 3, max: 16, step: 1,
+        toValue: (value) => value,
+        fromValue: Number,
+        format: (value) => value + '-bit'
+      },
+      {
+        key: 'drive', label: 'Drive', min: 0, max: 100, step: 1,
+        toValue: (value) => Math.round(value * 100),
+        fromValue: (value) => Number(value) / 100,
+        format: (value) => value + '%'
+      },
+      {
+        key: 'cutoff', label: 'Cutoff', min: 300, max: 12000, step: 50,
+        toValue: (value) => value,
+        fromValue: Number,
+        format: (value) => value + ' Hz'
+      },
+      {
+        key: 'bass', label: 'Low shadow', min: 0, max: 60, step: 1,
+        toValue: (value) => Math.round(value * 100),
+        fromValue: (value) => Number(value) / 100,
+        format: (value) => value + '%',
+        pitchedOnly: true
+      },
+      {
+        key: 'noise', label: 'Attack noise', min: 0, max: 40, step: 1,
+        toValue: (value) => Math.round(value * 100),
+        fromValue: (value) => Number(value) / 100,
+        format: (value) => value + '%',
+        pitchedOnly: true
+      },
+      {
+        key: 'echo', label: 'Echo', min: 0, max: 60, step: 1,
+        toValue: (value) => Math.round(value * 100),
+        fromValue: (value) => Number(value) / 100,
+        format: (value) => value + '%'
+      }
+    ];
+
+    controls.forEach((definition) => {
+      const control = document.createElement('label');
+      control.className = 'track-sound-control';
+      const title = document.createElement('span');
+      title.textContent = definition.label;
+      const output = document.createElement('output');
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = String(definition.min);
+      slider.max = String(definition.max);
+      slider.step = String(definition.step);
+      slider.value = String(definition.toValue(track.sound[definition.key]));
+      slider.disabled = Boolean(definition.pitchedOnly && !INSTRUMENTS[track.instrument].pitched);
+      slider.setAttribute('aria-label', track.name + ' ' + definition.label);
+      output.textContent = definition.format(Number(slider.value));
+      slider.addEventListener('input', () => {
+        track.sound[definition.key] = definition.fromValue(slider.value);
+        track.soundCustomized = true;
+        output.textContent = definition.format(Number(slider.value));
+        updateTrackAudioEffect(trackIndex);
+        updateConfigPreview();
+      });
+      control.append(title, output, slider);
+      strip.appendChild(control);
+    });
+
+    const spacing = document.createElement('label');
+    spacing.className = 'track-sound-control';
+    const spacingTitle = document.createElement('span');
+    spacingTitle.textContent = 'Echo spacing';
+    const spacingSelect = document.createElement('select');
+    [
+      [0.25, '1/4 beat'],
+      [0.375, '3/8 beat'],
+      [0.5, '1/2 beat'],
+      [0.75, '3/4 beat'],
+      [1, '1 beat']
+    ].forEach(([value, text]) => {
+      const option = document.createElement('option');
+      option.value = String(value);
+      option.textContent = text;
+      spacingSelect.appendChild(option);
+    });
+    spacingSelect.value = String(track.sound.echoRate);
+    spacingSelect.addEventListener('change', () => {
+      track.sound.echoRate = Number(spacingSelect.value);
+      track.soundCustomized = true;
+      updateTrackAudioEffect(trackIndex);
+      updateConfigPreview();
+    });
+    spacing.append(spacingTitle, spacingSelect);
+    strip.appendChild(spacing);
+    return strip;
   }
 
   function syncSteps() {
@@ -993,7 +1200,19 @@
           noteMutationChance: track.variance.noteVariance,
           mutationSemitones: track.variance.varianceRange,
           nonAccentDropout: track.variance.dropout
-        }
+        },
+        ...(track.soundCustomized ? {
+          sound: {
+            transpose: track.sound.transpose,
+            bitDepth: track.sound.bits,
+            drive: track.sound.drive,
+            cutoffHz: track.sound.cutoff,
+            bass: track.sound.bass,
+            noise: track.sound.noise,
+            echo: track.sound.echo,
+            echoBeats: track.sound.echoRate
+          }
+        } : {})
       })),
       synth: {
         voice: sound.voice,
@@ -1041,11 +1260,7 @@
     return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '');
   }
 
-  function createAudio() {
-    if (audio) return audio;
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) throw new Error('This browser does not support the Web Audio API.');
-    const context = new AudioContext();
+  function createTrackEffects(context, masterInput) {
     const input = context.createGain();
     const preCompressor = context.createDynamicsCompressor();
     const crusher = context.createWaveShaper();
@@ -1055,38 +1270,57 @@
     const delay = context.createDelay(2);
     const feedback = context.createGain();
     const wet = context.createGain();
+    const output = context.createGain();
+
+    preCompressor.threshold.value = -7;
+    preCompressor.knee.value = 8;
+    preCompressor.ratio.value = 2.5;
+    preCompressor.attack.value = 0.002;
+    preCompressor.release.value = 0.07;
+    filter.type = 'lowpass';
+    filter.Q.value = 0.8;
+    dry.gain.value = 1;
+    output.gain.value = 0.78;
+
+    input.connect(preCompressor).connect(crusher).connect(drive).connect(filter);
+    filter.connect(dry).connect(output);
+    filter.connect(delay).connect(wet).connect(output);
+    delay.connect(feedback).connect(delay);
+    output.connect(masterInput);
+
+    return {
+      input, preCompressor, crusher, drive, filter,
+      dry, delay, feedback, wet, output
+    };
+  }
+
+  function createAudio() {
+    if (audio) return audio;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) throw new Error('This browser does not support the Web Audio API.');
+    const context = new AudioContext();
+    const input = context.createGain();
     const master = context.createGain();
     const compressor = context.createDynamicsCompressor();
     const analyser = context.createAnalyser();
-    const trackGains = state.tracks.map(() => context.createGain());
+    const trackFx = state.tracks.map(() => createTrackEffects(context, input));
+    const trackGains = trackFx.map((effects) => effects.input);
 
-    input.gain.value = 0.68;
-    preCompressor.threshold.value = -10;
-    preCompressor.knee.value = 8;
-    preCompressor.ratio.value = 3;
-    preCompressor.attack.value = 0.002;
-    preCompressor.release.value = 0.08;
-    filter.type = 'lowpass';
-    filter.Q.value = 1.2;
-    master.gain.value = 0.58;
-    compressor.threshold.value = -15;
-    compressor.knee.value = 4;
-    compressor.ratio.value = 8;
+    input.gain.value = 0.9;
+    master.gain.value = 0.72;
+    compressor.threshold.value = -8;
+    compressor.knee.value = 10;
+    compressor.ratio.value = 3;
     compressor.attack.value = 0.003;
-    compressor.release.value = 0.12;
+    compressor.release.value = 0.1;
     analyser.fftSize = 1024;
     analyser.smoothingTimeConstant = 0.25;
 
-    trackGains.forEach((gain) => gain.connect(input));
-    input.connect(preCompressor).connect(crusher).connect(drive).connect(filter);
-    filter.connect(dry).connect(master);
-    filter.connect(delay).connect(wet).connect(master);
-    delay.connect(feedback).connect(delay);
+    input.connect(master);
     master.connect(compressor).connect(analyser).connect(context.destination);
 
     audio = {
-      context, input, preCompressor, crusher, drive, filter,
-      dry, delay, feedback, wet, master, analyser, trackGains
+      context, input, master, compressor, analyser, trackFx, trackGains
     };
     periodicWaves = {
       pulse06: makePulseWave(context, 0.0625),
@@ -1137,24 +1371,37 @@
   }
 
   function updateAudioEffects(settings) {
+    state.tracks.forEach((track, trackIndex) => updateTrackAudioEffect(trackIndex, settings));
+  }
+
+  function updateTrackAudioEffect(trackIndex, globalSettings) {
+    if (!audio || !audio.trackFx[trackIndex]) return;
+    const settings = globalSettings || getSettings();
+    const sound = state.tracks[trackIndex].sound;
+    const effects = audio.trackFx[trackIndex];
     const now = audio.context.currentTime;
-    audio.crusher.curve = makeCrusherCurve(settings.bits);
-    audio.crusher.oversample = 'none';
-    audio.drive.curve = makeDriveCurve(settings.drive);
-    audio.drive.oversample = 'none';
-    audio.filter.frequency.setTargetAtTime(settings.cutoff, now, 0.01);
-    audio.delay.delayTime.setTargetAtTime((60 / settings.bpm) * settings.echoRate, now, 0.01);
-    audio.wet.gain.setTargetAtTime(settings.echo * 0.9, now, 0.01);
-    audio.feedback.gain.setTargetAtTime(Math.min(0.6, settings.echo * 1.05), now, 0.01);
+    effects.crusher.curve = makeCrusherCurve(sound.bits);
+    effects.crusher.oversample = 'none';
+    effects.drive.curve = makeDriveCurve(sound.drive);
+    effects.drive.oversample = sound.drive > 0.45 ? '2x' : 'none';
+    effects.filter.frequency.setTargetAtTime(sound.cutoff, now, 0.01);
+    effects.delay.delayTime.setTargetAtTime(
+      (60 / settings.bpm) * sound.echoRate,
+      now,
+      0.01
+    );
+    effects.wet.gain.setTargetAtTime(sound.echo * 0.72, now, 0.01);
+    effects.feedback.gain.setTargetAtTime(Math.min(0.48, sound.echo * 0.78), now, 0.01);
   }
 
   function ensureAudioTrackGains() {
     if (!audio) return;
     while (audio.trackGains.length < state.tracks.length) {
-      const gain = audio.context.createGain();
-      gain.gain.value = 0;
-      gain.connect(audio.input);
-      audio.trackGains.push(gain);
+      const effects = createTrackEffects(audio.context, audio.input);
+      effects.input.gain.value = 0;
+      audio.trackFx.push(effects);
+      audio.trackGains.push(effects.input);
+      updateTrackAudioEffect(audio.trackGains.length - 1);
     }
   }
 
@@ -1609,11 +1856,12 @@
       const cycleOffset = INSTRUMENTS[track.instrument].pitched
         ? cycleTransposeOffset(variance.cycleTranspose, state.cycleIndex)
         : 0;
+      const trackSettings = { ...settings, ...track.sound };
       scheduleEvent(
         track.instrument,
         step,
         time,
-        settings,
+        trackSettings,
         audio.trackGains[trackIndex],
         cycleOffset + mutation
       );
@@ -1655,10 +1903,20 @@
         schedulePiano(destination, frequency, time, gateDuration, velocity, settings.pianoVoice);
       } else {
         scheduleLeadVoice(audio.context, destination, settings.voice, frequency, time, gateDuration, velocity);
-        if (settings.bass > 0) {
-          scheduleOscillator(audio.context, destination, 'triangle', frequency / 2, time, gateDuration * 0.94, settings.bass * (step.accent ? 0.3 : 0.23));
-        }
-        if (step.accent) scheduleNoise(audio.context, destination, time, Math.min(0.075, gateDuration), settings.noise * 0.8);
+      }
+      if (settings.bass > 0) {
+        scheduleOscillator(
+          audio.context, destination, 'triangle', frequency / 2,
+          time, gateDuration * 0.94,
+          settings.bass * (step.accent ? 0.3 : 0.23)
+        );
+      }
+      if (step.accent && settings.noise > 0) {
+        scheduleNoise(
+          audio.context, destination, time,
+          Math.min(0.075, gateDuration),
+          settings.noise * 0.8
+        );
       }
     }
   }
@@ -1763,7 +2021,13 @@
     const step = track.steps[index];
     if (!step.note) return;
     await ensureAudio();
-    scheduleEvent(track.instrument, step, audio.context.currentTime + 0.012, getSettings(), audio.input);
+    scheduleEvent(
+      track.instrument,
+      step,
+      audio.context.currentTime + 0.012,
+      { ...getSettings(), ...track.sound },
+      audio.trackGains[trackIndex]
+    );
   }
 
   async function auditionValue(value) {
@@ -1774,8 +2038,8 @@
       instrument,
       { note: value, accent: false, hold: 1 },
       audio.context.currentTime + 0.012,
-      getSettings(),
-      audio.input
+      { ...getSettings(), ...state.tracks[state.pickerTrack].sound },
+      audio.trackGains[state.pickerTrack]
     );
   }
 
@@ -1791,6 +2055,7 @@
         if ($(id)) $(id).value = String(value);
       });
     }
+    const legacySettings = getSettings();
     state.length = preset.length;
     while (state.tracks.length < 4) {
       const trackIndex = state.tracks.length;
@@ -1805,6 +2070,8 @@
       track.order = trackIndex + 1;
       track.muted = false;
       track.variance = defaultVariance();
+      track.sound = defaultLayerSound(track.instrument, legacySettings);
+      track.soundCustomized = false;
       track.steps.forEach((step) => {
         step.note = null;
         step.accent = false;
@@ -1817,6 +2084,9 @@
         track.instrument = layer.instrument;
         track.volume = layer.volume;
         track.muted = Boolean(layer.muted);
+        const fallbackSound = defaultLayerSound(layer.instrument, legacySettings);
+        track.sound = layerSoundFromConfig(layer.sound, fallbackSound);
+        track.soundCustomized = Boolean(layer.sound);
         track.variance = layer.variance
           ? { ...defaultVariance(), ...layer.variance }
           : defaultVariance();
@@ -2590,14 +2860,26 @@
   }
 
   function applyArchetypeSound(context) {
+    let echo;
+    let echoRate;
     if (context.archetype === 'riff') {
       $('gate').value = String(Math.round(48 + context.composer.sustain * 28));
-      $('echo').value = String(Math.round(4 + context.composer.sustain * 12));
-      $('echoRate').value = '0.5';
+      echo = (4 + context.composer.sustain * 12) / 100;
+      echoRate = 0.5;
     } else if (context.archetype === 'sequence') {
       $('gate').value = String(Math.round(58 + context.composer.sustain * 32));
-      $('echo').value = String(Math.round(8 + context.composer.sustain * 22));
-      $('echoRate').value = randomChoice(['0.25', '0.5', '0.75']);
+      echo = (8 + context.composer.sustain * 22) / 100;
+      echoRate = Number(randomChoice(['0.25', '0.5', '0.75']));
+    }
+    if (echo !== undefined) {
+      $('echo').value = String(Math.round(echo * 100));
+      $('echoRate').value = String(echoRate);
+      state.tracks.forEach((track, trackIndex) => {
+        track.sound.echo = echo;
+        track.sound.echoRate = echoRate;
+        track.soundCustomized = true;
+        updateTrackAudioEffect(trackIndex);
+      });
     }
   }
 
@@ -2650,6 +2932,7 @@
     if (!$('configPreview')) return;
     $('configPreview').textContent = 'const BOSS_MOTIF = ' + JSON.stringify(getConfig(), null, 2) + ';\n\n' +
       '// layerOrder contains 1-based layer numbers in their intended entrance order.\n' +
+      '// A layer.sound object overrides the legacy top-level synth effects for that layer.\n' +
       '// At runtime, note seconds = (60 / currentCombatBpm) * BOSS_MOTIF.stepBeats;\n' +
       '// Call your future music player\'s setBpm(currentCombatBpm) whenever combat BPM changes.';
   }
@@ -2774,4 +3057,5 @@
   });
 
   window.addEventListener('beforeunload', () => stop(false));
+  window.addEventListener('resize', updateSoundStripWidths);
 }());
