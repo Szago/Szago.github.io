@@ -692,6 +692,83 @@
     }
   };
 
+  const UNEASY_V2_PLAN = [
+    [[0, 'base'], [1, 'base'], [2, 'base'], [3, 'base']],
+    [[0, 'answer'], [1, 'base'], [2, 'answer'], [3, 'push']],
+    [[2, 'base'], [3, 'answer'], [0, 'shadow'], [1, 'push']],
+    [[2, 'sparse'], [3, 'sparse'], [0, 'release'], [1, 'sparse']],
+    [[0, 'release'], [1, 'answer'], [2, 'shadow'], [3, 'push']],
+    [[1, 'push'], [2, 'shadow'], [3, 'push'], [1, 'climax']],
+    [[0, 'base'], [1, 'answer'], [0, 'shadow'], [3, 'climax']],
+    [[2, 'push'], [3, 'climax'], [1, 'climax'], [0, 'push']],
+    [[2, 'answer'], [3, 'sparse'], [1, 'release'], [0, 'sparse']],
+    [[0, 'answer'], [1, 'base'], [2, 'release'], [3, 'base']]
+  ];
+
+  function uneasyVariation(source, variation) {
+    const notes = source.slice();
+    if (variation === 'base') return notes;
+    if (variation === 'answer') {
+      [[5, 4], [8, 7], [11, 10], [13, 12]].forEach(([from, to]) => {
+        if (notes[from] && !notes[to]) {
+          notes[to] = notes[from];
+          notes[from] = null;
+        }
+      });
+      return notes;
+    }
+    if (variation === 'shadow') {
+      return notes.slice(8).concat(notes.slice(0, 8));
+    }
+    if (variation === 'sparse' || variation === 'release') {
+      const removed = variation === 'release'
+        ? [1, 2, 5, 6, 8, 10, 13, 14]
+        : [1, 5, 8, 10, 13];
+      removed.forEach((index) => { notes[index] = null; });
+      return notes;
+    }
+    if (variation === 'push' || variation === 'climax') {
+      const targets = variation === 'climax'
+        ? [2, 4, 7, 10, 12, 14]
+        : [4, 7, 10, 12];
+      targets.forEach((index) => {
+        if (notes[index]) return;
+        for (let distance = 1; distance < notes.length; distance++) {
+          const sourceIndex = (index + distance) % notes.length;
+          if (notes[sourceIndex]) {
+            notes[index] = notes[sourceIndex];
+            return;
+          }
+        }
+      });
+    }
+    return notes;
+  }
+
+  function buildUneasyV2Notes(layer) {
+    const bars = Array.from({ length: 4 }, (_, index) =>
+      layer.notes.slice(index * 16, index * 16 + 16));
+    return UNEASY_V2_PLAN.flatMap((section) =>
+      section.flatMap(([barIndex, variation]) =>
+        uneasyVariation(bars[barIndex], variation)));
+  }
+
+  const uneasyBase = PRESETS.otherUneasy;
+  PRESETS.otherUneasyV2 = {
+    name: '[OTHER] uneasy V2',
+    length: 640,
+    layerOrder: uneasyBase.layerOrder.slice(),
+    layers: uneasyBase.layers.map((layer) => ({
+      instrument: layer.instrument,
+      volume: layer.volume,
+      muted: Boolean(layer.muted),
+      notes: buildUneasyV2Notes(layer),
+      accents: accentTimeline(640, Array.from({ length: 40 }, (_, index) => index * 16)),
+      holds: Array(640).fill(1)
+    })),
+    settings: { ...uneasyBase.settings }
+  };
+
   const DEFAULT_SOUND = {
     bpm: 150, division: 2, gate: 72, voice: 'pulse25', transpose: 0,
     guitarVoice: 'doomStack', bassVoice: 'deepSub', pianoVoice: 'darkPiano',
@@ -871,7 +948,7 @@
   }
 
   function setLength(value) {
-    const length = Math.max(1, Math.min(512, Math.floor(Number(value) || 1)));
+    const length = Math.max(1, Math.min(2048, Math.floor(Number(value) || 1)));
     state.length = length;
     if (state.currentStep >= length) state.currentStep = 0;
     ensureStepCount(length);
