@@ -32,6 +32,45 @@
     };
   }
 
+  function barredLayer(instrument, bars, volume, sound, accents, holds) {
+    const notes = bars.flat();
+    return {
+      instrument,
+      volume,
+      notes,
+      accents: accentTimeline(notes.length, accents || [0, 16, 32, 48]),
+      holds: holdTimeline(notes.length, holds || []),
+      sound
+    };
+  }
+
+  const BOSS_MIX = {
+    guitar: {
+      transpose: 0, bitDepth: 16, drive: 0, cutoffHz: 6200,
+      bass: 0, noise: 0, echo: 0.04, echoBeats: 0.5
+    },
+    guitarLead: {
+      transpose: 0, bitDepth: 16, drive: 0, cutoffHz: 7200,
+      bass: 0, noise: 0, echo: 0.12, echoBeats: 0.375
+    },
+    bass: {
+      transpose: 0, bitDepth: 16, drive: 0, cutoffHz: 1750,
+      bass: 0, noise: 0, echo: 0, echoBeats: 0.5
+    },
+    drums: {
+      transpose: 0, bitDepth: 16, drive: 0, cutoffHz: 11000,
+      bass: 0, noise: 0, echo: 0.025, echoBeats: 0.25
+    },
+    lead: {
+      transpose: 0, bitDepth: 12, drive: 0.06, cutoffHz: 3900,
+      bass: 0, noise: 0.01, echo: 0.06, echoBeats: 0.5
+    },
+    piano: {
+      transpose: 0, bitDepth: 16, drive: 0, cutoffHz: 4300,
+      bass: 0, noise: 0, echo: 0.04, echoBeats: 0.5
+    }
+  };
+
   const PRESETS = {
     grave: {
       name: 'Grave Signal', length: 10,
@@ -426,6 +465,160 @@
         pianoVoice: 'toyPiano', drumsVoice: 'industrial', transpose: 0,
         bits: 9, drive: 16, cutoff: 6500, bass: 0, noise: 0,
         echo: 30, echoRate: 0.25
+      }
+    },
+    chromeFang: {
+      name: '[BOSS] Chrome Fang',
+      length: 64,
+      layerOrder: [4, 2, 1, 3],
+      layers: [
+        barredLayer('guitar', [
+          ['D2', 'D2', null, 'D2', 'D2', null, 'D#2', 'D#2', 'D2', 'D2', null, 'G#2', 'G#2', null, 'D2', null],
+          ['D2', 'D2', null, 'D2', 'F2', 'F2', null, 'D#2', 'D2', 'D2', null, 'C#2', 'C#2', null, 'D2', null],
+          ['G#2', 'G#2', null, 'G2', 'G2', null, 'D2', 'D2', 'D#2', 'D#2', null, 'D2', 'D2', null, 'C#2', null],
+          ['D2', 'D2', null, 'D2', 'D2', 'D#2', 'D2', null, 'G#2', 'G#2', 'G2', null, 'D#2', 'D2', 'C#2', 'D2']
+        ], 82, BOSS_MIX.guitar, [0, 16, 32, 48, 63]),
+        barredLayer('bass', [
+          ['D1', null, 'D1', null, 'D1', null, 'D#1', null, 'D1', null, 'D1', null, 'G#1', null, 'D1', null],
+          ['D1', null, 'D1', null, 'F1', null, 'D#1', null, 'D1', null, 'D1', null, 'C#1', null, 'D1', null],
+          ['G#1', null, 'G#1', null, 'G1', null, 'G1', null, 'D#1', null, 'D#1', null, 'D1', null, 'C#1', null],
+          ['D1', null, 'D1', null, 'D#1', null, 'D1', null, 'G#1', null, 'G1', null, 'D#1', 'D1', 'C#1', 'D1']
+        ], 82, BOSS_MIX.bass),
+        barredLayer('lead', [
+          [null, null, null, null, 'D4', 'D4', null, null, null, null, null, 'G#4', null, null, null, null],
+          [null, null, 'F4', 'F4', null, null, null, null, 'D#4', null, null, null, 'C#4', 'D4', null, null],
+          [null, null, null, null, 'G#4', 'G4', null, null, null, null, 'D#4', 'D#4', null, null, null, null],
+          ['D4', 'D4', null, null, null, null, 'G#4', null, 'G4', null, 'D#4', null, 'D4', 'C#4', null, null]
+        ], 42, BOSS_MIX.lead, [4, 18, 36, 48, 62], [[4, 2], [18, 2], [36, 2]]),
+        barredLayer('drums', [
+          ['KICK', 'HAT', null, 'KICK', 'SNARE', 'HAT', 'KICK', null, 'KICK', 'HAT', null, 'KICK', 'SNARE', 'HAT', 'OPEN_HAT', null],
+          ['KICK', 'HAT', 'KICK', null, 'SNARE', 'HAT', null, 'KICK', 'KICK', 'HAT', 'KICK', null, 'SNARE', 'HAT', 'TOM', 'TOM'],
+          ['CRASH', 'HAT', null, 'KICK', 'SNARE', 'HAT', 'KICK', 'KICK', null, 'HAT', 'KICK', null, 'SNARE', 'HAT', 'OPEN_HAT', null],
+          ['KICK', 'HAT', 'KICK', 'KICK', 'SNARE', 'HAT', 'KICK', null, 'KICK', 'HAT', 'SNARE', 'KICK', 'TOM', 'TOM', 'SNARE', 'CRASH']
+        ], 84, BOSS_MIX.drums, [0, 16, 32, 48, 63])
+      ],
+      settings: {
+        bpm: 240, division: 4, gate: 62, voice: 'metalSquare',
+        guitarVoice: 'heavyRhythm', bassVoice: 'punchBass',
+        pianoVoice: 'brightPiano', drumsVoice: 'punchKit', transpose: 0,
+        bits: 12, drive: 0, cutoff: 8000, bass: 0, noise: 0,
+        echo: 5, echoRate: 0.5
+      }
+    },
+    severedHalo: {
+      name: '[BOSS] Severed Halo',
+      length: 64,
+      layerOrder: [3, 2, 1, 4],
+      layers: [
+        barredLayer('guitar', [
+          ['E2', 'E2', 'E2', null, 'E2', 'E2', null, 'A#2', 'E2', 'E2', null, 'F2', 'F2', null, 'E2', null],
+          ['E2', 'E2', 'E2', null, 'G2', 'G2', null, 'F2', 'E2', 'E2', null, 'A#2', 'A#2', 'G2', 'F2', null],
+          ['C2', 'C2', 'C2', null, 'C2', 'C2', null, 'F#2', 'C2', 'C2', null, 'C#2', 'C#2', null, 'C2', null],
+          ['E2', 'E2', 'E2', null, 'A#2', 'A#2', 'A2', null, 'G2', 'G2', 'F#2', null, 'F2', 'D#2', 'D2', 'E2']
+        ], 84, BOSS_MIX.guitar, [0, 16, 32, 48, 63]),
+        barredLayer('bass', [
+          ['E1', null, 'E1', null, 'E1', null, 'A#1', null, 'E1', null, 'E1', null, 'F1', null, 'E1', null],
+          ['E1', null, 'E1', null, 'G1', null, 'F1', null, 'E1', null, 'E1', null, 'A#1', 'G1', 'F1', null],
+          ['C1', null, 'C1', null, 'C1', null, 'F#1', null, 'C1', null, 'C1', null, 'C#1', null, 'C1', null],
+          ['E1', null, 'E1', null, 'A#1', null, 'A1', null, 'G1', null, 'F#1', null, 'F1', 'D#1', 'D1', 'E1']
+        ], 80, BOSS_MIX.bass),
+        barredLayer('drums', [
+          ['KICK', null, 'HAT', 'KICK', 'SNARE', null, 'HAT', 'KICK', 'KICK', null, 'HAT', null, 'SNARE', 'HAT', null, 'KICK'],
+          ['KICK', 'HAT', null, 'KICK', 'SNARE', 'HAT', 'KICK', null, 'KICK', 'HAT', null, 'KICK', 'SNARE', null, 'TOM', 'TOM'],
+          ['CRASH', null, 'HAT', 'KICK', null, 'HAT', 'SNARE', null, 'KICK', null, 'HAT', 'KICK', 'SNARE', 'HAT', 'OPEN_HAT', null],
+          ['KICK', 'HAT', 'KICK', null, 'SNARE', 'HAT', 'KICK', 'KICK', 'KICK', null, 'SNARE', 'KICK', 'TOM', 'SNARE', 'TOM', 'CRASH']
+        ], 86, BOSS_MIX.drums, [0, 16, 32, 48, 63]),
+        barredLayer('piano', [
+          [null, null, null, 'E4', 'E4', null, null, null, null, null, 'A#4', null, null, null, null, null],
+          [null, null, 'G4', null, null, null, 'F4', 'F4', null, null, null, null, 'E4', null, null, null],
+          [null, null, null, 'C4', 'C4', null, null, 'F#4', null, null, null, null, 'C#4', null, null, null],
+          ['E4', 'E4', null, null, null, null, 'A#4', null, 'A4', null, 'G4', null, 'F4', 'D#4', null, null]
+        ], 38, BOSS_MIX.piano, [3, 18, 35, 48, 61], [[3, 2], [18, 2], [35, 2]])
+      ],
+      settings: {
+        bpm: 240, division: 4, gate: 60, voice: 'metalSquare',
+        guitarVoice: 'ampCrunch', bassVoice: 'pickedBass',
+        pianoVoice: 'darkPiano', drumsVoice: 'studio', transpose: 0,
+        bits: 12, drive: 0, cutoff: 8200, bass: 0, noise: 0,
+        echo: 4, echoRate: 0.375
+      }
+    },
+    nullCathedral: {
+      name: '[BOSS] Null Cathedral',
+      length: 64,
+      layerOrder: [3, 2, 4, 1],
+      layers: [
+        barredLayer('guitar', [
+          ['C#3', 'C#3', null, null, 'G3', null, 'F#3', 'F3', null, null, 'C#3', 'C#3', null, 'D3', null, null],
+          ['C#3', 'C#3', null, null, 'G3', 'G3', null, 'F3', 'E3', null, null, 'D3', 'C#3', 'C#3', null, null],
+          ['A2', 'A2', null, null, 'D#3', null, 'D3', 'C#3', null, null, 'A2', 'A2', null, 'G2', null, null],
+          ['C#3', 'C#3', null, 'G3', 'G3', null, 'F#3', 'F3', null, 'E3', 'D#3', null, 'D3', 'C#3', 'C3', 'C#3']
+        ], 80, BOSS_MIX.guitarLead, [0, 16, 32, 48, 63], [
+          [4, 2], [20, 2], [36, 2], [51, 2]
+        ]),
+        barredLayer('bass', [
+          ['C#1', null, 'C#1', null, 'G1', null, 'F#1', 'F1', 'C#1', null, 'C#1', null, 'D1', null, 'C#1', null],
+          ['C#1', null, 'C#1', null, 'G1', null, 'F1', null, 'E1', null, 'D1', null, 'C#1', null, 'C#1', null],
+          ['A1', null, 'A1', null, 'D#1', null, 'D1', 'C#1', 'A1', null, 'A1', null, 'G1', null, 'A1', null],
+          ['C#1', null, 'C#1', null, 'G1', null, 'F#1', 'F1', 'E1', null, 'D#1', null, 'D1', 'C#1', 'C1', 'C#1']
+        ], 82, BOSS_MIX.bass),
+        barredLayer('drums', [
+          ['KICK', null, 'HAT', null, 'SNARE', 'HAT', null, 'KICK', 'KICK', null, 'HAT', null, 'SNARE', null, 'OPEN_HAT', null],
+          ['KICK', 'HAT', null, null, 'SNARE', null, 'HAT', 'KICK', 'KICK', 'HAT', null, 'KICK', 'SNARE', null, 'TOM', null],
+          ['CRASH', null, 'HAT', 'KICK', 'SNARE', null, 'HAT', null, 'KICK', null, 'HAT', 'KICK', 'SNARE', 'HAT', 'OPEN_HAT', null],
+          ['KICK', 'HAT', 'KICK', null, 'SNARE', 'HAT', 'KICK', 'KICK', 'KICK', 'SNARE', 'KICK', 'SNARE', 'TOM', 'TOM', 'SNARE', 'CRASH']
+        ], 82, BOSS_MIX.drums, [0, 16, 32, 48, 63]),
+        barredLayer('lead', [
+          [null, null, null, null, 'C#4', null, null, 'G4', null, null, null, null, 'F4', 'F4', null, null],
+          [null, null, 'C#4', null, null, null, 'G4', null, 'F4', null, null, null, 'D4', 'C#4', null, null],
+          [null, null, null, null, 'A3', 'A3', null, null, null, null, 'D#4', null, 'D4', null, null, null],
+          ['C#4', 'C#4', null, null, null, 'G4', null, 'F#4', null, 'F4', null, 'D#4', null, 'D4', 'C#4', null]
+        ], 30, BOSS_MIX.lead, [4, 18, 36, 48, 62])
+      ],
+      settings: {
+        bpm: 240, division: 4, gate: 68, voice: 'warblePulse',
+        guitarVoice: 'singingLead', bassVoice: 'roundBass',
+        pianoVoice: 'cleanPiano', drumsVoice: 'arenaKit', transpose: 0,
+        bits: 12, drive: 0, cutoff: 8400, bass: 0, noise: 0,
+        echo: 8, echoRate: 0.375
+      }
+    },
+    ashEngine: {
+      name: '[BOSS] Ash Engine',
+      length: 64,
+      layerOrder: [4, 2, 1, 3],
+      layers: [
+        barredLayer('guitar', [
+          ['A1', 'A1', null, 'A1', 'A1', null, 'A#1', 'A#1', 'A1', 'A1', null, 'D#2', 'D#2', null, 'A1', null],
+          ['A1', 'A1', null, 'A1', 'C2', 'C2', null, 'A#1', 'A1', 'A1', null, 'G#1', 'G#1', null, 'A1', null],
+          ['C2', 'C2', null, 'C2', 'F#2', 'F#2', null, 'F2', 'C2', 'C2', null, 'B1', 'B1', null, 'A#1', null],
+          ['A1', 'A1', null, 'A1', 'A#1', 'A1', null, 'D#2', 'D#2', 'D2', null, 'C2', 'A#1', 'A1', 'G#1', 'A1']
+        ], 84, BOSS_MIX.guitar, [0, 16, 32, 48, 63]),
+        barredLayer('bass', [
+          ['A1', null, 'A1', null, 'A1', null, 'A#1', null, 'A1', null, 'A1', null, 'D#2', null, 'A1', null],
+          ['A1', null, 'A1', null, 'C2', null, 'A#1', null, 'A1', null, 'A1', null, 'G#1', null, 'A1', null],
+          ['C2', null, 'C2', null, 'F#2', null, 'F2', null, 'C2', null, 'C2', null, 'B1', null, 'A#1', null],
+          ['A1', null, 'A1', null, 'A#1', 'A1', null, 'D#2', 'D2', null, 'C2', null, 'A#1', 'A1', 'G#1', 'A1']
+        ], 84, BOSS_MIX.bass),
+        barredLayer('lead', [
+          [null, null, null, null, 'A3', 'A3', null, null, null, null, null, 'D#4', 'D#4', null, null, null],
+          [null, null, 'C4', 'C4', null, null, null, 'A#3', null, null, null, null, 'G#3', 'A3', null, null],
+          [null, null, null, null, 'C4', 'C4', null, null, null, null, 'F#4', null, 'F4', null, null, null],
+          ['A3', 'A3', null, null, null, 'D#4', null, 'D4', null, 'C4', null, 'A#3', null, 'A3', 'G#3', 'A3']
+        ], 36, BOSS_MIX.lead, [4, 18, 36, 48, 63]),
+        barredLayer('drums', [
+          ['KICK', 'HAT', 'KICK', null, 'SNARE', 'HAT', 'KICK', 'KICK', 'KICK', 'HAT', null, 'KICK', 'SNARE', 'HAT', 'OPEN_HAT', null],
+          ['KICK', 'HAT', 'KICK', 'KICK', 'SNARE', null, 'HAT', 'KICK', 'KICK', 'HAT', 'SNARE', null, 'KICK', 'TOM', 'SNARE', 'TOM'],
+          ['CRASH', 'HAT', 'KICK', null, 'SNARE', 'HAT', 'KICK', 'KICK', 'KICK', null, 'HAT', 'KICK', 'SNARE', 'HAT', 'OPEN_HAT', null],
+          ['KICK', 'KICK', 'HAT', 'KICK', 'SNARE', 'KICK', 'HAT', 'KICK', 'KICK', 'SNARE', 'KICK', 'SNARE', 'TOM', 'TOM', 'SNARE', 'CRASH']
+        ], 88, BOSS_MIX.drums, [0, 16, 32, 48, 63])
+      ],
+      settings: {
+        bpm: 240, division: 4, gate: 58, voice: 'metalSquare',
+        guitarVoice: 'heavyRhythm', bassVoice: 'punchBass',
+        pianoVoice: 'brightPiano', drumsVoice: 'subKit', transpose: 0,
+        bits: 12, drive: 0, cutoff: 7800, bass: 0, noise: 0,
+        echo: 3, echoRate: 0.25
       }
     },
     redWake: {
@@ -1530,8 +1723,162 @@
     source.start(time);
   }
 
+  const guitarAmpCurves = new Map();
+
+  function guitarAmpCurve(amount) {
+    const key = Math.round(amount * 100);
+    if (!guitarAmpCurves.has(key)) {
+      guitarAmpCurves.set(key, makeDriveCurve(amount));
+    }
+    return guitarAmpCurves.get(key);
+  }
+
+  function scheduleModeledString(destination, frequency, time, duration, velocity, options) {
+    const context = audio.context;
+    const ring = Math.max(duration, options.ring || 0.45);
+    const frames = Math.max(1, Math.ceil(context.sampleRate * ring));
+    const period = Math.max(2, Math.round(context.sampleRate / frequency));
+    const buffer = context.createBuffer(1, frames, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    const pickOffset = Math.max(1, Math.round(period * (options.pickPosition || 0.24)));
+
+    for (let index = 0; index < Math.min(period, frames); index++) {
+      const noise = Math.random() * 2 - 1;
+      data[index] = index >= pickOffset
+        ? noise * 0.72 - data[index - pickOffset] * 0.28
+        : noise * 0.72;
+    }
+    for (let index = period; index < frames; index++) {
+      const first = data[index - period];
+      const second = data[index - period + 1] || first;
+      data[index] = (first + second) * 0.5 * options.damping;
+    }
+
+    const source = context.createBufferSource();
+    const highpass = context.createBiquadFilter();
+    const amp = context.createWaveShaper();
+    const cabinet = context.createBiquadFilter();
+    const presence = context.createBiquadFilter();
+    const envelope = context.createGain();
+    source.buffer = buffer;
+    highpass.type = 'highpass';
+    highpass.frequency.value = options.highpass || 72;
+    amp.curve = guitarAmpCurve(options.amp || 0);
+    amp.oversample = options.amp > 0.2 ? '2x' : 'none';
+    cabinet.type = 'lowpass';
+    cabinet.frequency.value = options.cabinet || 4800;
+    cabinet.Q.value = 0.72;
+    presence.type = 'peaking';
+    presence.frequency.value = options.presenceFrequency || 1900;
+    presence.Q.value = 0.8;
+    presence.gain.value = options.presence || 0;
+    envelope.gain.setValueAtTime(0.0001, time);
+    envelope.gain.exponentialRampToValueAtTime(
+      Math.max(0.0002, velocity * (options.level || 1)),
+      time + 0.003
+    );
+    envelope.gain.setValueAtTime(
+      Math.max(0.0002, velocity * (options.level || 1) * 0.82),
+      time + Math.min(0.045, ring * 0.2)
+    );
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + ring);
+    source.connect(highpass).connect(amp).connect(cabinet).connect(presence).connect(envelope).connect(destination);
+    source.start(time);
+    source.stop(time + ring + 0.02);
+    window.setTimeout(() => {
+      try {
+        source.disconnect();
+        highpass.disconnect();
+        amp.disconnect();
+        cabinet.disconnect();
+        presence.disconnect();
+        envelope.disconnect();
+      } catch (error) {
+        // Nodes may already be collected by the browser.
+      }
+    }, Math.max(0, (time + ring + 0.08 - context.currentTime) * 1000));
+  }
+
   function scheduleGuitar(destination, frequency, time, duration, velocity, voice) {
     const context = audio.context;
+    if (voice === 'modeledClean') {
+      scheduleModeledString(destination, frequency, time, duration, velocity, {
+        ring: Math.max(0.5, duration * 1.35),
+        damping: 0.988,
+        amp: 0.04,
+        cabinet: 6200,
+        presence: 1.5,
+        level: 1.15,
+        pickPosition: 0.3
+      });
+      return;
+    }
+    if (voice === 'ampCrunch') {
+      scheduleModeledString(destination, frequency, time, duration, velocity, {
+        ring: Math.max(0.42, duration * 1.18),
+        damping: 0.979,
+        amp: 0.38,
+        cabinet: 4300,
+        presence: 3,
+        level: 1.05,
+        pickPosition: 0.22
+      });
+      scheduleModeledString(destination, frequency * 1.4983, time + 0.002, duration, velocity * 0.4, {
+        ring: Math.max(0.35, duration),
+        damping: 0.974,
+        amp: 0.34,
+        cabinet: 4100,
+        presence: 2,
+        level: 0.82,
+        pickPosition: 0.2
+      });
+      return;
+    }
+    if (voice === 'heavyRhythm') {
+      const chug = Math.min(0.2, Math.max(0.09, duration * 0.9));
+      scheduleModeledString(destination, frequency, time, chug, velocity, {
+        ring: chug,
+        damping: 0.93,
+        amp: 0.68,
+        cabinet: 3300,
+        presence: 4.5,
+        presenceFrequency: 1450,
+        level: 1.2,
+        pickPosition: 0.16
+      });
+      scheduleModeledString(destination, frequency * 1.4983, time + 0.0015, chug, velocity * 0.48, {
+        ring: chug * 0.92,
+        damping: 0.925,
+        amp: 0.64,
+        cabinet: 3200,
+        presence: 3,
+        level: 0.9,
+        pickPosition: 0.18
+      });
+      return;
+    }
+    if (voice === 'singingLead') {
+      scheduleModeledString(destination, frequency, time, duration, velocity, {
+        ring: Math.max(0.72, duration * 1.8),
+        damping: 0.994,
+        amp: 0.5,
+        cabinet: 5200,
+        presence: 5,
+        presenceFrequency: 2200,
+        level: 1.12,
+        pickPosition: 0.27
+      });
+      scheduleModeledString(destination, frequency * 2, time + 0.004, duration, velocity * 0.14, {
+        ring: Math.max(0.45, duration),
+        damping: 0.987,
+        amp: 0.24,
+        cabinet: 5600,
+        presence: 2,
+        level: 0.7,
+        pickPosition: 0.3
+      });
+      return;
+    }
     if (voice === 'cleanElectric') {
       scheduleOscillator(context, destination, 'triangle', frequency, time, duration, velocity * 0.82);
       scheduleOscillator(context, destination, 'sine', frequency * 2, time, duration * 0.82, velocity * 0.28);
