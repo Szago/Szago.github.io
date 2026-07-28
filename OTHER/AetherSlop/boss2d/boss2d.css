@@ -98,6 +98,18 @@
   gap: 5px;
 }
 
+/* Sound audition mirror on the left: click once, or hold on the BPM grid. */
+.aether-boss2d-sound-debug {
+  position: absolute;
+  top: 38px;
+  left: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
 .aether-boss2d-debug-btn {
   padding: 6px 9px;
   color: #d6a6ff;
@@ -110,9 +122,21 @@
   cursor: pointer;
 }
 
+.aether-boss2d-sound-debug-btn {
+  touch-action: none;
+  user-select: none;
+}
+
 .aether-boss2d-debug-btn:hover {
   background: rgba(40, 8, 56, 0.92);
   color: #f0d6ff;
+}
+
+.aether-boss2d-sound-debug-btn.is-held {
+  color: #fff;
+  background: rgba(90, 20, 120, 0.95);
+  border-color: #d09aff;
+  box-shadow: 0 0 10px rgba(168, 84, 232, 0.8);
 }
 
 .aether-boss2d-debug-tempo {

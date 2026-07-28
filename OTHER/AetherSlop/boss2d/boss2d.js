@@ -284,6 +284,29 @@
   const BOSS_MUSIC_MASTER_GAIN = 0.58;
   const BOSS_MUSIC_LOOKAHEAD = 0.11;
   const BOSS_MUSIC_PATTERNS_PER_LAYER = 2;
+  // Motif Lab-style one-shots share the music context and pulse-wave palette,
+  // but have their own crunchy bus so stopping the score never cuts off an SFX.
+  const BOSS_SFX_MASTER_GAIN = 1.12;
+  const BOSS_SFX_VP_STEPS_PER_BEAT = 4;
+  const BOSS_SFX_DAMAGE_STEPS_PER_BEAT = 2;
+  const BOSS_SFX_DEBUG_CUES = [
+    { label: 'SHADOW CHARGE', cue: 'shadowCharge', stepsPerBeat: 1 },
+    { label: 'CULTIST ATTACK', cue: 'cultistAttack', stepsPerBeat: 1 },
+    { label: 'VP TICK', cue: 'vp', stepsPerBeat: BOSS_SFX_VP_STEPS_PER_BEAT },
+    { label: 'TAKE DAMAGE', cue: 'damage', stepsPerBeat: BOSS_SFX_DAMAGE_STEPS_PER_BEAT },
+    { label: 'DIE', cue: 'death', stepsPerBeat: 1 },
+    { label: 'SCREEN CRACK', cue: 'deathCrack', stepsPerBeat: 1 },
+    { label: 'PERSIST REVERSE', cue: 'persist', stepsPerBeat: 1 },
+    { label: 'OUR CAST', cue: 'playerAttack', stepsPerBeat: 1 },
+    { label: 'SWORD TRAVEL', cue: 'playerTravel', stepsPerBeat: 1 },
+    { label: 'OUR IMPACT', cue: 'playerImpact', stepsPerBeat: 1 },
+    { label: 'INTRO FALL', cue: 'introFall', stepsPerBeat: 1 },
+    { label: 'INTRO LAND', cue: 'introLand', stepsPerBeat: 1 },
+    { label: 'TENTACLES RISE', cue: 'introTentacles', stepsPerBeat: 1 },
+    { label: 'PENTAGRAM DRAW', cue: 'introPentagram', stepsPerBeat: 1 },
+    { label: 'SEAL CLOSE', cue: 'introSeal', stepsPerBeat: 1 },
+    { label: 'CULTIST RISE', cue: 'introRise', stepsPerBeat: 1 },
+  ];
   let bossMusic = null;
   let bossMusicTimer = 0;
   let bossMusicPlaying = false;
@@ -297,6 +320,9 @@
   let bossMusicClockBeats = 0;
   let bossMusicClockBpm = BASE_BPM;
   let fightMusicBeatCursor = null;
+  let phaseOneVpSfxStep = -1;
+  let phaseOneDamageSfxStep = -1;
+  let soundDebugHold = null;
 
   // ---- Attacks ------------------------------------------------------------
   // Every attack telegraphs first: a dark-purple outline snakes out across the
@@ -1220,6 +1246,7 @@
       '<div id="aether-boss2d-fps" class="aether-boss2d-fps">FPS --</div>' +
       '<div id="aether-boss2d-bpm" class="aether-boss2d-bpm">BPM --</div>' +
       '<div id="aether-boss2d-debug" class="aether-boss2d-debug"></div>' +
+      '<div id="aether-boss2d-sound-debug" class="aether-boss2d-sound-debug"></div>' +
       // The boss is two stacked layers so the kneel->stand swap can crossfade
       // and rise, and so the standing form can float and pixel-jitter on top.
       '<div id="aether-boss2d-cultist" class="aether-boss2d-cultist">' +
@@ -1295,6 +1322,7 @@
       beginDeathRevive();
       persistBtn.blur();
     });
+    buildBossSfxDebugPanel(document.getElementById('aether-boss2d-sound-debug'));
 
     // Debug: one button per attack movement. Left-click plays that pattern
     // solo. Right-click a button to arm it, then left-click another to play the
@@ -3385,10 +3413,36 @@
     const vy = heroV.y;
     const beats = dt / beatMs;
     const { live, shadow } = countOverlaps(vx, vy);
+    const vpBefore = vp;
     // Damage scales with overlaps (two attacks at once drain twice as fast).
     if (live > 0) hp = Math.max(0, hp - DAMAGE_PER_BEAT * live * beats);
     // VP is earned only in a shadow, never in the live skill itself.
     if (shadow > 0) vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadow * beats);
+
+    // Feedback follows subdivisions of the same live beat clock as the fight.
+    // The VP chirp is deliberately tiny and monophonic-feeling at 4x per beat;
+    // damage gets a heavier pulse at 2x per beat instead of buzzing every frame.
+    if (phase === PHASE.ACTIVE) {
+      const absoluteBeat = beatIndex + beatPhase / Math.max(1, beatMs);
+      const vpStep = Math.floor(absoluteBeat * BOSS_SFX_VP_STEPS_PER_BEAT);
+      if (shadow > 0 && vp > vpBefore && vpStep !== phaseOneVpSfxStep) {
+        phaseOneVpSfxStep = vpStep;
+        playBossSfx('vp', {
+          step: vpStep,
+          overlaps: shadow,
+          progress: vp / VP_MAX,
+        });
+      } else if (shadow === 0 || vp >= VP_MAX) {
+        phaseOneVpSfxStep = -1;
+      }
+      const damageStep = Math.floor(absoluteBeat * BOSS_SFX_DAMAGE_STEPS_PER_BEAT);
+      if (live > 0 && hp > 0 && damageStep !== phaseOneDamageSfxStep) {
+        phaseOneDamageSfxStep = damageStep;
+        playBossSfx('damage', { overlaps: live });
+      } else if (live === 0) {
+        phaseOneDamageSfxStep = -1;
+      }
+    }
     if (hp <= 0) die();
   }
 
@@ -3415,11 +3469,13 @@
       impacted: false,
       finalHit: false,
       phaseTwo: phase === PHASE.SECOND,
+      travelSoundStarted: false,
       fromX,
       fromY,
       toX: phase === PHASE.SECOND && avatar ? avatar.x : (sprite ? sprite.left + sprite.width / 2 : fromX),
       toY: phase === PHASE.SECOND && avatar ? avatar.y : (sprite ? sprite.top + sprite.height * 0.45 : board.top),
     };
+    if (!strike.phaseTwo) playBossSfx('playerAttack');
   }
 
   function wrathAfterStrike() {
@@ -3432,6 +3488,10 @@
     if (!strike) return 1;
     strike.t += dtRaw;
     const p = strike.t / STRIKE_DURATION;
+    if (!strike.phaseTwo && !strike.travelSoundStarted && p >= 0.55) {
+      strike.travelSoundStarted = true;
+      playBossSfx('playerTravel');
+    }
     if (!strike.impacted && strike.t >= STRIKE_IMPACT_AT) {
       if (strike.phaseTwo) {
         strike.impacted = true;
@@ -3447,6 +3507,7 @@
       const finalHit = wrathAfterStrike() >= WRATH_MAX;
       strike.impacted = true;
       strike.finalHit = finalHit;
+      playBossSfx('playerImpact', { finalHit });
       if (finalHit) strike.duration = FINAL_STRIKE_DURATION;
       shakeCultist(finalHit);
       bpmBonus += ATTACK_WRATH_GAIN; // wrath surges on impact, not on keypress
@@ -4042,6 +4103,7 @@
     deathSequence.reviveFromProgress = clamp01(
       (deathSequence.age - DEATH_CRACK_START) / DEATH_CRACK_FORM_MS
     );
+    if (deathSequence.phaseOneAudio) playBossSfx('persist');
     if (deathScreen) deathScreen.classList.remove('is-ready');
     keys.clear();
     return true;
@@ -4059,6 +4121,11 @@
       return false;
     }
     deathSequence.age += dt;
+    if (deathSequence.phaseOneAudio && !deathSequence.crackPlayed &&
+        deathSequence.age >= DEATH_CRACK_START) {
+      deathSequence.crackPlayed = true;
+      playBossSfx('deathCrack');
+    }
     if (deathScreen) deathScreen.classList.toggle('is-ready', deathSequence.age >= DEATH_PERSIST_AT);
     renderDeathSequence();
     return false;
@@ -4077,6 +4144,8 @@
       heroScaleX: board.width / Math.max(1, canvas.width),
       heroScaleY: board.height / Math.max(1, canvas.height),
       restartPhase: phase === PHASE.SECOND ? PHASE.SECOND : PHASE.FALL,
+      phaseOneAudio: phase === PHASE.ACTIVE,
+      crackPlayed: false,
       reviving: false,
       reviveAge: 0,
       reviveFromProgress: 0,
@@ -4085,6 +4154,7 @@
     };
     dead = true;
     keys.clear();
+    if (deathSequence.phaseOneAudio) playBossSfx('death');
     stopBossMusic(0.2);
     if (deathScreen) {
       deathScreen.classList.remove('hidden', 'is-ready');
@@ -4107,9 +4177,14 @@
   }
 
   // ---- Phase machine -----------------------------------------------------
-  function setPhase(next) {
+  function setPhase(next, silentAudio) {
     phase = next;
     phaseTime = 0;
+    if (!silentAudio) {
+      if (next === PHASE.TENTACLES) playBossSfx('introTentacles');
+      else if (next === PHASE.PENTAGRAM) playBossSfx('introPentagram', { arm: 0 });
+      else if (next === PHASE.ACTIVE) playBossSfx('introRise');
+    }
     // When the scripted intro ends and the fight begins, the cultist rises from
     // her kneeling form into her standing combat pose (crossfade + rise driven
     // by the `.standing` class), and the tempo clock starts ticking.
@@ -4356,6 +4431,50 @@
     return curve;
   }
 
+  function makeBossSfxNoiseBuffer(context) {
+    const frames = Math.ceil(context.sampleRate * 1.25);
+    const buffer = context.createBuffer(1, frames, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    const random = mulberry32(0x5f1a2026);
+    let held = 0;
+    for (let i = 0; i < frames; i++) {
+      if (i % 3 === 0) held = random() * 2 - 1;
+      data[i] = held;
+    }
+    return buffer;
+  }
+
+  // One deterministic glass-and-stone fracture, stored both forwards and
+  // sample-for-sample backwards. PERSIST therefore really reverses the crack
+  // instead of merely substituting a vaguely "rising" sound.
+  function makeBossSfxCrackBuffers(context) {
+    const duration = 0.52;
+    const frames = Math.ceil(context.sampleRate * duration);
+    const forward = context.createBuffer(1, frames, context.sampleRate);
+    const reverse = context.createBuffer(1, frames, context.sampleRate);
+    const data = forward.getChannelData(0);
+    const reversed = reverse.getChannelData(0);
+    const random = mulberry32(0xc2ac2026);
+    const splinters = [0, 0.012, 0.029, 0.051, 0.084, 0.128, 0.184, 0.257, 0.346];
+    let held = 0;
+    for (let i = 0; i < frames; i++) {
+      const t = i / context.sampleRate;
+      let sample = Math.sin(2 * Math.PI * (68 - t * 42) * t) * Math.exp(-t * 10) * 0.34;
+      for (let k = 0; k < splinters.length; k++) {
+        const age = t - splinters[k];
+        if (age < 0 || age > 0.055 + k * 0.002) continue;
+        if (i % (2 + (k % 3)) === 0) held = random() * 2 - 1;
+        const grit = held * Math.exp(-age * (48 + k * 3));
+        const shard = Math.sin(2 * Math.PI * (1350 + k * 173) * age) * Math.exp(-age * 82);
+        sample += grit * (0.34 - k * 0.016) + shard * 0.16;
+      }
+      const edge = Math.min(1, i / 96, (frames - 1 - i) / 96);
+      data[i] = Math.max(-1, Math.min(1, sample * Math.max(0, edge)));
+    }
+    for (let i = 0; i < frames; i++) reversed[i] = data[frames - 1 - i];
+    return { forward, reverse };
+  }
+
   function createBossMusic() {
     if (bossMusic) return bossMusic;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -4380,6 +4499,11 @@
     const master = context.createGain();
     const compressor = context.createDynamicsCompressor();
     const trackGains = BOSS_MOTIF.layers.map(() => context.createGain());
+    const sfxInput = context.createGain();
+    const sfxCrusher = context.createWaveShaper();
+    const sfxDrive = context.createWaveShaper();
+    const sfxFilter = context.createBiquadFilter();
+    const sfxMaster = context.createGain();
 
     crusher.curve = makeBossMusicCrusherCurve(BOSS_MOTIF.synth.bitDepth);
     crusher.oversample = 'none';
@@ -4397,6 +4521,14 @@
     compressor.ratio.value = 8;
     compressor.attack.value = 0.003;
     compressor.release.value = 0.12;
+    sfxCrusher.curve = makeBossMusicCrusherCurve(7);
+    sfxCrusher.oversample = 'none';
+    sfxDrive.curve = makeBossMusicDriveCurve(0.08);
+    sfxDrive.oversample = 'none';
+    sfxFilter.type = 'lowpass';
+    sfxFilter.frequency.value = 7200;
+    sfxFilter.Q.value = 0.7;
+    sfxMaster.gain.value = BOSS_SFX_MASTER_GAIN;
 
     trackGains.forEach((gain) => {
       gain.gain.value = 0;
@@ -4407,12 +4539,18 @@
     filter.connect(delay).connect(wet).connect(master);
     delay.connect(feedback).connect(delay);
     master.connect(compressor).connect(context.destination);
+    sfxInput.connect(sfxCrusher).connect(sfxDrive).connect(sfxFilter).connect(sfxMaster);
+    sfxMaster.connect(compressor);
 
     bossMusic = {
       context,
       delay,
       master,
       trackGains,
+      sfxInput,
+      sfxNoise: makeBossSfxNoiseBuffer(context),
+      sfxCrack: makeBossSfxCrackBuffers(context),
+      sfxLastAt: Object.create(null),
       waves: {
         pulse12: makeBossMusicPulseWave(context, 0.125),
         pulse18: makeBossMusicPulseWave(context, 0.1875),
@@ -4420,6 +4558,333 @@
       },
     };
     return bossMusic;
+  }
+
+  function scheduleBossSfxTone(destination, voice, frequency, endFrequency, time, duration, amount, options) {
+    if (!bossMusic || amount <= 0 || duration <= 0) return;
+    const context = bossMusic.context;
+    const oscillator = context.createOscillator();
+    const envelope = context.createGain();
+    const config = options || {};
+    if (bossMusic.waves[voice]) oscillator.setPeriodicWave(bossMusic.waves[voice]);
+    else oscillator.type = voice;
+    oscillator.frequency.setValueAtTime(Math.max(1, frequency), time);
+    oscillator.frequency.exponentialRampToValueAtTime(
+      Math.max(1, endFrequency == null ? frequency : endFrequency),
+      time + duration
+    );
+    oscillator.detune.setValueAtTime(config.detune || 0, time);
+    const attack = Math.max(0.001, Math.min(duration * 0.35, config.attack || 0.003));
+    envelope.gain.setValueAtTime(0.0001, time);
+    if (config.build) {
+      envelope.gain.exponentialRampToValueAtTime(Math.max(0.0002, amount * 0.12), time + attack);
+      envelope.gain.linearRampToValueAtTime(amount, time + duration * 0.88);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    } else {
+      envelope.gain.exponentialRampToValueAtTime(amount, time + attack);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    }
+    oscillator.connect(envelope).connect(destination);
+    oscillator.start(time);
+    oscillator.stop(time + duration + 0.02);
+  }
+
+  function scheduleBossSfxNoise(destination, time, duration, amount, type, frequency, q, endFrequency, build) {
+    if (!bossMusic || amount <= 0 || duration <= 0) return;
+    const context = bossMusic.context;
+    const source = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const envelope = context.createGain();
+    source.buffer = bossMusic.sfxNoise;
+    source.loop = true;
+    filter.type = type;
+    filter.frequency.setValueAtTime(frequency, time);
+    if (endFrequency != null) {
+      filter.frequency.exponentialRampToValueAtTime(Math.max(1, endFrequency), time + duration);
+    }
+    filter.Q.setValueAtTime(q || 0.7, time);
+    if (build) {
+      envelope.gain.setValueAtTime(0.0001, time);
+      envelope.gain.exponentialRampToValueAtTime(Math.max(0.0002, amount * 0.10), time + 0.012);
+      envelope.gain.linearRampToValueAtTime(amount, time + duration * 0.88);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    } else {
+      envelope.gain.setValueAtTime(amount, time);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    }
+    source.connect(filter).connect(envelope).connect(destination);
+    const maxOffset = Math.max(0, bossMusic.sfxNoise.duration - duration);
+    source.start(time, Math.random() * maxOffset);
+    source.stop(time + duration + 0.01);
+  }
+
+  function scheduleBossSfxSample(destination, buffer, time, amount) {
+    if (!bossMusic || !buffer) return;
+    const source = bossMusic.context.createBufferSource();
+    const gain = bossMusic.context.createGain();
+    source.buffer = buffer;
+    gain.gain.setValueAtTime(amount, time);
+    source.connect(gain).connect(destination);
+    source.start(time);
+  }
+
+  function playBossSfx(name, detail) {
+    const music = createBossMusic();
+    if (!music) return false;
+    if (music.context.state === 'suspended') {
+      music.context.resume().catch(() => {});
+    }
+    const now = music.context.currentTime;
+    const data = detail || {};
+    const throttle = {
+      shadowCharge: 0.045,
+      cultistAttack: 0.045,
+      vp: 0.012,
+      damage: 0.055,
+    }[name] || 0;
+    if (!data.debug &&
+        now - (music.sfxLastAt[name] == null ? -Infinity : music.sfxLastAt[name]) < throttle) {
+      return false;
+    }
+    music.sfxLastAt[name] = now;
+    const requestedTime = Number.isFinite(data.at) ? data.at : now + 0.006;
+    const time = Math.max(now + 0.003, requestedTime);
+    const out = music.sfxInput;
+
+    if (name === 'shadowCharge') {
+      const chargeBeats = Number.isFinite(data.beats) ? data.beats : 1;
+      const duration = Math.max(0.42, Math.min(2.10, (60 / Math.max(1, bpm)) * chargeBeats * 0.92));
+      scheduleBossSfxTone(out, 'triangle', 27.5, 73.42, time, duration, 0.30, {
+        attack: 0.025,
+        build: true,
+      });
+      scheduleBossSfxTone(out, 'pulse12', 41.2, 103.83, time, duration * 0.98, 0.20, {
+        detune: -11,
+        attack: 0.035,
+        build: true,
+      });
+      scheduleBossSfxNoise(out, time, duration, 0.12, 'bandpass', 170, 1.5, 860, true);
+    } else if (name === 'cultistAttack') {
+      // A bass-heavy beam release: sub punch, tearing pulse body, then grit.
+      scheduleBossSfxTone(out, 'sine', 96, 25, time, 0.38, 0.72, { attack: 0.001 });
+      scheduleBossSfxTone(out, 'pulse12', 69.3, 28, time, 0.31, 0.48, { attack: 0.001 });
+      scheduleBossSfxTone(out, 'sawtooth', 43.65, 32.7, time + 0.018, 0.34, 0.26, {
+        detune: -13,
+        attack: 0.002,
+      });
+      scheduleBossSfxNoise(out, time, 0.29, 0.54, 'lowpass', 1900, 0.65, 520);
+    } else if (name === 'vp') {
+      // VP pitch is a direct function of the meter, so it only climbs and
+      // never falls back to the start of a four-note loop.
+      const progress = Math.max(0, Math.min(1, Number(data.progress) || 0));
+      const pitch = 116.54 * Math.pow(2, progress * 1.28);
+      const weight = Math.min(1.3, 1 + Math.max(0, (data.overlaps || 1) - 1) * 0.12);
+      scheduleBossSfxTone(out, 'pulse12', pitch, pitch * 1.018, time, 0.029, 0.095 * weight, {
+        attack: 0.001,
+      });
+    } else if (name === 'damage') {
+      scheduleBossSfxTone(out, 'pulse12', 82.4, 36.7, time, 0.15, 0.27);
+      scheduleBossSfxTone(out, 'triangle', 46.2, 27.5, time, 0.19, 0.25);
+      scheduleBossSfxNoise(out, time, 0.11, 0.30, 'bandpass', 520, 1.1, 240);
+    } else if (name === 'death') {
+      scheduleBossSfxTone(out, 'sine', 92.5, 22, time, 1.45, 0.68, { attack: 0.001 });
+      scheduleBossSfxTone(out, 'pulse12', 138.6, 25, time, 1.28, 0.42, {
+        detune: -17,
+        attack: 0.002,
+      });
+      scheduleBossSfxTone(out, 'sawtooth', 55, 27.5, time + 0.16, 1.18, 0.24, {
+        attack: 0.018,
+      });
+      scheduleBossSfxNoise(out, time, 0.82, 0.34, 'lowpass', 1250, 0.8, 180);
+      scheduleBossSfxTone(out, 'sine', 46.2, 23.1, time + 0.28, 1.15, 0.46, {
+        attack: 0.012,
+      });
+    } else if (name === 'deathCrack') {
+      scheduleBossSfxSample(out, music.sfxCrack.forward, time, 1.05);
+    } else if (name === 'persist') {
+      scheduleBossSfxSample(out, music.sfxCrack.reverse, time, 1.05);
+    } else if (name === 'playerAttack') {
+      // Materialisation occupies the first 55% of the flourish.
+      scheduleBossSfxTone(out, 'sine', 61.7, 32.7, time, 0.22, 0.42, { attack: 0.001 });
+      scheduleBossSfxTone(out, 'triangle', 41.2, 123.47, time, 0.62, 0.32, {
+        attack: 0.018,
+        build: true,
+      });
+      scheduleBossSfxTone(out, 'pulse12', 55, 164.81, time + 0.06, 0.58, 0.25, {
+        detune: 7,
+        attack: 0.025,
+        build: true,
+      });
+      scheduleBossSfxNoise(out, time + 0.03, 0.56, 0.18, 'bandpass', 260, 1.3, 980, true);
+    } else if (name === 'playerTravel') {
+      scheduleBossSfxTone(out, 'triangle', 82.4, 220, time, 0.34, 0.30, { attack: 0.004 });
+      scheduleBossSfxTone(out, 'pulse12', 55, 146.83, time, 0.31, 0.22, {
+        detune: -9,
+        attack: 0.004,
+      });
+      scheduleBossSfxNoise(out, time, 0.32, 0.30, 'bandpass', 220, 1.1, 1250);
+      scheduleBossSfxTone(out, 'pulse12', 98, 65.4, time + 0.11, 0.075, 0.17);
+      scheduleBossSfxTone(out, 'pulse12', 123.5, 73.4, time + 0.22, 0.07, 0.15);
+    } else if (name === 'playerImpact') {
+      const impactScale = data.finalHit ? 1.25 : 1;
+      scheduleBossSfxTone(out, 'sine', 123.5, 24.5, time, 0.44, 0.68 * impactScale, {
+        attack: 0.001,
+      });
+      scheduleBossSfxTone(out, 'pulse12', 196, 43.65, time, 0.31, 0.42 * impactScale);
+      scheduleBossSfxTone(out, 'triangle', 65.4, 27.5, time + 0.045, 0.40, 0.48 * impactScale);
+      scheduleBossSfxNoise(out, time, 0.28, 0.48 * impactScale, 'lowpass', 2100, 0.75, 360);
+    } else if (name === 'introFall') {
+      scheduleBossSfxTone(out, 'triangle', 82.4, 32.7, time, 0.78, 0.28, {
+        attack: 0.012,
+      });
+      scheduleBossSfxNoise(out, time, 0.76, 0.15, 'bandpass', 820, 0.9, 180);
+    } else if (name === 'introLand') {
+      scheduleBossSfxTone(out, 'sine', 105, 24, time, 0.42, 0.67, { attack: 0.001 });
+      scheduleBossSfxTone(out, 'pulse12', 73.4, 31, time, 0.25, 0.36);
+      scheduleBossSfxNoise(out, time, 0.20, 0.44, 'lowpass', 1350, 0.8, 260);
+    } else if (name === 'introTentacles') {
+      scheduleBossSfxTone(out, 'triangle', 25, 61.7, time, 1.28, 0.33, {
+        attack: 0.035,
+        build: true,
+      });
+      scheduleBossSfxTone(out, 'pulse12', 36.7, 82.4, time + 0.08, 1.18, 0.19, {
+        detune: -15,
+        attack: 0.045,
+        build: true,
+      });
+      scheduleBossSfxNoise(out, time, 1.25, 0.20, 'bandpass', 120, 1.2, 690, true);
+    } else if (name === 'introPentagram') {
+      const arm = Math.max(0, Math.min(4, data.arm || 0));
+      const root = 46.25 * Math.pow(2, arm / 24);
+      scheduleBossSfxTone(out, 'pulse12', root, root * 1.68, time, PENT_ARM / 1000, 0.28, {
+        detune: -9,
+        attack: 0.008,
+        build: true,
+      });
+      scheduleBossSfxTone(out, 'triangle', root / 2, root * 0.82, time, PENT_ARM / 1000, 0.31, {
+        attack: 0.012,
+        build: true,
+      });
+      scheduleBossSfxNoise(out, time, PENT_ARM / 1000, 0.21, 'bandpass', 240, 2.2, 1040, true);
+    } else if (name === 'introSeal') {
+      scheduleBossSfxTone(out, 'sine', 31, 49, time, CIRCLE_BURN / 1000, 0.46, {
+        attack: 0.018,
+      });
+      scheduleBossSfxTone(out, 'pulse12', 61.7, 92.5, time, CIRCLE_BURN / 1000, 0.26, {
+        detune: -12,
+        attack: 0.025,
+      });
+      scheduleBossSfxNoise(out, time, CIRCLE_BURN / 1000, 0.22, 'bandpass', 180, 1.8, 720);
+    } else if (name === 'introRise') {
+      scheduleBossSfxTone(out, 'sine', 29.1, 58.3, time, 0.92, 0.46, {
+        attack: 0.035,
+      });
+      scheduleBossSfxTone(out, 'pulse12', 43.65, 87.3, time + 0.08, 0.82, 0.27, {
+        detune: -14,
+        attack: 0.045,
+      });
+      scheduleBossSfxNoise(out, time, 0.78, 0.18, 'bandpass', 150, 1.4, 620);
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  function playSoundDebugCue(definition, step, at) {
+    const previewStep = Math.max(0, step || 0);
+    return playBossSfx(definition.cue, {
+      debug: true,
+      step: previewStep,
+      overlaps: 1,
+      progress: definition.cue === 'vp' ? Math.min(1, (previewStep + 1) / 16) : undefined,
+      beats: definition.cue === 'shadowCharge' ? 1 : undefined,
+      arm: definition.cue === 'introPentagram' ? previewStep % 5 : undefined,
+      at,
+    });
+  }
+
+  function stopSoundDebugHold(pointerId) {
+    if (!soundDebugHold) return;
+    if (pointerId != null && soundDebugHold.pointerId !== pointerId) return;
+    if (soundDebugHold.button) soundDebugHold.button.classList.remove('is-held');
+    soundDebugHold = null;
+  }
+
+  function startSoundDebugHold(definition, button, pointerId) {
+    stopSoundDebugHold();
+    resumeBossMusicAudio();
+    playSoundDebugCue(definition, 0);
+    const music = bossMusic || createBossMusic();
+    if (!music) return;
+    const interval = 60 / Math.max(1, bpm) / definition.stepsPerBeat;
+    soundDebugHold = {
+      definition,
+      button,
+      pointerId,
+      step: 1,
+      interval,
+      nextAt: music.context.currentTime + interval,
+    };
+    button.classList.add('is-held');
+  }
+
+  function updateSoundDebugHold() {
+    if (!soundDebugHold || !bossMusic || bossMusic.context.state !== 'running') return;
+    const hold = soundDebugHold;
+    const now = bossMusic.context.currentTime;
+    const interval = 60 / Math.max(1, bpm) / hold.definition.stepsPerBeat;
+    if (Math.abs(interval - hold.interval) > 0.0001) {
+      const remaining = Math.max(0, Math.min(1, (hold.nextAt - now) / hold.interval));
+      hold.nextAt = now + remaining * interval;
+      hold.interval = interval;
+    }
+    if (hold.nextAt < now - interval * 2) hold.nextAt = now;
+    let scheduled = 0;
+    while (hold.nextAt <= now + 0.035 && scheduled < 4) {
+      playSoundDebugCue(hold.definition, hold.step, hold.nextAt);
+      hold.step++;
+      hold.nextAt += interval;
+      scheduled++;
+    }
+  }
+
+  function buildBossSfxDebugPanel(panel) {
+    if (!panel) return;
+    panel.setAttribute('aria-label', 'Sound effect debugger');
+    BOSS_SFX_DEBUG_CUES.forEach((definition) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'aether-boss2d-debug-btn aether-boss2d-sound-debug-btn';
+      button.textContent = definition.label;
+      button.title = 'Click to play once. Hold to repeat at the current combat BPM.';
+      button.addEventListener('contextmenu', (event) => event.preventDefault());
+      button.addEventListener('keydown', (event) => {
+        if (event.code === 'Space' || event.code === 'Enter') event.stopPropagation();
+      });
+      button.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        startSoundDebugHold(definition, button, event.pointerId);
+        if (button.setPointerCapture) button.setPointerCapture(event.pointerId);
+      });
+      button.addEventListener('pointerup', (event) => {
+        event.preventDefault();
+        stopSoundDebugHold(event.pointerId);
+        if (button.hasPointerCapture && button.hasPointerCapture(event.pointerId)) {
+          button.releasePointerCapture(event.pointerId);
+        }
+        button.blur();
+      });
+      button.addEventListener('pointercancel', (event) => stopSoundDebugHold(event.pointerId));
+      button.addEventListener('lostpointercapture', (event) => stopSoundDebugHold(event.pointerId));
+      // Keyboard activation has no pointerdown, so retain accessible one-shot
+      // auditioning without double-firing ordinary mouse/touch clicks.
+      button.addEventListener('click', (event) => {
+        if (event.detail === 0) playSoundDebugCue(definition, 0);
+        button.blur();
+      });
+      panel.appendChild(button);
+    });
   }
 
   function setBossMusicParam(param, value, time, transitionSeconds) {
@@ -4802,6 +5267,8 @@
     beatIndex = 0;
     lastAnimBpm = -1;
     fightMusicBeatCursor = null;
+    phaseOneVpSfxStep = -1;
+    phaseOneDamageSfxStep = -1;
     attacks = [];
     fadingAttacks = [];
     phase2Ritual = null;
@@ -4910,7 +5377,7 @@
 
   // Dev shortcut: skip the scripted intro and drop straight into the fight
   // with every element (inner + outer tentacles, full pentagram) in place.
-  function skipToActive() {
+  function skipToActive(silentAudio) {
     if (phase === PHASE.ACTIVE) return;
     if (!tentacles.length) spawnTentacles();
     pentagram.arm = 5;
@@ -4922,7 +5389,7 @@
     heroSquash = 0;
     hero.x = ARENA_CX;
     hero.y = ARENA_CY;
-    setPhase(PHASE.ACTIVE);
+    setPhase(PHASE.ACTIVE, silentAudio);
   }
 
   // Debug primer: enter normal combat one strike away from the phase-two
@@ -7825,7 +8292,10 @@
       } else {
         hero.x = ARENA_CX;
         hero.y = ARENA_CY;
-        if (landAt < 0) landAt = clock;
+        if (landAt < 0) {
+          landAt = clock;
+          playBossSfx('introLand');
+        }
         // Squash on impact, then spring back.
         const st = Math.min(1, (phaseTime - FALL_DURATION) / SETTLE_DURATION);
         heroSquash = Math.sin(st * Math.PI) * 0.8;
@@ -7843,6 +8313,11 @@
         if (pentagram.pauseTime >= PENT_PAUSE) {
           pentagram.paused = false;
           pentagram.pauseTime = 0;
+          if (pentagram.arm < 5) {
+            playBossSfx('introPentagram', { arm: pentagram.arm });
+          } else {
+            playBossSfx('introSeal');
+          }
         }
       } else if (pentagram.arm < 5) {
         // Burn the five arms one at a time, with a beat between each.
@@ -7972,6 +8447,17 @@
     else total = spawnPentagramWave(wave, board);
     if (!total) return total;
     for (let i = attackStart; i < attacks.length; i++) attacks[i].slotId = slot.id;
+    if (attacks.length > attackStart) {
+      const spawned = attacks.slice(attackStart);
+      const chargeBeats = spawned.reduce((longest, attack) => (
+        attack.state === 'telegraph'
+          ? Math.max(longest, attack.stretchBeats || 1)
+          : longest
+      ), 0);
+      if (chargeBeats > 0) {
+        playBossSfx('shadowCharge', { movement: name, beats: chargeBeats });
+      }
+    }
     return total;
   }
 
@@ -8330,6 +8816,7 @@
         if (a.waitTime >= beatMs * a.waitBeats) {
           a.state = 'telegraph';
           a.stretch = 0;
+          playBossSfx('shadowCharge', { attack: a.type, beats: a.stretchBeats || 1 });
         }
       } else if (a.state === 'telegraph') {
         // The snake advances at the beat's pace, reaching the far edge in one beat.
@@ -8345,7 +8832,11 @@
         // time (telegraph + hold) is identical every wave instead of swinging by
         // up to a beat depending on where the telegraph happened to finish.
         a.holdTime += dt;
-        if (a.holdTime >= beatMs * a.holdBeats) { a.state = 'fire'; a.fire = 0; }
+        if (a.holdTime >= beatMs * a.holdBeats) {
+          a.state = 'fire';
+          a.fire = 0;
+          playBossSfx('cultistAttack', { attack: a.type });
+        }
       } else if (a.state === 'fire') {
         a.fire += dt / (beatMs * a.fireBeats);
         if (a.fire >= 1) { a.fire = 1; a.state = 'done'; }
@@ -11016,6 +11507,7 @@
     if (!active) return;
     frameBoardRect = null;
     updateFpsCounter(time);
+    updateSoundDebugHold();
     const dtRaw = Math.min(48, time - previousTime || 16);
     previousTime = time;
     if (dead && deathSequence) {
@@ -11125,6 +11617,7 @@
   // A normal open starts from the phase-one fall; PERSIST may select phase two.
   function resetRun(restartPhase) {
     const checkpoint = restartPhase === PHASE.SECOND ? PHASE.SECOND : PHASE.FALL;
+    stopSoundDebugHold();
     stopBossMusic(0);
     // Reset the scripted intro sequence.
     phase = PHASE.FALL;
@@ -11205,12 +11698,13 @@
     if (deathScreen) deathScreen.classList.remove('is-ready');
     if (deathCtx && deathCanvas) deathCtx.clearRect(0, 0, deathCanvas.width, deathCanvas.height);
     if (checkpoint === PHASE.SECOND) {
-      skipToActive();
+      skipToActive(true);
       startSecondPhase();
     } else {
       // The motif belongs to the whole cultist encounter, including the fall
       // into the arena and the seal-drawing intro before she stands.
       startBossMusic(2.4);
+      playBossSfx('introFall');
     }
     updateBars();
     if (bpmElement) bpmElement.textContent = 'BPM --';
@@ -11255,6 +11749,7 @@
   function close() {
     if (!active) return;
     active = false;
+    stopSoundDebugHold();
     cancelAnimationFrame(animationFrame);
     animationFrame = 0;
     stopBossMusic(0.08);
@@ -11289,7 +11784,10 @@
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('keyup', onKeyUp);
   window.addEventListener('resize', onResize);
-  window.addEventListener('blur', () => keys.clear());
+  window.addEventListener('blur', () => {
+    keys.clear();
+    stopSoundDebugHold();
+  });
 
   window.AetherBoss2D = Object.freeze({
     open,
