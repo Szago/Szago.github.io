@@ -281,7 +281,7 @@
       echoBeats: 1,
     },
   };
-  const BOSS_MUSIC_MASTER_GAIN = 0.29;
+  const BOSS_MUSIC_MASTER_GAIN = 0.145;
   const BOSS_MUSIC_LOOKAHEAD = 0.11;
   const BOSS_MUSIC_PATTERNS_PER_LAYER = 2;
   // Motif Lab-style one-shots share the music context and pulse-wave palette,
@@ -306,6 +306,7 @@
     { label: 'TWIN GATES', cue: 'shadowCharge', movement: 'sideportals', stepsPerBeat: 1 },
     { label: 'ORB VOLLEY', cue: 'cultistAttack', movement: 'sideportals', stepsPerBeat: 1 },
     { label: 'VP TICK', cue: 'vp', stepsPerBeat: BOSS_SFX_VP_STEPS_PER_BEAT },
+    { label: 'VP FULL', cue: 'vpFull', stepsPerBeat: 0.5 },
     { label: 'TAKE DAMAGE', cue: 'damage', stepsPerBeat: BOSS_SFX_DAMAGE_STEPS_PER_BEAT },
     { label: 'DIE', cue: 'death', stepsPerBeat: 1 },
     { label: 'SCREEN CRACK', cue: 'deathCrack', stepsPerBeat: 1 },
@@ -335,6 +336,7 @@
   let fightMusicBeatCursor = null;
   let phaseOneVpSfxStep = -1;
   let phaseOneDamageSfxStep = -1;
+  let phaseOneDamageSfxCount = 0;
   let soundDebugHold = null;
   let combatPaused = false;
   let combatPauseButton = null;
@@ -3436,6 +3438,9 @@
     if (live > 0) hp = Math.max(0, hp - DAMAGE_PER_BEAT * live * beats);
     // VP is earned only in a shadow, never in the live skill itself.
     if (shadow > 0) vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadow * beats);
+    if (vpBefore < VP_MAX && vp >= VP_MAX) {
+      playBossSfx('vpFull');
+    }
 
     // Feedback follows subdivisions of the same live beat clock as the fight.
     // The VP chirp is deliberately tiny and monophonic-feeling at 4x per beat;
@@ -3456,9 +3461,13 @@
       const damageStep = Math.floor(absoluteBeat * BOSS_SFX_DAMAGE_STEPS_PER_BEAT);
       if (live > 0 && hp > 0 && damageStep !== phaseOneDamageSfxStep) {
         phaseOneDamageSfxStep = damageStep;
-        playBossSfx('damage', { overlaps: live });
+        playBossSfx('damage', {
+          step: phaseOneDamageSfxCount++,
+          overlaps: live,
+        });
       } else if (live === 0) {
         phaseOneDamageSfxStep = -1;
+        phaseOneDamageSfxCount = 0;
       }
     }
     if (hp <= 0) die();
@@ -4151,6 +4160,7 @@
 
   function die() {
     if (dead) return;
+    stopBloodSpiralAudio(true);
     frameBoardRect = null;
     const board = getBoardRect();
     const heroViewport = worldPointToViewport(hero.x, hero.y, board);
@@ -4218,6 +4228,7 @@
 
   function startSecondPhase() {
     if (phase === PHASE.SECOND) return;
+    stopBloodSpiralAudio(true);
     // Her fall is the phase-one musical cutoff. Let the last hit and echo tail
     // dissolve beneath the first beat of the transformation.
     stopBossMusic(0.9);
@@ -4517,6 +4528,9 @@
       (t, duration, random) => {
         coloredNoise += ((random() * 2 - 1) - coloredNoise) * (config.noiseSlew || 0.16);
         const p = t / duration;
+        const noiseEnd = Math.max(0.2, Math.min(0.94, config.noiseEnd || 0.62));
+        const noiseTail = Math.max(0, Math.min(1, (1 - p) / (1 - noiseEnd)));
+        const noiseGate = p <= noiseEnd ? 1 : noiseTail * noiseTail;
         const f0 = config.subStart || 78;
         const f1 = config.subEnd || 24;
         const phase = Math.PI * 2 * (f0 * t + (f1 - f0) * t * t / (2 * duration));
@@ -4527,7 +4541,7 @@
           const age = t - bursts[i];
           if (age < 0) continue;
           const decay = Math.exp(-age * ((config.burstDecay || 12) + i * 0.7));
-          sample += coloredNoise * decay * (config.noiseAmount || 0.68);
+          sample += coloredNoise * decay * noiseGate * (config.noiseAmount || 0.68);
           sample += Math.sin(Math.PI * 2 * (config.crackHz || 540) * age) *
             Math.exp(-age * 38) * (config.crackAmount || 0.16);
         }
@@ -4536,7 +4550,7 @@
           const carrier = Math.sin(Math.PI * 2 * (config.carrierHz || 46) * t) +
             0.35 * Math.sin(Math.PI * 2 * (config.carrierHz || 46) * 1.49 * t);
           sample += carrier * body * (config.carrierAmount || 0.22);
-          sample += coloredNoise * body * (1 - p * 0.35) * (config.roarAmount || 0.30);
+          sample += coloredNoise * body * noiseGate * (config.roarAmount || 0.30);
         }
         return sample;
       }
@@ -4567,8 +4581,9 @@
         const sealGrowl = seal > 0
           ? Math.sin(Math.PI * 2 * (29 + seal * 12) * t) * seal
           : 0;
-        return drone * threat * 0.24 + etch * 0.65 + sealGrowl * 0.52 +
-          ritualBreath * seal * 0.38;
+        const cleanTail = Math.max(0, Math.min(1, (1 - p) / 0.16));
+        return drone * threat * 0.24 + etch * 0.65 * cleanTail + sealGrowl * 0.52 +
+          ritualBreath * seal * 0.38 * cleanTail;
       }
     );
 
@@ -4585,7 +4600,9 @@
           0.55 * Math.sin(Math.PI * 2 * 293.66 * t) +
           0.30 * Math.sin(Math.PI * 2 * 392 * t);
         const body = Math.sin(Math.PI * 2 * 73.4 * t);
-        return light * swell * 0.23 + body * swell * 0.36 + castAir * swell * 0.54;
+        const cleanTail = Math.max(0, Math.min(1, (1 - p) / 0.24));
+        return light * swell * 0.23 + body * swell * 0.36 +
+          castAir * swell * cleanTail * 0.54;
       }
     );
 
@@ -4707,7 +4724,7 @@
     compressor.release.value = 0.12;
     // Keep headroom before voices sum. Pulse/noise sources already provide the
     // pixel texture; a shared crusher here turned dense combo waves into clips.
-    sfxInput.gain.value = 0.72;
+    sfxInput.gain.value = 0.62;
     sfxFilter.type = 'lowpass';
     sfxFilter.frequency.value = 5200;
     sfxFilter.Q.value = 0.55;
@@ -4715,8 +4732,8 @@
     sfxLimiter.threshold.value = -5;
     sfxLimiter.knee.value = 2;
     sfxLimiter.ratio.value = 12;
-    sfxLimiter.attack.value = 0.001;
-    sfxLimiter.release.value = 0.09;
+    sfxLimiter.attack.value = 0.003;
+    sfxLimiter.release.value = 0.14;
     musicUserGain.gain.value = bossAudioMix.music;
     effectsUserGain.gain.value = bossAudioMix.effects;
     overallMaster.gain.value = bossAudioMix.overall;
@@ -4748,6 +4765,7 @@
       sfxSamples: makeBossSfxSampleBank(context),
       sfxLastAt: Object.create(null),
       sfxEventTimes: [],
+      spiralSfx: null,
       waves: {
         pulse12: makeBossMusicPulseWave(context, 0.125),
         pulse18: makeBossMusicPulseWave(context, 0.1875),
@@ -4807,12 +4825,109 @@
       envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
     } else {
       envelope.gain.setValueAtTime(amount, time);
-      envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+      const cleanEnd = time + duration * 0.72;
+      envelope.gain.exponentialRampToValueAtTime(0.0001, cleanEnd);
     }
     source.connect(filter).connect(envelope).connect(destination);
     const maxOffset = Math.max(0, bossMusic.sfxNoise.duration - duration);
     source.start(time, Math.random() * maxOffset);
-    source.stop(time + duration + 0.01);
+    source.stop(time + (build ? duration : duration * 0.72) + 0.01);
+  }
+
+  function startBloodSpiralAudio() {
+    const music = createBossMusic();
+    if (!music || music.spiralSfx) return;
+    const context = music.context;
+    const now = context.currentTime;
+    const noise = context.createBufferSource();
+    const noiseFilter = context.createBiquadFilter();
+    const noiseGain = context.createGain();
+    const low = context.createOscillator();
+    const growl = context.createOscillator();
+    const toneGain = context.createGain();
+    const mix = context.createGain();
+    const envelope = context.createGain();
+    const panner = context.createStereoPanner ? context.createStereoPanner() : context.createGain();
+
+    noise.buffer = music.sfxNoise;
+    noise.loop = true;
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.value = 135;
+    noiseFilter.Q.value = 0.85;
+    noiseGain.gain.value = 0.055;
+    low.type = 'sine';
+    low.frequency.value = 34;
+    growl.type = 'triangle';
+    growl.frequency.value = 48;
+    growl.detune.value = -11;
+    toneGain.gain.value = 0.10;
+    mix.gain.value = 1;
+    envelope.gain.value = 0.0001;
+    if (panner.pan) panner.pan.value = 0;
+
+    noise.connect(noiseFilter).connect(noiseGain).connect(mix);
+    low.connect(toneGain);
+    growl.connect(toneGain);
+    toneGain.connect(mix);
+    mix.connect(envelope).connect(panner).connect(music.sfxInput);
+    noise.start(now, Math.random() * Math.max(0, music.sfxNoise.duration - 0.1));
+    low.start(now);
+    growl.start(now);
+    envelope.gain.exponentialRampToValueAtTime(0.14, now + 0.055);
+    music.spiralSfx = { noise, noiseFilter, low, growl, envelope, panner };
+  }
+
+  function updateBloodSpiralAudio(spirals) {
+    const music = bossMusic;
+    if (!music || !spirals || !spirals.length || combatPaused || dead) {
+      stopBloodSpiralAudio();
+      return;
+    }
+    startBloodSpiralAudio();
+    const voice = music.spiralSfx;
+    if (!voice) return;
+    const board = getBoardRect();
+    const heroV = worldPointToViewport(hero.x, hero.y, board);
+    let nearest = null;
+    let nearestDistance = Infinity;
+    let fastest = 0;
+    for (const attack of spirals) {
+      const tau = bloodTau(attack);
+      fastest = Math.max(fastest, attack.fire);
+      for (let k = 0; k < BLOOD_BEAMS; k++) {
+        const foot = bloodBeamFoot(attack, k, tau);
+        const distance = Math.hypot(foot.x - heroV.x, foot.y - heroV.y);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearest = foot;
+        }
+      }
+    }
+    const now = music.context.currentTime;
+    const proximity = 1 - Math.max(0, Math.min(1, nearestDistance / Math.max(1, board.width * 0.58)));
+    const targetGain = 0.075 + proximity * 0.105 + fastest * 0.035;
+    const pan = nearest
+      ? Math.max(-1, Math.min(1, (nearest.x - heroV.x) / Math.max(1, board.width * 0.30)))
+      : 0;
+    voice.envelope.gain.setTargetAtTime(targetGain, now, 0.025);
+    if (voice.panner.pan) voice.panner.pan.setTargetAtTime(pan, now, 0.018);
+    voice.noiseFilter.frequency.setTargetAtTime(125 + fastest * 155, now, 0.035);
+    voice.low.frequency.setTargetAtTime(32 + fastest * 13, now, 0.035);
+    voice.growl.frequency.setTargetAtTime(46 + fastest * 24, now, 0.035);
+  }
+
+  function stopBloodSpiralAudio(immediate) {
+    if (!bossMusic || !bossMusic.spiralSfx) return;
+    const voice = bossMusic.spiralSfx;
+    bossMusic.spiralSfx = null;
+    const now = bossMusic.context.currentTime;
+    const stopAt = now + (immediate ? 0.012 : 0.055);
+    voice.envelope.gain.cancelScheduledValues(now);
+    voice.envelope.gain.setValueAtTime(Math.max(0.0001, voice.envelope.gain.value), now);
+    voice.envelope.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+    [voice.noise, voice.low, voice.growl].forEach((source) => {
+      try { source.stop(stopAt + 0.01); } catch (_) {}
+    });
   }
 
   function scheduleBossSfxSample(destination, buffer, time, amount, options) {
@@ -4953,9 +5068,12 @@
       return false;
     }
     if (!data.debug) {
-      music.sfxEventTimes = music.sfxEventTimes.filter((eventTime) => now - eventTime < 0.08);
+      music.sfxEventTimes = music.sfxEventTimes.filter((eventTime) => now - eventTime < 0.10);
       const expendable = name === 'vp' || name === 'damage' || name === 'shadowCharge';
-      if ((expendable && music.sfxEventTimes.length >= 4) || music.sfxEventTimes.length >= 6) {
+      const critical = name === 'vpFull' || name === 'death' || name === 'deathCrack' ||
+        name === 'persist' || name === 'playerImpact';
+      if ((expendable && music.sfxEventTimes.length >= 3) ||
+          (!critical && music.sfxEventTimes.length >= 5)) {
         return false;
       }
       music.sfxEventTimes.push(now);
@@ -4976,10 +5094,24 @@
       scheduleBossSfxTone(out, 'pulse25', pitch, pitch * 1.035, time, 0.026, 0.068 * weight, {
         attack: 0.001,
       });
+    } else if (name === 'vpFull') {
+      scheduleBossSfxTone(out, 'pulse25', 523.25, 523.25, time, 0.10, 0.10, {
+        attack: 0.001,
+      });
+      scheduleBossSfxTone(out, 'pulse25', 659.25, 659.25, time + 0.045, 0.14, 0.095, {
+        attack: 0.001,
+      });
+      scheduleBossSfxTone(out, 'triangle', 130.81, 98, time, 0.24, 0.17, {
+        attack: 0.004,
+      });
     } else if (name === 'damage') {
-      scheduleBossSfxTone(out, 'pulse12', 82.4, 36.7, time, 0.15, 0.27);
-      scheduleBossSfxTone(out, 'triangle', 46.2, 27.5, time, 0.19, 0.25);
-      scheduleBossSfxNoise(out, time, 0.11, 0.30, 'bandpass', 520, 1.1, 240);
+      const pitches = [220, 174.61, 138.59, 110];
+      const pitch = pitches[Math.abs(data.step || 0) % pitches.length];
+      const weight = Math.min(1.25, 1 + Math.max(0, (data.overlaps || 1) - 1) * 0.10);
+      scheduleBossSfxTone(out, 'pulse25', pitch, pitch * 0.94, time, 0.052,
+        0.13 * weight, { attack: 0.001 });
+      scheduleBossSfxTone(out, 'triangle', pitch * 0.5, pitch * 0.42, time, 0.095,
+        0.105 * weight, { attack: 0.002 });
     } else if (name === 'death') {
       scheduleBossSfxTone(out, 'sine', 92.5, 22, time, 1.45, 0.68, { attack: 0.001 });
       scheduleBossSfxTone(out, 'pulse12', 138.6, 25, time, 1.28, 0.42, {
@@ -5122,6 +5254,7 @@
 
   function setCombatPaused(paused, immediate) {
     combatPaused = Boolean(paused);
+    if (combatPaused) stopBloodSpiralAudio();
     keys.clear();
     stopSoundDebugHold();
     updateCombatPauseButton();
@@ -5607,6 +5740,7 @@
     fightMusicBeatCursor = null;
     phaseOneVpSfxStep = -1;
     phaseOneDamageSfxStep = -1;
+    phaseOneDamageSfxCount = 0;
     attacks = [];
     fadingAttacks = [];
     phase2Ritual = null;
@@ -9182,6 +9316,11 @@
         if (a.fire >= 1) { a.fire = 1; a.state = 'done'; }
       }
     }
+    const liveSpirals = attacks.filter((attack) =>
+      attack.type === 'bloodSpiral' && attack.state === 'fire'
+    );
+    if (liveSpirals.length) updateBloodSpiralAudio(liveSpirals);
+    else stopBloodSpiralAudio();
     const completedSlots = [];
     for (const slot of activeSet) {
       const owned = attacks.filter((a) => a.slotId === slot.id);
@@ -11964,6 +12103,7 @@
   function resetRun(restartPhase) {
     const checkpoint = restartPhase === PHASE.SECOND ? PHASE.SECOND : PHASE.FALL;
     stopSoundDebugHold();
+    stopBloodSpiralAudio(true);
     combatPaused = false;
     updateCombatPauseButton();
     stopBossMusic(0);
@@ -12098,6 +12238,7 @@
     if (!active) return;
     active = false;
     stopSoundDebugHold();
+    stopBloodSpiralAudio(true);
     combatPaused = false;
     updateCombatPauseButton();
     cancelAnimationFrame(animationFrame);
