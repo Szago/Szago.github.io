@@ -98,14 +98,54 @@
   gap: 5px;
 }
 
-/* Sound audition mirror on the left: click once, or hold on the BPM grid. */
-.aether-boss2d-sound-debug {
+/* Sound audition is kept behind a small launcher so it never crowds the arena. */
+.aether-boss2d-sound-debug-toggle {
   position: absolute;
   top: 38px;
   left: 12px;
-  z-index: 5;
+  z-index: 9;
+}
+
+.aether-boss2d-sound-debug-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
   display: grid;
-  grid-template-columns: repeat(2, max-content);
+  place-items: center;
+  padding: 34px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.aether-boss2d-sound-debug-overlay.hidden {
+  display: none;
+}
+
+.aether-boss2d-sound-debug-window {
+  width: min(760px, calc(100vw - 68px));
+  max-height: calc(100vh - 68px);
+  overflow: auto;
+  padding: 13px;
+  box-sizing: border-box;
+  color: #e8ccff;
+  background: rgba(9, 0, 12, 0.97);
+  border: 2px solid #6f248f;
+  box-shadow: 0 0 0 3px #16031d, 0 0 34px rgba(130, 35, 170, 0.42);
+}
+
+.aether-boss2d-sound-debug-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 11px;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.aether-boss2d-sound-debug {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: start;
   gap: 5px;
 }
@@ -155,6 +195,7 @@
 }
 
 .aether-boss2d-audio-mix {
+  /* Fixed overlay HUD: it never contributes to flex sizing or arena geometry. */
   position: absolute;
   left: 12px;
   bottom: 12px;
@@ -167,6 +208,21 @@
   background: rgba(10, 0, 2, 0.88);
   border: 1px solid #4a1064;
   box-sizing: border-box;
+}
+
+@media (max-width: 720px) {
+  .aether-boss2d-sound-debug-overlay {
+    padding: 18px;
+  }
+
+  .aether-boss2d-sound-debug-window {
+    width: calc(100vw - 36px);
+    max-height: calc(100vh - 36px);
+  }
+
+  .aether-boss2d-sound-debug {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .aether-boss2d-audio-mix-row {

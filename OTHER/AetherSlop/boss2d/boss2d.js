@@ -80,6 +80,7 @@
   let cultistStandImg = null;  // standing sprite img (carries the pixel jitter)
   let cultistFallenImg = null; // fallen form used for the second-phase ritual
   let bpmElement = null;       // debug BPM readout, top-right
+  let soundDebugOverlay = null;
   let active = false;
   let animationFrame = 0;
   let previousTime = 0;
@@ -309,6 +310,7 @@
     { label: 'VP FULL', cue: 'vpFull', stepsPerBeat: 0.5 },
     { label: 'TAKE DAMAGE', cue: 'damage', stepsPerBeat: BOSS_SFX_DAMAGE_STEPS_PER_BEAT },
     { label: 'DIE', cue: 'death', stepsPerBeat: 1 },
+    { label: 'DEATH IMPACT', cue: 'deathImpact', stepsPerBeat: 1 },
     { label: 'SCREEN CRACK', cue: 'deathCrack', stepsPerBeat: 1 },
     { label: 'PERSIST REVERSE', cue: 'persist', stepsPerBeat: 1 },
     { label: 'OUR CAST', cue: 'playerAttack', stepsPerBeat: 1 },
@@ -320,6 +322,29 @@
     { label: 'PENTAGRAM RITUAL', cue: 'introPentagram', stepsPerBeat: 0.125 },
     { label: 'SEAL CLOSE', cue: 'introSeal', stepsPerBeat: 1 },
     { label: 'CULTIST RISE', cue: 'introRise', stepsPerBeat: 1 },
+    { label: 'CULTIST FALL', cue: 'phase2Fall', stepsPerBeat: 1 },
+    { label: 'BLACK MASS', cue: 'phase2Mass', stepsPerBeat: 0.5 },
+    { label: 'MASS FEED', cue: 'phase2Feed', stepsPerBeat: 2 },
+    { label: 'SZAGO EMERGE', cue: 'phase2Emerge', stepsPerBeat: 1 },
+    { label: 'SZAGO SLAM', cue: 'phase2Slam', stepsPerBeat: 1 },
+    { label: 'SHADOW CLAW FORM', cue: 'phase2ClawCharge', stepsPerBeat: 1 },
+    { label: 'SHADOW CLAW CUT', cue: 'phase2ClawCut', stepsPerBeat: 1 },
+    { label: 'SZAGO DASH', cue: 'phase2Dash', stepsPerBeat: 1 },
+    { label: 'SHADOW EYE', cue: 'phase2Eye', stepsPerBeat: 1 },
+    { label: 'EYE ORB', cue: 'phase2Orb', stepsPerBeat: 2 },
+    { label: 'GRID CHANNEL', cue: 'phase2GridCharge', stepsPerBeat: 1 },
+    { label: 'GRID IMPACT', cue: 'phase2GridImpact', stepsPerBeat: 1 },
+    { label: 'TILE MARK', cue: 'phase2TileCharge', stepsPerBeat: 1 },
+    { label: 'TILE VOID', cue: 'phase2TileBreak', stepsPerBeat: 1 },
+    { label: 'SWORD RING', cue: 'phase2SwordRing', stepsPerBeat: 1 },
+    { label: 'SHADOW SWORD', cue: 'phase2SwordStrike', stepsPerBeat: 1 },
+    { label: 'PARRY', cue: 'phase2Parry', stepsPerBeat: 1 },
+    { label: 'PITFALL OPEN', cue: 'phase2Pitfall', stepsPerBeat: 1 },
+    { label: 'FALLING PLANE', cue: 'phase2Plane', stepsPerBeat: 1 },
+    { label: 'HEX RAM', cue: 'phase2Ram', stepsPerBeat: 1 },
+    { label: 'HEX WALL', cue: 'phase2HexWall', stepsPerBeat: 1 },
+    { label: 'HEX ORB', cue: 'phase2HexOrb', stepsPerBeat: 2 },
+    { label: 'WHIRLPOOL', cue: 'phase2Whirlpool', stepsPerBeat: 0.5 },
   ];
   let bossMusic = null;
   let bossMusicTimer = 0;
@@ -1251,6 +1276,14 @@
   }
 
   // ---- DOM / overlay -----------------------------------------------------
+  function setSoundDebugOverlayOpen(open) {
+    if (!soundDebugOverlay) return;
+    soundDebugOverlay.classList.toggle('hidden', !open);
+    if (!open) stopSoundDebugHold();
+    const toggle = overlay && overlay.querySelector('.aether-boss2d-sound-debug-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
   function makeOverlay() {
     overlay = document.createElement('div');
     overlay.id = 'aether-boss2d-overlay';
@@ -1264,7 +1297,15 @@
       '<div id="aether-boss2d-fps" class="aether-boss2d-fps">FPS --</div>' +
       '<div id="aether-boss2d-bpm" class="aether-boss2d-bpm">BPM --</div>' +
       '<div id="aether-boss2d-debug" class="aether-boss2d-debug"></div>' +
-      '<div id="aether-boss2d-sound-debug" class="aether-boss2d-sound-debug"></div>' +
+      '<button id="aether-boss2d-sound-debug-toggle" class="aether-boss2d-debug-btn aether-boss2d-sound-debug-toggle" type="button">SFX TEST</button>' +
+      '<div id="aether-boss2d-sound-debug-overlay" class="aether-boss2d-sound-debug-overlay hidden" role="dialog" aria-modal="true" aria-label="Sound test utility">' +
+        '<div class="aether-boss2d-sound-debug-window">' +
+          '<div class="aether-boss2d-sound-debug-header"><span>SOUND TEST UTILITY</span>' +
+            '<button class="aether-boss2d-debug-btn aether-boss2d-sound-debug-close" type="button">CLOSE</button>' +
+          '</div>' +
+          '<div id="aether-boss2d-sound-debug" class="aether-boss2d-sound-debug"></div>' +
+        '</div>' +
+      '</div>' +
       '<div id="aether-boss2d-audio-mix" class="aether-boss2d-audio-mix"></div>' +
       // The boss is two stacked layers so the kneel->stand swap can crossfade
       // and rise, and so the standing form can float and pixel-jitter on top.
@@ -1340,6 +1381,17 @@
     if (persistBtn) persistBtn.addEventListener('click', () => {
       beginDeathRevive();
       persistBtn.blur();
+    });
+    soundDebugOverlay = document.getElementById('aether-boss2d-sound-debug-overlay');
+    const soundDebugToggle = document.getElementById('aether-boss2d-sound-debug-toggle');
+    const soundDebugClose = overlay.querySelector('.aether-boss2d-sound-debug-close');
+    if (soundDebugToggle) {
+      soundDebugToggle.setAttribute('aria-expanded', 'false');
+      soundDebugToggle.addEventListener('click', () => setSoundDebugOverlayOpen(true));
+    }
+    if (soundDebugClose) soundDebugClose.addEventListener('click', () => setSoundDebugOverlayOpen(false));
+    if (soundDebugOverlay) soundDebugOverlay.addEventListener('pointerdown', (event) => {
+      if (event.target === soundDebugOverlay) setSoundDebugOverlayOpen(false);
     });
     buildBossSfxDebugPanel(document.getElementById('aether-boss2d-sound-debug'));
     buildBossAudioMixer(document.getElementById('aether-boss2d-audio-mix'));
@@ -3445,7 +3497,7 @@
     // Feedback follows subdivisions of the same live beat clock as the fight.
     // The VP chirp is deliberately tiny and monophonic-feeling at 4x per beat;
     // damage gets a heavier pulse at 2x per beat instead of buzzing every frame.
-    if (phase === PHASE.ACTIVE) {
+    if (phase === PHASE.ACTIVE || (phase === PHASE.SECOND && phase2CombatStarted)) {
       const absoluteBeat = beatIndex + beatPhase / Math.max(1, beatMs);
       const vpStep = Math.floor(absoluteBeat * BOSS_SFX_VP_STEPS_PER_BEAT);
       if (shadow > 0 && vp > vpBefore && vpStep !== phaseOneVpSfxStep) {
@@ -3502,7 +3554,7 @@
       toX: phase === PHASE.SECOND && avatar ? avatar.x : (sprite ? sprite.left + sprite.width / 2 : fromX),
       toY: phase === PHASE.SECOND && avatar ? avatar.y : (sprite ? sprite.top + sprite.height * 0.45 : board.top),
     };
-    if (!strike.phaseTwo) playBossSfx('playerAttack');
+    playBossSfx('playerAttack');
   }
 
   function wrathAfterStrike() {
@@ -3515,13 +3567,14 @@
     if (!strike) return 1;
     strike.t += dtRaw;
     const p = strike.t / STRIKE_DURATION;
-    if (!strike.phaseTwo && !strike.travelSoundStarted && p >= 0.55) {
+    if (!strike.travelSoundStarted && p >= 0.55) {
       strike.travelSoundStarted = true;
       playBossSfx('playerTravel');
     }
     if (!strike.impacted && strike.t >= STRIKE_IMPACT_AT) {
       if (strike.phaseTwo) {
         strike.impacted = true;
+        playBossSfx('playerImpact', { phaseTwo: true });
         entropy = Math.min(ENTROPY_MAX, entropy + ENTROPY_PER_STRIKE);
         bpm = phaseTwoBpm();
         beatMs = 60000 / bpm;
@@ -4148,6 +4201,11 @@
       return false;
     }
     deathSequence.age += dt;
+    if (deathSequence.phaseOneAudio && !deathSequence.impactPlayed &&
+        deathSequence.age >= DEATH_CUT_IMPACT) {
+      deathSequence.impactPlayed = true;
+      playBossSfx('deathImpact');
+    }
     if (deathSequence.phaseOneAudio && !deathSequence.crackPlayed &&
         deathSequence.age >= DEATH_CRACK_START) {
       deathSequence.crackPlayed = true;
@@ -4161,6 +4219,7 @@
   function die() {
     if (dead) return;
     stopBloodSpiralAudio(true);
+    stopPhaseTwoMassAudio(true);
     frameBoardRect = null;
     const board = getBoardRect();
     const heroViewport = worldPointToViewport(hero.x, hero.y, board);
@@ -4172,7 +4231,8 @@
       heroScaleX: board.width / Math.max(1, canvas.width),
       heroScaleY: board.height / Math.max(1, canvas.height),
       restartPhase: phase === PHASE.SECOND ? PHASE.SECOND : PHASE.FALL,
-      phaseOneAudio: phase === PHASE.ACTIVE,
+      phaseOneAudio: phase === PHASE.ACTIVE || phase === PHASE.SECOND,
+      impactPlayed: false,
       crackPlayed: false,
       reviving: false,
       reviveAge: 0,
@@ -4229,6 +4289,8 @@
   function startSecondPhase() {
     if (phase === PHASE.SECOND) return;
     stopBloodSpiralAudio(true);
+    stopPhaseTwoMassAudio(true);
+    playBossSfx('phase2Fall');
     // Her fall is the phase-one musical cutoff. Let the last hit and echo tail
     // dissolve beneath the first beat of the transformation.
     stopBossMusic(0.9);
@@ -4286,6 +4348,7 @@
     const bounds = ritualBounds();
     const geo = cocoonGeometry(bounds, board);
     controller.start(geo, board);
+    stopPhaseTwoMassAudio();
     phase2AvatarStarted = true;
     if (overlay) {
       const row = overlay.querySelector('.aether-boss2d-stage-row');
@@ -4766,6 +4829,7 @@
       sfxLastAt: Object.create(null),
       sfxEventTimes: [],
       spiralSfx: null,
+      phase2MassSfx: null,
       waves: {
         pulse12: makeBossMusicPulseWave(context, 0.125),
         pulse18: makeBossMusicPulseWave(context, 0.1875),
@@ -4930,6 +4994,70 @@
     });
   }
 
+  function startPhaseTwoMassAudio() {
+    const music = createBossMusic();
+    if (!music || music.phase2MassSfx) return;
+    const context = music.context;
+    const now = context.currentTime;
+    const low = context.createOscillator();
+    const discord = context.createOscillator();
+    const noise = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const noiseGain = context.createGain();
+    const toneGain = context.createGain();
+    const envelope = context.createGain();
+    low.type = 'sine';
+    low.frequency.value = 27.5;
+    discord.type = 'triangle';
+    discord.frequency.value = 29.1;
+    discord.detune.value = -13;
+    noise.buffer = music.sfxNoise;
+    noise.loop = true;
+    filter.type = 'lowpass';
+    filter.frequency.value = 115;
+    filter.Q.value = 0.75;
+    noiseGain.gain.value = 0.025;
+    toneGain.gain.value = 0.14;
+    envelope.gain.value = 0.0001;
+    low.connect(toneGain);
+    discord.connect(toneGain);
+    toneGain.connect(envelope);
+    noise.connect(filter).connect(noiseGain).connect(envelope);
+    envelope.connect(music.sfxInput);
+    low.start(now);
+    discord.start(now);
+    noise.start(now, Math.random() * Math.max(0, music.sfxNoise.duration - 0.1));
+    envelope.gain.exponentialRampToValueAtTime(0.10, now + 0.18);
+    music.phase2MassSfx = { low, discord, noise, filter, noiseGain, envelope };
+  }
+
+  function updatePhaseTwoMassAudio(progress, flood) {
+    startPhaseTwoMassAudio();
+    if (!bossMusic || !bossMusic.phase2MassSfx) return;
+    const voice = bossMusic.phase2MassSfx;
+    const now = bossMusic.context.currentTime;
+    const p = clamp01(progress || 0);
+    voice.envelope.gain.setTargetAtTime(0.085 + p * 0.075 + flood * 0.035, now, 0.055);
+    voice.low.frequency.setTargetAtTime(27.5 + p * 9, now, 0.07);
+    voice.discord.frequency.setTargetAtTime(29.1 + p * 13, now, 0.07);
+    voice.filter.frequency.setTargetAtTime(105 + p * 135 + flood * 90, now, 0.07);
+    voice.noiseGain.gain.setTargetAtTime(0.018 + p * 0.018, now, 0.08);
+  }
+
+  function stopPhaseTwoMassAudio(immediate) {
+    if (!bossMusic || !bossMusic.phase2MassSfx) return;
+    const voice = bossMusic.phase2MassSfx;
+    bossMusic.phase2MassSfx = null;
+    const now = bossMusic.context.currentTime;
+    const stopAt = now + (immediate ? 0.012 : 0.14);
+    voice.envelope.gain.cancelScheduledValues(now);
+    voice.envelope.gain.setValueAtTime(Math.max(0.0001, voice.envelope.gain.value), now);
+    voice.envelope.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+    [voice.low, voice.discord, voice.noise].forEach((source) => {
+      try { source.stop(stopAt + 0.01); } catch (_) {}
+    });
+  }
+
   function scheduleBossSfxSample(destination, buffer, time, amount, options) {
     if (!bossMusic || !buffer) return;
     const source = bossMusic.context.createBufferSource();
@@ -5059,6 +5187,15 @@
       cultistAttack: 0.07,
       vp: 0.012,
       damage: 0.055,
+      phase2Feed: 0.075,
+      phase2Orb: 0.06,
+      phase2HexOrb: 0.07,
+      phase2HexWall: 0.10,
+      phase2Plane: 0.10,
+      phase2Dash: 0.12,
+      phase2ClawCharge: 0.10,
+      phase2ClawCut: 0.08,
+      phase2Slam: 0.15,
     }[name] || 0;
     const throttleKey = (name === 'shadowCharge' || name === 'cultistAttack')
       ? name + ':' + movement
@@ -5125,6 +5262,10 @@
       scheduleBossSfxTone(out, 'sine', 46.2, 23.1, time + 0.28, 1.15, 0.46, {
         attack: 0.012,
       });
+    } else if (name === 'deathImpact') {
+      scheduleBossSfxTone(out, 'pulse12', 123.5, 24.5, time, 0.46, 0.42);
+      scheduleBossSfxTone(out, 'sine', 65.4, 18.4, time, 0.78, 0.58);
+      scheduleBossSfxNoise(out, time, 0.18, 0.34, 'lowpass', 980, 0.7, 120);
     } else if (name === 'deathCrack') {
       scheduleBossSfxSample(out, music.sfxCrack.forward, time, 1.05);
     } else if (name === 'persist') {
@@ -5179,6 +5320,86 @@
         attack: 0.045,
       });
       scheduleBossSfxNoise(out, time, 0.78, 0.18, 'bandpass', 150, 1.4, 620);
+    } else if (name === 'phase2Fall') {
+      scheduleBossSfxTone(out, 'sine', 82.4, 21.8, time, 1.05, 0.54);
+      scheduleBossSfxTone(out, 'triangle', 55, 27.5, time + 0.08, 0.82, 0.25);
+      scheduleBossSfxNoise(out, time, 0.32, 0.24, 'lowpass', 620, 0.8, 95);
+    } else if (name === 'phase2Mass') {
+      scheduleBossSfxTone(out, 'sine', 27.5, 36.7, time, 1.35, 0.34, { build: true });
+      scheduleBossSfxTone(out, 'triangle', 29.1, 43.65, time, 1.35, 0.22, {
+        detune: -13, build: true,
+      });
+      scheduleBossSfxNoise(out, time, 1.30, 0.12, 'lowpass', 105, 0.8, 310, true);
+    } else if (name === 'phase2Feed') {
+      const base = data.kind === 'cocoon' ? 43.65 : 61.74;
+      scheduleBossSfxTone(out, 'pulse12', base * 1.8, base, time, 0.14, 0.19);
+      scheduleBossSfxTone(out, 'sine', base, base * 0.55, time, 0.24, 0.25);
+    } else if (name === 'phase2Emerge') {
+      scheduleBossSfxTone(out, 'sawtooth', 27.5, 73.4, time, 1.12, 0.24, {
+        attack: 0.025, build: true,
+      });
+      scheduleBossSfxTone(out, 'sine', 36.7, 55, time + 0.12, 1.0, 0.34, { build: true });
+      scheduleBossSfxTone(out, 'triangle', 38.9, 58.3, time + 0.12, 1.0, 0.20, {
+        detune: -9, build: true,
+      });
+    } else if (name === 'phase2Slam') {
+      scheduleBossSfxSample(out, music.sfxSamples.boardAnnihilation, time, 0.82, { duration: 0.92 });
+      scheduleBossSfxTone(out, 'sine', 98, 16.4, time, 0.88, 0.62);
+    } else if (name === 'phase2ClawCharge') {
+      scheduleBossSfxTone(out, 'sawtooth', 34.6, 69.3, time, 0.48, 0.16, { build: true });
+      scheduleBossSfxNoise(out, time, 0.46, 0.14, 'bandpass', 150, 2.4, 520, true);
+    } else if (name === 'phase2ClawCut') {
+      scheduleBossSfxSample(out, music.sfxSamples.tentacleLash, time, 0.62, { duration: 0.48 });
+      scheduleBossSfxTone(out, 'pulse12', 110, 27.5, time, 0.38, 0.30);
+    } else if (name === 'phase2Dash') {
+      scheduleBossSfxNoise(out, time, 0.22, 0.20, 'bandpass', 760, 0.9, 140);
+      scheduleBossSfxTone(out, 'triangle', 73.4, 36.7, time, 0.25, 0.17);
+    } else if (name === 'phase2Eye') {
+      scheduleBossSfxTone(out, 'pulse25', 146.8, 73.4, time, 0.24, 0.16);
+      scheduleBossSfxTone(out, 'sine', 55, 82.4, time, 0.34, 0.21);
+    } else if (name === 'phase2Orb') {
+      scheduleBossSfxTone(out, 'pulse12', 123.5, 73.4, time, 0.11, 0.13);
+      scheduleBossSfxTone(out, 'sine', 61.7, 41.2, time, 0.18, 0.13);
+    } else if (name === 'phase2GridCharge') {
+      scheduleBossSfxTone(out, 'pulse25', 49, 61.7, time, 0.72, 0.18, { build: true });
+      scheduleBossSfxTone(out, 'triangle', 73.4, 92.5, time, 0.72, 0.16, { build: true });
+    } else if (name === 'phase2GridImpact') {
+      scheduleBossSfxSample(out, music.sfxSamples.checkerExplosion, time, 0.88);
+      scheduleBossSfxTone(out, 'sine', 92, 19, time, 0.68, 0.48);
+    } else if (name === 'phase2TileCharge') {
+      scheduleBossSfxTone(out, 'pulse12', 43.65, 87.3, time, 0.44, 0.18, { build: true });
+      scheduleBossSfxTone(out, 'sine', 32.7, 49, time, 0.48, 0.21, { build: true });
+    } else if (name === 'phase2TileBreak') {
+      scheduleBossSfxSample(out, music.sfxSamples.voidErupt, time, 0.84);
+      scheduleBossSfxTone(out, 'sine', 72, 17, time, 0.72, 0.46);
+    } else if (name === 'phase2SwordRing') {
+      scheduleBossSfxTone(out, 'triangle', 55, 110, time, 0.82, 0.17, { build: true });
+      scheduleBossSfxTone(out, 'pulse12', 41.2, 82.4, time, 0.82, 0.13, { build: true });
+    } else if (name === 'phase2SwordStrike') {
+      scheduleBossSfxSample(out, music.sfxSamples.swordWhoosh, time, 0.78);
+      scheduleBossSfxTone(out, 'triangle', 98, 49, time, 0.30, 0.19);
+    } else if (name === 'phase2Parry') {
+      scheduleBossSfxTone(out, 'pulse25', 392, 293.7, time, 0.11, 0.18);
+      scheduleBossSfxTone(out, 'triangle', 196, 98, time, 0.24, 0.24);
+    } else if (name === 'phase2Pitfall') {
+      scheduleBossSfxTone(out, 'sine', 65.4, 18.4, time, 1.05, 0.40);
+      scheduleBossSfxNoise(out, time, 0.68, 0.18, 'bandpass', 520, 0.7, 80);
+    } else if (name === 'phase2Plane') {
+      scheduleBossSfxTone(out, 'triangle', 55, 30.9, time, 0.38, 0.17);
+      scheduleBossSfxNoise(out, time, 0.28, 0.16, 'lowpass', 440, 0.7, 90);
+    } else if (name === 'phase2Ram') {
+      scheduleBossSfxTone(out, 'sawtooth', 31, 55, time, 0.72, 0.21, { build: true });
+      scheduleBossSfxTone(out, 'sine', 27.5, 41.2, time, 0.76, 0.31, { build: true });
+    } else if (name === 'phase2HexWall') {
+      scheduleBossSfxTone(out, 'pulse12', 73.4, 36.7, time, 0.26, 0.15);
+      scheduleBossSfxTone(out, 'sine', 36.7, 27.5, time, 0.34, 0.17);
+    } else if (name === 'phase2HexOrb') {
+      scheduleBossSfxTone(out, 'pulse25', 164.8, 82.4, time, 0.14, 0.12);
+      scheduleBossSfxTone(out, 'sine', 55, 36.7, time, 0.22, 0.14);
+    } else if (name === 'phase2Whirlpool') {
+      scheduleBossSfxTone(out, 'sine', 29.1, 49, time, 1.15, 0.31, { build: true });
+      scheduleBossSfxTone(out, 'triangle', 43.65, 73.4, time, 1.15, 0.18, { build: true });
+      scheduleBossSfxNoise(out, time, 1.10, 0.12, 'bandpass', 95, 1.2, 330, true);
     } else {
       return false;
     }
@@ -5254,7 +5475,10 @@
 
   function setCombatPaused(paused, immediate) {
     combatPaused = Boolean(paused);
-    if (combatPaused) stopBloodSpiralAudio();
+    if (combatPaused) {
+      stopBloodSpiralAudio();
+      stopPhaseTwoMassAudio();
+    }
     keys.clear();
     stopSoundDebugHold();
     updateCombatPauseButton();
@@ -6032,6 +6256,7 @@
       removedTiles: new Set(),
       seed: Math.random() * 1000,
     };
+    playBossSfx('phase2GridCharge');
     return true;
   }
 
@@ -6092,6 +6317,7 @@
     const activeAt = impactAt + PHASE2_GRID_IMPACT_MS;
     if (!special.struck && special.elapsed >= impactAt) {
       special.struck = true;
+      playBossSfx('phase2GridImpact');
       special.tileMode = true;
       keys.clear();
       const tile = nearestPhaseTwoGridTile(special.layout, hero.x, hero.y);
@@ -6205,6 +6431,7 @@
       seed: Math.random() * 1000,
     };
     phase2TileRuinDebugQueued = false;
+    if (targets.length) playBossSfx('phase2TileCharge');
     return true;
   }
 
@@ -6241,6 +6468,7 @@
       }
       const damageScale = bpm / PHASE2_BPM_MIN;
       hp = Math.max(0, hp - PHASE2_VOID_EJECT_DAMAGE * damageScale);
+      playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
       if (nearest) beginPhaseTwoGridHop(nearest, PHASE2_GRID_HOP_MS * 1.65);
       if (hp <= 0) die();
     }
@@ -6321,6 +6549,7 @@
       impactOutY: -1,
       seed: Math.random() * 1000,
     };
+    playBossSfx('phase2SwordRing');
     keys.clear();
     return true;
   }
@@ -6484,6 +6713,7 @@
       vp = Math.min(VP_MAX, vp + PHASE2_SWORD_PARRY_VP);
     } else {
       hp = Math.max(0, hp - PHASE2_BOSS_SLAM_DAMAGE * (bpm / PHASE2_BPM_MIN));
+      playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
     }
     restorePhaseTwoSquareArena();
     pattern.centerX = hero.x;
@@ -6571,6 +6801,7 @@
     pattern.impactOutX = geometry.direction.x;
     pattern.impactOutY = geometry.direction.y;
     if (type === 'parry') {
+      playBossSfx('phase2Parry');
       pattern.successfulParries++;
       hp = Math.min(
         HP_MAX,
@@ -6582,6 +6813,7 @@
       }
     }
     if (type === 'hit') {
+      playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
       hp = Math.max(0, hp - PHASE2_SWORD_RING_DAMAGE * (bpm / PHASE2_BPM_MIN));
       if (hp <= 0) die();
     }
@@ -6605,6 +6837,7 @@
     pattern.parryFlashAge = -1;
     pattern.state = 'flash';
     pattern.elapsed = 0;
+    playBossSfx('phase2SwordStrike');
     return true;
   }
 
@@ -6766,6 +6999,7 @@
       const fireP = pattern.elapsed / (beatMs * PHASE2_TILE_RUIN_FIRE_BEATS);
       if (!pattern.impacted && fireP >= 0.72) {
         pattern.impacted = true;
+        playBossSfx('phase2TileBreak');
         removePhaseTwoGridTiles(pattern.targets);
       }
       if (pattern.elapsed >= beatMs * PHASE2_TILE_RUIN_FIRE_BEATS) {
@@ -6787,6 +7021,7 @@
         pattern.state = 'telegraph';
         pattern.elapsed = 0;
         pattern.impacted = false;
+        playBossSfx('phase2TileCharge');
       }
     }
   }
@@ -6961,6 +7196,7 @@
       shotClockBeats: PHASE2_RUSH_EYE_FIRE_BEATS * 0.45 - slot * 0.08,
       seed: Math.random() * Math.PI * 2,
     });
+    playBossSfx('phase2Eye');
     return true;
   }
 
@@ -6981,6 +7217,7 @@
       seed: Math.random() * Math.PI * 2,
       hit: false,
     });
+    playBossSfx('phase2Orb');
   }
 
   function updatePhaseTwoRushEyes(dt) {
@@ -7025,6 +7262,7 @@
       ) {
         orb.hit = true;
         hp = Math.max(0, hp - PHASE2_RUSH_ORB_DAMAGE * (bpm / PHASE2_BPM_MIN));
+        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
         if (hp <= 0) die();
       }
     }
@@ -7079,6 +7317,7 @@
     }
     if (!retargetPhaseTwoShadowClaw(claws[0], board)) return false;
     phase2Attacks.push(...claws);
+    playBossSfx('phase2ClawCharge');
     if (phase2ClawRushMode) phase2RushEyeBurstPending = true;
     phase2BurstActive = true;
     return true;
@@ -7104,6 +7343,7 @@
       const target = choices[Math.floor(Math.random() * choices.length)];
       phase2DashZone = target.id;
       phase2Avatar.dashTo(target.x, target.y, 300);
+      playBossSfx('phase2Dash');
       return;
     }
     const insetX = Math.min(board.width * 0.14, avatar.size * 0.24);
@@ -7128,6 +7368,7 @@
     const target = { x: zone.x(), y: zone.y() };
     phase2DashZone = zone.id;
     phase2Avatar.dashTo(target.x, target.y, 330);
+    playBossSfx('phase2Dash');
   }
 
   function leavePhaseTwoCrack(a) {
@@ -7176,6 +7417,7 @@
         if (a.holdTime >= beatMs * a.holdBeats) {
           a.state = 'fire';
           a.fire = 0;
+          playBossSfx('phase2ClawCut');
           if (a.cutsTerrain !== false) leavePhaseTwoCrack(a);
         }
       } else if (a.state === 'fire') {
@@ -7576,6 +7818,7 @@
     }
     pattern.nextGapX = gap.targetX;
     pattern.nextGapY = gap.targetY;
+    playBossSfx('phase2Plane');
     return {
       id: pattern.nextId++,
       age: 0,
@@ -7631,6 +7874,7 @@
       seed,
       random: mulberry32(seed),
     };
+    playBossSfx('phase2Pitfall');
     return true;
   }
 
@@ -7985,6 +8229,7 @@
         angle: bulletPattern.angleOffset + alternatingOffset + lane * angleStep,
       }));
     }
+    playBossSfx('phase2HexOrb');
     bulletPattern.wavesSpawned++;
   }
 
@@ -8100,6 +8345,7 @@
     const types = ['bullet', 'spiral', 'corridor', 'corridor-stream', 'zigzag'];
     const type = types[hex.specialPatternIndex % types.length];
     hex.specialPatternIndex++;
+    if (type !== 'bullet') playBossSfx('phase2HexWall');
     if (type === 'bullet') {
       const durationBeats = PHASE2_HEX_BULLET_SLOTS * PHASE2_HEX_WALL_SPAWN_BEATS;
       hex.bulletPattern = {
@@ -8156,6 +8402,7 @@
       whirlpool: null,
     };
     pattern.ram = null;
+    playBossSfx('phase2HexWall');
     keys.clear();
     positionPhaseTwoHexHero(pattern);
   }
@@ -8164,6 +8411,7 @@
     if (!pattern || pattern.mode !== 'ram' || !pattern.ram || pattern.ram.impacted) return;
     const ram = pattern.ram;
     ram.impacted = true;
+    playBossSfx('phase2Slam');
     ram.shockAge = 0;
     pattern.hex = null;
     pattern.platforms = [];
@@ -8231,6 +8479,7 @@
     }
     const ram = pattern.ram;
     ram.impacted = true;
+    playBossSfx('phase2Slam');
     ram.shockAge = 0;
     const arenaSize = expandPhaseTwoHexArenaToViewport();
     const center = phaseTwoHexCenter();
@@ -8266,6 +8515,7 @@
     heroMove.x = 0;
     heroMove.y = 0;
     const board = getBoardRect();
+    playBossSfx('phase2Ram');
     const center = phaseTwoHexCenter();
     const started = phase2Avatar.slamTo(
       board.left + center.x * board.width / canvas.width,
@@ -8346,6 +8596,7 @@
           orb.hit = true;
           pattern.impactAge = 0;
           hp = Math.max(0, hp - PHASE2_HEX_ORB_DAMAGE * (bpm / PHASE2_BPM_MIN));
+          playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
           if (hp <= 0) die();
         }
       }
@@ -8384,6 +8635,7 @@
       phase2Avatar.state.impact = 1;
       phase2Avatar.state.impactAge = 0;
     }
+    playBossSfx('phase2Whirlpool');
     return true;
   }
 
@@ -8468,11 +8720,13 @@
       hex.spawnBeats -= hex.nextSpawnBeats;
       if (hex.wallsUntilSplit <= 0) {
         hex.walls.push(...makePhaseTwoHexSplitPair(pattern));
+        playBossSfx('phase2HexWall');
         hex.wallsUntilSplit = 2 + Math.floor(pattern.random() * 3);
         hex.wallsUntilSpecial -= 2;
         hex.nextSpawnBeats = PHASE2_HEX_SPLIT_FOLLOWUP_BEATS + PHASE2_HEX_WALL_SPAWN_BEATS;
       } else {
         hex.walls.push(makePhaseTwoHexWall(pattern));
+        playBossSfx('phase2HexWall');
         hex.wallsUntilSplit--;
         hex.wallsUntilSpecial--;
         hex.nextSpawnBeats = PHASE2_HEX_WALL_SPAWN_BEATS;
@@ -8507,6 +8761,7 @@
           pattern.impactAge = 0;
           const damageScale = Number.isFinite(wall.damageScale) ? wall.damageScale : 1;
           hp = Math.max(0, hp - PHASE2_HEX_WALL_DAMAGE * damageScale * (bpm / PHASE2_BPM_MIN));
+          playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
           if (hp <= 0) die();
         }
         if (wall.patternEnd) phaseTwoHexPatternPassed(pattern);
@@ -8566,6 +8821,7 @@
           platform.hitAge = 0;
           pattern.impactAge = 0;
           hp = Math.max(0, hp - PHASE2_PITFALL_DAMAGE * (bpm / PHASE2_BPM_MIN));
+          playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
           if (hp <= 0) die();
         }
       }
@@ -8628,7 +8884,9 @@
     if (phase2AvatarStarted) {
       if (phase2Avatar) {
         phase2Avatar.update(dt, getBoardRect(), {
+          onEmerge: () => playBossSfx('phase2Emerge'),
           onSlam: () => {
+            playBossSfx('phase2Slam');
             if (phase2PitfallPattern && phase2PitfallPattern.mode === 'ram') {
               resolvePhaseTwoHexRamImpact(phase2PitfallPattern);
             }
@@ -8697,6 +8955,7 @@
       beam.age += dt;
       if (!beam.hit && beam.age >= P2_BEAM_REACH) {
         beam.hit = true;
+        playBossSfx('phase2Feed', { kind: beam.kind });
         if (beam.kind === 'body') {
           r.marks.push({
             fx: beam.fx, fy: beam.fy, radius: beam.radius, seed: beam.seed,
@@ -8749,6 +9008,7 @@
     // The seed fades in with its first few feedings — barely visible at
     // first, purely a product of what the streams have poured into it.
     c.alpha = smoothstep(c.p / 0.06);
+    updatePhaseTwoMassAudio(c.p, r.floodP);
     for (const rip of c.ripples) rip.t += dt / 900;
     c.ripples = c.ripples.filter((rip) => rip.t < 1);
   }
@@ -12050,6 +12310,13 @@
 
   function onKeyDown(event) {
     if (!active) return;
+    if (soundDebugOverlay && !soundDebugOverlay.classList.contains('hidden')) {
+      if (event.code === 'Escape') setSoundDebugOverlayOpen(false);
+      if (event.code === 'Escape' || MOVE_CODES.has(event.code) || event.code === 'Space') {
+        event.preventDefault();
+        return;
+      }
+    }
     resumeBossMusicAudio();
     // Secret debug sequence (2137): typing it bails out of the rift.
     if (event.key && event.key.length === 1 && event.key >= '0' && event.key <= '9') {
@@ -12103,7 +12370,9 @@
   function resetRun(restartPhase) {
     const checkpoint = restartPhase === PHASE.SECOND ? PHASE.SECOND : PHASE.FALL;
     stopSoundDebugHold();
+    setSoundDebugOverlayOpen(false);
     stopBloodSpiralAudio(true);
+    stopPhaseTwoMassAudio(true);
     combatPaused = false;
     updateCombatPauseButton();
     stopBossMusic(0);
@@ -12238,7 +12507,9 @@
     if (!active) return;
     active = false;
     stopSoundDebugHold();
+    setSoundDebugOverlayOpen(false);
     stopBloodSpiralAudio(true);
+    stopPhaseTwoMassAudio(true);
     combatPaused = false;
     updateCombatPauseButton();
     cancelAnimationFrame(animationFrame);

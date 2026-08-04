@@ -45,6 +45,7 @@
     const state = {
       active: false,
       elapsed: 0,
+      startedEmerge: false,
       startedSlam: false,
       collapse: null,
       slamY: null,
@@ -65,6 +66,7 @@
     function reset() {
       state.active = false;
       state.elapsed = 0;
+      state.startedEmerge = false;
       state.startedSlam = false;
       state.collapse = null;
       state.slamY = null;
@@ -263,6 +265,10 @@
         a.alpha = smoothstep((p - 0.44) / 0.38) * 0.78;
         a.visible = a.alpha > 0.02;
       } else if (state.elapsed < emergeEnd) {
+        if (!state.startedEmerge) {
+          state.startedEmerge = true;
+          if (callbacks && callbacks.onEmerge) callbacks.onEmerge();
+        }
         const p = smoothstep((state.elapsed - collapseEnd) / EMERGE_MS);
         const start = state.collapse || { cx: hover.x, cy: hover.y + 140 };
         a.x = start.cx + (hover.x - start.cx) * p;
