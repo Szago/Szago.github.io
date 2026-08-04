@@ -6,7 +6,7 @@
   <title>Aetherholm — Idle Kingdom</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=IM+Fell+English+SC&family=Press+Start+2P&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="world3d/world3d.css">
   <link rel="stylesheet" href="boss2d/boss2d.css">
@@ -19,27 +19,34 @@
     <aside id="combat" class="panel">
       <div class="panel-title">CITY DEFENSE</div>
 
-      <div id="zone-info">
-        <span id="zone-name">Zone 1 — Greenfields</span>
-        <div id="zone-pips"></div>
+      <div id="combat-tabs" role="tablist" aria-label="City defense views">
+        <button id="tab-combat" class="ctab active" type="button" role="tab" aria-selected="true" aria-controls="view-combat">COMBAT</button>
+        <button id="tab-units" class="ctab" type="button" role="tab" aria-selected="false" aria-controls="view-units">WAR COUNCIL</button>
       </div>
 
-      <div id="monster-area">
-        <div id="monster-name"></div>
-        <div id="monster-visual"></div>
-      </div>
-      <div id="hp-bar">
-        <div id="hp-fill"></div>
-        <span id="hp-text"></span>
+      <div id="view-combat" class="combat-view" role="tabpanel" aria-labelledby="tab-combat">
+        <div id="zone-info">
+          <span id="zone-name">Zone 1 — Greenfields</span>
+          <div id="zone-pips"></div>
+        </div>
+
+        <div id="monster-area">
+          <div id="monster-name"></div>
+          <div id="monster-visual"></div>
+        </div>
+        <div id="hp-bar">
+          <div id="hp-fill"></div>
+          <span id="hp-text"></span>
+        </div>
+
+        <div id="combat-stats">
+          <div>CLICK DMG<b id="stat-click">1</b></div>
+          <div>IDLE DPS<b id="stat-dps">0</b></div>
+          <div>BOUNTY<b id="stat-bounty">0</b></div>
+        </div>
       </div>
 
-      <div id="combat-stats">
-        <div>CLICK DMG<b id="stat-click">1</b></div>
-        <div>IDLE DPS<b id="stat-dps">0</b></div>
-        <div>BOUNTY<b id="stat-bounty">0</b></div>
-      </div>
-
-      <div class="scroll">
+      <div id="view-units" class="combat-view scroll hidden" role="tabpanel" aria-labelledby="tab-units">
         <div class="section-title">WAR COUNCIL — click a unit for details</div>
         <div id="unit-amt"></div>
         <div id="unit-cards"></div>

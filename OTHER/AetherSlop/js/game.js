@@ -3830,6 +3830,16 @@ function refreshShop() {
 const unitCards = {};
 let lastUnitCardRefreshAt = -Infinity;
 
+function setCombatTab(tab) {
+  const showUnits = tab === 'units';
+  $('view-combat').classList.toggle('hidden', showUnits);
+  $('view-units').classList.toggle('hidden', !showUnits);
+  $('tab-combat').classList.toggle('active', !showUnits);
+  $('tab-units').classList.toggle('active', showUnits);
+  $('tab-combat').setAttribute('aria-selected', String(!showUnits));
+  $('tab-units').setAttribute('aria-selected', String(showUnits));
+}
+
 function buildUnitCards() {
   const list = $('unit-cards');
   list.innerHTML = '';
@@ -5684,6 +5694,8 @@ function init() {
   $('tab-upgr').onclick = () => setRightTab('upgr');
   $('tab-bag').onclick = () => setRightTab('bag');
   $('tab-auto').onclick = () => setRightTab('auto');
+  $('tab-combat').onclick = () => setCombatTab('combat');
+  $('tab-units').onclick = () => setCombatTab('units');
   $('right-body').addEventListener('scroll', handleBagScroll, { passive: true });
   $('detail-back').onclick = closeDetail;
   initTreePan();

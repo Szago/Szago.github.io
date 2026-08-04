@@ -2257,3 +2257,853 @@ body.endgame-calamity .plot:hover canvas {
   }
   .panel { min-height: 320px; }
 }
+
+/* ============================================================
+   MEDIEVAL MATERIAL REFORGE
+   Stone shell | parchment ledgers | timber shop signs
+   ============================================================ */
+
+:root {
+  --bg: #171613;
+  --panel: #302f2a;
+  --panel2: #48453d;
+  --border: #77736a;
+  --border-light: #aaa399;
+  --text: #eee7d6;
+  --dim: #bbb3a1;
+  --gold: #e2b85f;
+  --mana: #71b7b5;
+  --hp: #b7463f;
+  --good: #66824d;
+  --ink: #30271d;
+  --ink-dim: #6a5943;
+  --paper: #d8c59a;
+  --paper-light: #eadbb8;
+  --paper-dark: #a78b60;
+  --wood: #6b3f22;
+  --wood-dark: #321c11;
+  --wood-light: #9b693a;
+  --iron: #292a28;
+  --iron-light: #85847d;
+}
+
+body {
+  background-color: #1a1916;
+  background-image:
+    linear-gradient(rgba(13, 12, 10, 0.42), rgba(13, 12, 10, 0.62)),
+    url("../assets/ui/stone-wall.png");
+  background-size: auto, 512px 512px;
+  color: var(--text);
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.72);
+}
+
+#game {
+  gap: 12px;
+  padding: 12px;
+}
+
+.panel {
+  position: relative;
+  background:
+    linear-gradient(rgba(42, 41, 36, 0.94), rgba(31, 30, 27, 0.97)),
+    url("../assets/ui/stone-wall.png") center / 410px auto;
+  border: 5px solid #24231f;
+  outline: 2px solid #79766d;
+  box-shadow:
+    inset 0 0 0 2px #0d0d0b,
+    inset 0 0 34px rgba(0, 0, 0, 0.58),
+    0 7px 0 #0c0c0a,
+    0 12px 22px rgba(0, 0, 0, 0.48);
+}
+
+.panel::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgba(218, 213, 195, 0.17);
+  pointer-events: none;
+  z-index: 40;
+}
+
+.panel-title {
+  position: relative;
+  z-index: 41;
+  width: calc(100% - 38px);
+  margin: 11px auto 9px;
+  padding: 10px 24px 9px;
+  overflow: visible;
+  border: 3px solid var(--wood-dark);
+  border-bottom-color: #1f1009;
+  background:
+    radial-gradient(circle at 9px 8px, #d0a85f 0 2px, #392013 3px 5px, transparent 6px),
+    radial-gradient(circle at calc(100% - 9px) 8px, #d0a85f 0 2px, #392013 3px 5px, transparent 6px),
+    repeating-linear-gradient(2deg, rgba(255,255,255,0.035) 0 2px, transparent 2px 8px),
+    linear-gradient(#8b5830, #63391f 54%, #4b2918);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 218, 155, 0.22),
+    inset 0 -3px 0 rgba(31, 16, 8, 0.42),
+    0 4px 0 rgba(12, 8, 5, 0.8);
+  color: #f1d99a;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 13px;
+  letter-spacing: 1.8px;
+  line-height: 1.2;
+  text-shadow: 2px 2px 0 #27150b;
+}
+
+.panel-title::before,
+.panel-title::after {
+  content: '';
+  position: absolute;
+  top: -17px;
+  width: 3px;
+  height: 17px;
+  background: #1c1711;
+  box-shadow: 1px 0 0 #79654b;
+}
+.panel-title::before { left: 25px; }
+.panel-title::after { right: 25px; }
+
+.section-title {
+  margin: 9px 10px 3px;
+  padding: 7px 8px 4px;
+  border: 0;
+  border-bottom: 1px solid #8b7657;
+  color: #cbbd9d;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-shadow: 1px 1px #12110e;
+}
+
+.scroll {
+  scrollbar-color: #755034 #25231f;
+}
+.scroll::-webkit-scrollbar { width: 10px; }
+.scroll::-webkit-scrollbar-track { background: #24231f; border-left: 1px solid #111; }
+.scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #51301d, #8c5b33, #51301d);
+  border: 2px solid #29170e;
+}
+
+/* Parchment cards used by units, buildings, upgrades, inventory, and automation. */
+.buy-row,
+.unit-card,
+.inv-row,
+.skill-row,
+.auto-mode-row,
+.automation-note,
+.detail-stats,
+.perf-summary span,
+.pc-card,
+.tw-bosscard {
+  color: var(--ink);
+  border-color: #775f3f;
+  background:
+    linear-gradient(92deg, rgba(103, 72, 34, 0.13), transparent 8%, transparent 92%, rgba(103, 72, 34, 0.14)),
+    repeating-linear-gradient(0deg, rgba(87, 59, 28, 0.035) 0 1px, transparent 1px 5px),
+    linear-gradient(135deg, var(--paper-light), var(--paper) 62%, #c4ab7b);
+  border-style: solid;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 246, 214, 0.5),
+    inset 0 -8px 14px rgba(91, 61, 29, 0.08),
+    0 3px 0 #17130e,
+    0 5px 10px rgba(0, 0, 0, 0.24);
+}
+
+.buy-row,
+.unit-card,
+.skill-row,
+.auto-mode-row {
+  border-width: 2px;
+  padding: 8px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+}
+
+.buy-row:hover,
+.unit-card:hover,
+.inv-row.clickable:hover,
+.skill-row:not(:disabled):hover,
+.pc-card:hover {
+  background:
+    linear-gradient(rgba(255, 246, 211, 0.22), rgba(255, 246, 211, 0.05)),
+    linear-gradient(135deg, #f1e2bd, #d7c090 70%, #c6a979);
+  border-color: #b1894d;
+  box-shadow: inset 0 0 0 1px #fff2c8, 0 3px 0 #17130e, 0 7px 13px rgba(0,0,0,.32);
+  transform: translateY(-1px);
+}
+
+.buy-row.afford,
+.uc-plus.afford,
+.skill-row.afford { border-color: #607744; }
+.buy-row.locked,
+.unit-card.locked-unit { filter: grayscale(.58) brightness(.76); }
+
+.buy-row .buy-name,
+.unit-card .uc-top,
+.inv-row .buy-name,
+.auto-mode-copy,
+.automation-note,
+.detail-stats,
+.pc-card .pc-ds,
+.tw-bossinfo { color: var(--ink); }
+.buy-row .buy-prod,
+.buy-row .buy-line,
+.unit-card .uc-dps,
+.skill-desc,
+.auto-mode-copy,
+.detail-desc,
+.stat-row,
+.automation-note,
+.upgr-bname { color: var(--ink-dim); }
+.buy-owned,
+.uc-lvl,
+.detail-name,
+.auto-mode-name,
+.pc-card .pc-nm { color: #76501f; }
+.buy-row.tall .buy-special,
+.skill-name,
+.skill-cost,
+.auto-mode-rate,
+.item-stat-line.item-fit,
+.lock-note,
+.uc-share { color: #346f70; }
+.stat-row b,
+.automation-note b { color: var(--ink); }
+
+.buy-icon,
+.uc-portrait,
+.detail-portrait,
+.inv-row canvas,
+.slot {
+  background: linear-gradient(135deg, #292922, #11120f);
+  border-color: #79512d;
+  box-shadow: inset 0 0 0 1px #b4824d, 2px 2px 0 rgba(51,31,17,.5);
+}
+
+.row-info,
+.uc-plus {
+  background: linear-gradient(#5e3a22, #3b2114);
+  border-color: #9b7042;
+  color: #ead6a3;
+  box-shadow: inset 0 1px 0 rgba(255,232,174,.2), 0 2px 0 #211108;
+}
+.row-info:hover,
+.uc-plus:hover { background: linear-gradient(#7a4b29, #4c2a17); color: #fff0b5; }
+
+/* Combat bay: framed as a soot-dark stone alcove. */
+#zone-info { padding-top: 3px; }
+#zone-name {
+  color: #cbbd9d;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 10px;
+}
+.pip { background: #262722; border-color: #77736a; box-shadow: inset 1px 1px #111; }
+.pip.done { background: #667c49; }
+#monster-area {
+  background:
+    radial-gradient(ellipse 72% 32% at 50% 94%, rgba(173, 139, 82, .22), transparent 72%),
+    linear-gradient(180deg, #252621, #11120f);
+  border-color: #716d64;
+  box-shadow: inset 0 0 30px #090a08, 0 3px 0 #111;
+}
+#hp-bar { background: #151512; border-color: #77736a; }
+#combat-stats {
+  margin: 2px 10px 0;
+  border: 1px solid #656259;
+  background: rgba(19, 19, 16, .48);
+}
+
+/* Central city chrome: iron trays set into the masonry. */
+#game-progress {
+  background: linear-gradient(#31322e, #20211e);
+  border-bottom-color: #77736a;
+  color: #c1baaa;
+}
+#game-progress-bar { background: #11120f; border-color: #686860; }
+#game-progress-fill { background: linear-gradient(90deg, #63766a, #b7924c, #ddd1a9); }
+#resources,
+#city-footer {
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 2px, transparent 2px 16px),
+    linear-gradient(#4b4941, #302f2a);
+  border-color: #77736a;
+  box-shadow: inset 0 1px rgba(255,255,255,.12), inset 0 -2px #181814;
+}
+.res {
+  min-width: 0;
+  padding: 3px 8px;
+  border-right: 1px solid #1e1e1a;
+  text-shadow: 1px 1px #111;
+}
+.res:last-child { border-right: 0; }
+#city-view { border-top: 2px solid #171713; border-bottom: 2px solid #818078; }
+
+/* Timber hanging boards for the right-panel navigation. */
+#right-tabs {
+  position: relative;
+  z-index: 41;
+  gap: 9px;
+  padding: 9px 12px 12px;
+  border-bottom: 2px solid #171713;
+  overflow: visible;
+}
+.rtab {
+  position: relative;
+  flex-basis: calc(50% - 9px);
+  min-height: 40px;
+  overflow: visible;
+  border: 3px solid var(--wood-dark);
+  background:
+    radial-gradient(circle at 8px 7px, #b58a4f 0 2px, #2c170c 3px 4px, transparent 5px),
+    radial-gradient(circle at calc(100% - 8px) 7px, #b58a4f 0 2px, #2c170c 3px 4px, transparent 5px),
+    repeating-linear-gradient(1deg, transparent 0 6px, rgba(34,18,9,.16) 7px 8px),
+    linear-gradient(#87552f, #60371e);
+  color: #d8bd84;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 10px;
+  letter-spacing: .7px;
+  text-shadow: 1px 1px #2a160b;
+  box-shadow: inset 0 2px rgba(255,220,158,.14), 0 4px 0 #1a0e08;
+  transform: rotate(var(--sign-tilt, 0deg));
+  transition: transform .12s ease, filter .12s ease;
+}
+.rtab:nth-child(odd) { --sign-tilt: -.65deg; }
+.rtab:nth-child(even) { --sign-tilt: .65deg; }
+.rtab::before,
+.rtab::after {
+  content: '';
+  position: absolute;
+  top: -13px;
+  width: 2px;
+  height: 11px;
+  background: #17130e;
+  box-shadow: 1px 0 #7e694b;
+}
+.rtab::before { left: 18px; }
+.rtab::after { right: 18px; }
+.rtab:hover { color: #ffe5a4; filter: brightness(1.15); transform: rotate(0) translateY(-1px); }
+.rtab.active {
+  border-color: #d1a659;
+  color: #fff0b2;
+  background:
+    radial-gradient(circle at 8px 7px, #e0bd71 0 2px, #2c170c 3px 4px, transparent 5px),
+    radial-gradient(circle at calc(100% - 8px) 7px, #e0bd71 0 2px, #2c170c 3px 4px, transparent 5px),
+    repeating-linear-gradient(1deg, transparent 0 6px, rgba(34,18,9,.16) 7px 8px),
+    linear-gradient(#9b6335, #71401f);
+  box-shadow: inset 0 2px rgba(255,229,172,.22), 0 4px 0 #1a0e08, 0 0 12px rgba(212,164,80,.24);
+}
+#bag-count { color: #9ed0cb; }
+
+/* Smaller controls read as iron-bound timber buttons. */
+.amt-btn,
+.filter-btn,
+.picker-filter,
+.menu-btn,
+.menu-tab,
+#menu-btn,
+#ascend-btn,
+#detail-back,
+.picker-cancel,
+.combine-btn,
+#close-prestige,
+#close-portal,
+#close-tower,
+#modal-ascend-btn,
+#tree-buyall-btn {
+  background: linear-gradient(#644027, #3b2417);
+  border-color: #9a7044;
+  border-bottom-color: #2a180e;
+  color: #e1cfaa;
+  box-shadow: inset 0 1px 0 rgba(255,225,172,.18), 0 2px 0 #17100b;
+  text-shadow: 1px 1px #21120a;
+}
+.amt-btn:hover,
+.filter-btn:hover,
+.picker-filter:hover,
+.menu-btn:hover,
+.menu-tab:hover,
+#menu-btn:hover,
+#detail-back:hover { border-color: #d0a758; color: #fff0b4; }
+.amt-btn.active,
+.filter-btn.active,
+.picker-filter.on,
+.menu-tab.active { border-color: #d0a758; color: #ffe09a; background: linear-gradient(#82552e, #4f2d18); }
+
+#amt-toggle,
+#unit-amt {
+  background: rgba(37, 36, 31, .97);
+  box-shadow: 0 4px 7px rgba(0,0,0,.55);
+}
+
+/* Overlays become ledger desks and framed notice boards. */
+.modal { background: rgba(9, 9, 7, .88); }
+.modal-box {
+  border-color: #8b6940;
+  outline: 3px solid #26231e;
+  background:
+    linear-gradient(rgba(42,41,36,.96), rgba(30,29,26,.98)),
+    url("../assets/ui/stone-wall.png") center / 410px auto;
+  box-shadow: 0 10px 0 #0c0c0a, 0 18px 50px rgba(0,0,0,.75);
+}
+.modal-head,
+#menu-head {
+  background:
+    repeating-linear-gradient(1deg, transparent 0 8px, rgba(31,17,9,.18) 9px 10px),
+    linear-gradient(#754927, #462719);
+  border-bottom-color: #23140c;
+}
+.modal-head h2 {
+  color: #f0d58f;
+  font-family: 'Cinzel', Georgia, serif;
+  letter-spacing: 1.5px;
+}
+.modal-sub {
+  color: #443a2d;
+  border-color: #8f7653;
+  background: linear-gradient(90deg, #cdb889, #e4d3ab, #c8af7e);
+  text-shadow: none;
+}
+#menu-overlay {
+  background:
+    linear-gradient(rgba(43,42,37,.96), rgba(29,28,25,.98)),
+    url("../assets/ui/stone-wall.png") center / 410px auto;
+}
+.menu-section {
+  padding: 8px 10px 10px;
+  border: 2px solid #745c3d;
+  background: linear-gradient(135deg, #e5d4aa, #c9b180);
+  color: var(--ink);
+  box-shadow: 0 3px 0 #15110d;
+}
+.menu-section-title { color: #68441e; border-color: #8c704b; font-family: 'Cinzel', Georgia, serif; }
+.menu-note { color: var(--ink-dim); }
+#menu-body textarea { background: #f0e3c3; border-color: #735a3b; color: #2c251c; }
+
+.toast {
+  background: linear-gradient(#6e4729, #402516);
+  border-color: #c99b4e;
+  color: #f3e3ba;
+  box-shadow: 0 3px 0 #160c07, 0 6px 14px rgba(0,0,0,.45);
+}
+
+button:focus-visible,
+.buy-row:focus-visible,
+.unit-card:focus-visible {
+  outline: 2px solid #f0cc78;
+  outline-offset: 2px;
+}
+
+@media (max-width: 1200px) and (min-width: 1001px) {
+  #game { grid-template-columns: minmax(260px, 1fr) minmax(0, 1.8fr) minmax(300px, 1fr); gap: 8px; padding: 8px; }
+  .panel-title { font-size: 11px; width: calc(100% - 24px); }
+  .rtab { font-size: 8px; }
+  .res { padding-inline: 4px; font-size: 8px; }
+}
+
+@media (max-width: 1000px) {
+  body { background-attachment: fixed; }
+  #game { gap: 16px; padding: 10px; }
+  .panel-title { width: min(560px, calc(100% - 40px)); }
+}
+
+/* ============================================================
+   MEDIEVAL REFORGE — masonry frame & parchment legibility pass
+   ============================================================ */
+
+/* The three primary regions are set inside a visibly deep brick surround. */
+#combat,
+#city,
+#shop {
+  border: 14px solid transparent;
+  outline: 3px solid #11110f;
+  background:
+    linear-gradient(rgba(42, 41, 36, .96), rgba(29, 29, 25, .98)) padding-box,
+    url("../assets/ui/stone-wall.png") center / 410px auto padding-box,
+    url("../assets/ui/stone-wall.png") center / 190px auto border-box;
+  box-shadow:
+    inset 0 0 0 3px #0b0c0a,
+    inset 0 0 0 6px rgba(145, 140, 128, .62),
+    inset 0 0 36px rgba(0, 0, 0, .68),
+    0 0 0 2px #77736a,
+    0 8px 0 #090a08,
+    0 14px 26px rgba(0, 0, 0, .58);
+}
+
+#combat::after,
+#city::after,
+#shop::after {
+  inset: 0;
+  border: 2px solid rgba(221, 213, 191, .24);
+  box-shadow: inset 0 0 0 2px rgba(9, 10, 8, .8);
+}
+
+/* Generated parchment supplies fibers and age; the polygon gives every
+   dynamic ledger row a worn, irregular silhouette. */
+.buy-row,
+.unit-card,
+.inv-row,
+.skill-row,
+.auto-mode-row,
+.automation-note,
+.detail-stats,
+.perf-summary span,
+.pc-card,
+.tw-bosscard {
+  background:
+    linear-gradient(90deg, rgba(68, 38, 12, .17), transparent 9%, transparent 91%, rgba(68, 38, 12, .18)),
+    linear-gradient(rgba(255, 238, 183, .05), rgba(84, 48, 16, .08)),
+    url("../assets/ui/parchment.png") center / 320px 320px repeat;
+  color: #21180f;
+  border-color: #6a4b29;
+  clip-path: polygon(
+    0 6px, 3px 6px, 3px 2px, 9% 3px, 15% 0, 23% 3px, 34% 1px,
+    45% 3px, 56% 0, 68% 3px, 79% 1px, 90% 3px, 97% 1px, 100% 6px,
+    99% 15%, 100% 27%, 98% 39%, 100% 52%, 99% 65%, 100% 79%, 98% 91%,
+    100% calc(100% - 5px), 96% calc(100% - 2px), 88% 100%, 78% calc(100% - 3px),
+    66% 100%, 55% calc(100% - 2px), 44% 100%, 32% calc(100% - 3px), 21% 100%,
+    12% calc(100% - 2px), 3% 100%, 0 calc(100% - 6px), 2px 88%, 0 74%,
+    2px 61%, 0 47%, 2px 33%, 0 19%
+  );
+  text-shadow: none;
+}
+
+.buy-row:nth-child(even),
+.unit-card:nth-child(odd),
+.inv-row:nth-child(even) {
+  background-position: 0 0, 0 0, 83px 47px;
+}
+
+.buy-row *,
+.unit-card *,
+.inv-row *,
+.skill-row *,
+.auto-mode-row *,
+.automation-note *,
+.detail-stats *,
+.pc-card * {
+  text-shadow: none;
+}
+
+/* High-contrast ink hierarchy, including states that previously inherited
+   pale global UI colors. */
+.buy-row .buy-name,
+.buy-row .buy-top,
+.buy-row .buy-cost,
+.buy-row .buy-line,
+.unit-card .uc-name,
+.unit-card .uc-top,
+.inv-row .buy-name,
+.inv-row .buy-body,
+.skill-row,
+.auto-mode-copy,
+.automation-note,
+.detail-stats,
+.detail-stats .stat-row,
+.pc-card .pc-ds {
+  color: #251b11;
+}
+
+.buy-row .buy-prod,
+.buy-row.tall .buy-line,
+.unit-card .uc-dps,
+.skill-desc,
+.upgr-bname,
+.auto-mode-copy,
+.detail-stats .stat-row {
+  color: #58432c;
+}
+
+.buy-owned,
+.unit-card .uc-lvl,
+.auto-mode-name,
+.detail-name,
+.pc-card .pc-nm {
+  color: #633a16;
+}
+
+.buy-row .buy-special,
+.buy-row .lock-note,
+.unit-card .uc-share,
+.skill-name,
+.skill-cost,
+.auto-mode-rate,
+.item-stat-line.item-fit {
+  color: #245e60;
+}
+
+.buy-row .buy-shareline { color: #315e2e !important; }
+.buy-row .cost-res.ok { color: #315b30 !important; }
+.buy-row .cost-res.no { color: #902d25 !important; }
+.buy-row:disabled { opacity: 1; }
+.buy-row:disabled:not(.locked) { filter: saturate(.72) brightness(.86); }
+.buy-row.locked,
+.unit-card.locked-unit { opacity: 1; filter: grayscale(.72) brightness(.66); }
+.skill-row.owned { background: url("../assets/ui/parchment.png") center / 320px 320px repeat; color: #251b11; }
+
+/* Left navigation mirrors the builder's hanging shop signs. */
+#combat-tabs {
+  position: relative;
+  z-index: 41;
+  display: flex;
+  gap: 9px;
+  padding: 9px 12px 12px;
+  border-bottom: 2px solid #171713;
+  overflow: visible;
+  flex: 0 0 auto;
+}
+
+.ctab {
+  position: relative;
+  flex: 1 1 50%;
+  min-width: 0;
+  min-height: 38px;
+  overflow: visible;
+  border: 3px solid var(--wood-dark);
+  background:
+    radial-gradient(circle at 8px 7px, #b58a4f 0 2px, #2c170c 3px 4px, transparent 5px),
+    radial-gradient(circle at calc(100% - 8px) 7px, #b58a4f 0 2px, #2c170c 3px 4px, transparent 5px),
+    repeating-linear-gradient(1deg, transparent 0 6px, rgba(34,18,9,.16) 7px 8px),
+    linear-gradient(#87552f, #60371e);
+  color: #d8bd84;
+  font-family: 'Cinzel', Georgia, serif;
+  font-size: 9px;
+  letter-spacing: .6px;
+  text-shadow: 1px 1px #2a160b;
+  box-shadow: inset 0 2px rgba(255,220,158,.14), 0 4px 0 #1a0e08;
+  transition: transform .12s ease, filter .12s ease;
+}
+
+.ctab::before,
+.ctab::after {
+  content: '';
+  position: absolute;
+  top: -13px;
+  width: 2px;
+  height: 11px;
+  background: #17130e;
+  box-shadow: 1px 0 #7e694b;
+}
+.ctab::before { left: 18px; }
+.ctab::after { right: 18px; }
+.ctab:first-child { transform: rotate(-.55deg); }
+.ctab:last-child { transform: rotate(.55deg); }
+.ctab:hover { color: #ffe5a4; filter: brightness(1.15); transform: translateY(-1px); }
+.ctab.active {
+  border-color: #d1a659;
+  color: #fff0b2;
+  background:
+    radial-gradient(circle at 8px 7px, #e0bd71 0 2px, #2c170c 3px 4px, transparent 5px),
+    radial-gradient(circle at calc(100% - 8px) 7px, #e0bd71 0 2px, #2c170c 3px 4px, transparent 5px),
+    repeating-linear-gradient(1deg, transparent 0 6px, rgba(34,18,9,.16) 7px 8px),
+    linear-gradient(#9b6335, #71401f);
+  box-shadow: inset 0 2px rgba(255,229,172,.22), 0 4px 0 #1a0e08, 0 0 12px rgba(212,164,80,.24);
+}
+
+.combat-view {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+#view-combat {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 8px;
+}
+#view-combat #monster-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  aspect-ratio: auto;
+}
+#view-units { padding-bottom: 8px; }
+#view-units .section-title { margin-top: 3px; }
+
+@media (max-width: 1200px) and (min-width: 1001px) {
+  #combat,
+  #city,
+  #shop { border-width: 10px; }
+  .ctab { font-size: 7px; }
+}
+
+@media (max-width: 1000px) {
+  #combat,
+  #city,
+  #shop { border-width: 12px; }
+  #view-combat #monster-area {
+    flex: 0 0 auto;
+    min-height: 260px;
+    aspect-ratio: 1 / 1;
+  }
+}
+
+/* ============================================================
+   INTERACTION & TYPE CLARITY PASS
+   ============================================================ */
+
+/* Actionable parchment darkens slightly on hover. These selectors match or
+   exceed the original purple rules so no legacy violet can bleed through. */
+.buy-row.afford:hover,
+.buy-row:not(:disabled):hover,
+.unit-card:not(.locked-unit):hover,
+.inv-row.clickable:hover,
+.inv-row.afford:hover,
+.skill-row:not(:disabled):hover,
+.pc-card:hover {
+  background:
+    linear-gradient(rgba(75, 43, 15, .13), rgba(60, 34, 12, .19)),
+    linear-gradient(90deg, rgba(64, 35, 10, .16), transparent 10%, transparent 90%, rgba(64, 35, 10, .18)),
+    url("../assets/ui/parchment.png") center / 320px 320px repeat;
+  border-color: #9a6a31;
+  color: #1d150d;
+  filter: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 228, 159, .2),
+    inset 0 0 18px rgba(72, 39, 12, .14),
+    0 3px 0 #17130e,
+    0 6px 10px rgba(0, 0, 0, .3);
+  transform: translateY(-1px);
+}
+
+/* Locked and disabled ledgers remain subdued and do not flare on hover.
+   Their ink is kept dark independently instead of dimming the whole row. */
+.buy-row.locked,
+.buy-row:disabled,
+.unit-card.locked-unit,
+.skill-row:disabled {
+  opacity: 1;
+  filter: none;
+  background:
+    linear-gradient(rgba(104, 100, 90, .58), rgba(79, 76, 69, .62)),
+    url("../assets/ui/parchment.png") center / 320px 320px repeat;
+  background-blend-mode: color, normal;
+  border-color: #5c5549;
+  color: #27231d;
+  box-shadow: inset 0 0 14px rgba(42, 39, 34, .18), 0 2px 0 #17130e;
+}
+
+.buy-row.locked:hover,
+.buy-row:disabled:hover,
+.unit-card.locked-unit:hover,
+.skill-row:disabled:hover {
+  opacity: 1;
+  filter: none;
+  background:
+    linear-gradient(rgba(99, 95, 86, .6), rgba(75, 72, 65, .64)),
+    url("../assets/ui/parchment.png") center / 320px 320px repeat;
+  background-blend-mode: color, normal;
+  border-color: #655d50;
+  color: #27231d;
+  box-shadow: inset 0 0 14px rgba(42, 39, 34, .2), 0 2px 0 #17130e;
+  transform: none;
+}
+
+.buy-row.locked *,
+.buy-row:disabled *,
+.unit-card.locked-unit *,
+.skill-row:disabled * {
+  color: #302b24;
+  text-shadow: none;
+}
+.buy-row.locked .lock-note,
+.buy-row:disabled .cost-res.no { color: #672d28 !important; }
+
+/* Slight global type increase, concentrated on the formerly tiny 6–9px UI. */
+:root {
+  --text: #f4ecd9;
+  --dim: #d0c8b6;
+}
+
+body {
+  font-size: 11px;
+  text-rendering: geometricPrecision;
+}
+
+#game-progress,
+.res .rate,
+.buy-row.tall .buy-line,
+.buy-prod,
+.lock-note,
+.uc-share,
+.uc-dps,
+.skill-desc,
+.upgr-bname,
+.auto-mode-copy,
+.automation-note,
+.detail-desc,
+.detail-note,
+.picker-empty,
+.bag-load-status,
+.menu-note,
+.node-desc,
+.tw-bossinfo .dim2,
+.pl-note,
+.pr-lines .dim {
+  font-size: 8px;
+}
+
+#combat-stats,
+.buy-cost,
+.skill-row,
+.amt-btn,
+.picker-filter,
+.detail-stats,
+.stat-row,
+.picker-title,
+.menu-btn,
+.auto-mode-name,
+.auto-mode-row .menu-btn,
+.node-cost,
+#stat-line {
+  font-size: 9px;
+}
+
+#monster-name,
+.buy-row,
+.unit-card,
+.inv-row,
+.uc-top,
+.menu-tab,
+.menu-section-title,
+.detail-name,
+.rtab,
+.ctab {
+  font-size: 10px;
+}
+
+#combat-stats b,
+.res,
+#zone-name {
+  font-size: 11px;
+}
+
+.filter-btn,
+.combine-btn,
+.picker-cancel,
+.slot-tier {
+  font-size: 8px;
+}
+
+.buy-row,
+.unit-card,
+.inv-row,
+.skill-row,
+.detail-stats,
+.automation-note {
+  line-height: 1.72;
+}
+
+@media (max-width: 1200px) and (min-width: 1001px) {
+  .rtab,
+  .ctab { font-size: 8px; }
+  .buy-row,
+  .unit-card,
+  .inv-row { font-size: 9px; }
+}
