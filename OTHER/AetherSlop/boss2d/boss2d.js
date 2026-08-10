@@ -692,6 +692,8 @@
   let phase2HexDebugQueued = false;
   let phase2TowerPattern = null;
   let phase2TowerDebugQueued = false;
+  let phase2DoomPattern = null;
+  let phase2DoomDebugQueued = false;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
   let nextSlotId = 1;
@@ -755,6 +757,22 @@
   const PHASE2_TOWER_EMBER_SPEED_RANGE = 90;
   const PHASE2_TOWER_EMBER_MIN_RADIUS = 7;
   const PHASE2_TOWER_EMBER_RADIUS_RANGE = 5;
+  const PHASE2_TOWER_EMBER_VP_SCALE = 0.5;
+  const PHASE2_TOWER_PIXELS_PER_METER = 40;
+  const PHASE2_TOWER_GOAL_METERS = 100;
+  const PHASE2_DOOM_ENTRY_SLAM_MS = 1050;
+  const PHASE2_DOOM_RESHAPE_MS = 720;
+  const PHASE2_DOOM_APPROACH_MS = 1500;
+  const PHASE2_DOOM_NOTE_BEATS = 4;
+  const PHASE2_DOOM_FIRST_NOTE_DELAY_MS = 600;
+  const PHASE2_DOOM_PERFECT_MS = 90;
+  const PHASE2_DOOM_GREAT_MS = 180;
+  const PHASE2_DOOM_OK_MS = 280;
+  const PHASE2_DOOM_HOP_MS = 180;
+  const PHASE2_DOOM_SLASH_MS = 300;
+  const PHASE2_DOOM_PUNISH_DAMAGE = 100;
+  const PHASE2_DOOM_PUNISH_VP = VP_MAX * 0.15;
+  const PHASE2_DOOM_PERFECT_VP = VP_MAX * 0.10;
   const PHASE2_GRID_CHANNEL_BEATS = 3;
   const PHASE2_GRID_RECALL_MS = 460;
   const PHASE2_GRID_IMPACT_MS = 220;
@@ -1036,6 +1054,7 @@
     if (!overlay || !canvas || (phase2SquareArenaLocked && !force)) return;
     phase2SquareArenaLocked = true;
     phase2TowerPattern = null;
+    phase2DoomPattern = null;
     overlay.classList.remove('hex-arena-active');
     overlay.classList.remove('tower-climb-active');
     const help = overlay.querySelector('.aether-boss2d-help');
@@ -1680,6 +1699,16 @@
       towerClimbBtn.blur();
     });
     debugPanel.appendChild(towerClimbBtn);
+
+    const doomGridBtn = document.createElement('button');
+    doomGridBtn.type = 'button';
+    doomGridBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    doomGridBtn.textContent = 'DOOM GRID';
+    doomGridBtn.addEventListener('click', () => {
+      debugPhaseTwoDoomPattern();
+      doomGridBtn.blur();
+    });
+    debugPanel.appendChild(doomGridBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -3528,6 +3557,178 @@
     ctx.restore();
   }
 
+  function renderPhaseTwoDoomFloor() {
+    const pattern = phase2DoomPattern;
+    if (!pattern || pattern.mode !== 'active') return;
+    const size = phaseTwoDoomNoteSize(pattern);
+    ctx.save();
+    for (const slash of pattern.slashes) {
+      if (slash.square && slash.age < 0) renderPhaseTwoDoomSquare(slash.square, size, 0.88);
+    }
+    if (pattern.currentSquare) renderPhaseTwoDoomSquare(pattern.currentSquare, size, 1);
+    for (const note of pattern.notes) {
+      if (note.judged) continue;
+      const remaining = clamp01((note.hitAt - pattern.elapsed) / PHASE2_DOOM_APPROACH_MS);
+      const ringScale = 1 + 1.35 * remaining;
+      const shake = note.shakeAge > 0 ? Math.sin(note.shakeAge * 0.13) * 6 : 0;
+      const x = note.x + shake;
+      const y = note.y;
+      renderPhaseTwoDoomSquare({ x, y, seed: note.seed }, size, 0.92);
+      const ringSize = (size + 8) * ringScale;
+      ctx.globalAlpha = Math.min(1, 0.35 + 0.65 * (1 - remaining));
+      ctx.strokeStyle = '#d5d3c9';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - ringSize / 2, y - ringSize / 2, ringSize, ringSize);
+      ctx.globalAlpha = 1;
+    }
+    const nextNote = pattern.notes.filter((note) => !note.judged)
+      .sort((a, b) => a.hitAt - b.hitAt)[0];
+    if (nextNote && pattern.currentSquare) {
+      const remaining = clamp01((nextNote.hitAt - pattern.elapsed) / PHASE2_DOOM_APPROACH_MS);
+      const growth = smoothstep(1 - remaining);
+      const square = pattern.currentSquare;
+      const half = size / 2 - 5;
+      ctx.lineCap = 'square';
+      for (const sx of [-1, 1]) {
+        for (const sy of [-1, 1]) {
+          const fromX = square.x + sx * half;
+          const fromY = square.y + sy * half;
+          const toX = fromX + (square.x - fromX) * growth;
+          const toY = fromY + (square.y - fromY) * growth;
+          ctx.beginPath();
+          ctx.moveTo(fromX, fromY);
+          ctx.lineTo(toX, toY);
+          ctx.strokeStyle = 'rgba(94, 7, 31, 0.78)';
+          ctx.lineWidth = 9;
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(4, 2, 7, 0.96)';
+          ctx.lineWidth = 5;
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  function renderPhaseTwoDoomSquare(square, size, alpha) {
+    if (!square) return;
+    const half = size / 2;
+    const seed = square.seed || 0;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#020204';
+    ctx.fillRect(square.x - half, square.y - half, size, size);
+    ctx.beginPath();
+    ctx.rect(square.x - half + 2, square.y - half + 2, size - 4, size - 4);
+    ctx.clip();
+    for (let i = 0; i < 14; i++) {
+      const px = square.x - half + ((Math.sin(seed * 13.7 + i * 91.3) * 0.5 + 0.5) * size);
+      const py = square.y - half + ((Math.sin(seed * 31.9 + i * 47.1) * 0.5 + 0.5) * size);
+      const length = 5 + (i % 4) * 4;
+      ctx.strokeStyle = i % 3 === 0 ? 'rgba(105, 16, 27, 0.19)' : 'rgba(205, 202, 190, 0.10)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px - length, py + (i % 2 ? 2 : -2));
+      ctx.lineTo(px + length, py);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = '#b7b4aa';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(square.x - half + 1, square.y - half + 1, size - 2, size - 2);
+    ctx.strokeStyle = 'rgba(148, 11, 23, 0.72)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(square.x - half + 3.5, square.y - half + 3.5, size - 7, size - 7);
+    ctx.restore();
+  }
+
+  function tracePhaseTwoDoomSlash(g, slash, angle, length) {
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const px = -uy;
+    const py = ux;
+    const segments = 8;
+    g.beginPath();
+    for (let i = 0; i <= segments; i++) {
+      const along = -length / 2 + length * i / segments;
+      const edgeFade = Math.sin(i / segments * Math.PI);
+      const jag = Math.sin(slash.seed * 7.3 + i * 4.91 + angle * 3.7) * 4.5 * edgeFade;
+      const x = slash.x + ux * along + px * jag;
+      const y = slash.y + uy * along + py * jag;
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+  }
+
+  function renderPhaseTwoDoomEffects() {
+    const pattern = phase2DoomPattern;
+    if (!pattern || pattern.mode !== 'active') return;
+    const slashLength = phaseTwoDoomNoteSize(pattern) * 2.12;
+    ctx.save();
+    for (const slash of pattern.slashes) {
+      if (slash.age < 0) continue;
+      const progress = clamp01(slash.age / slash.duration);
+      const reach = easeOutCubic(clamp01(progress / 0.28));
+      const fade = 1 - smoothstep((progress - 0.55) / 0.45);
+      if (progress < 0.20) {
+        const impact = 1 - progress / 0.20;
+        ctx.globalAlpha = impact * (slash.punish ? 0.34 : 0.25);
+        ctx.fillStyle = progress < 0.055 ? '#fff8ed' : '#ff201c';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = impact * 0.9;
+        ctx.strokeStyle = progress < 0.07 ? '#fff8ed' : '#e21b24';
+        ctx.lineWidth = 3 + impact * 5;
+        ctx.beginPath();
+        ctx.arc(slash.x, slash.y, slashLength * (0.18 + progress * 2.5), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = fade;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (const angle of [Math.PI / 4, -Math.PI / 4]) {
+        tracePhaseTwoDoomSlash(ctx, slash, angle, slashLength * reach);
+        ctx.strokeStyle = '#d51d22';
+        ctx.lineWidth = 10;
+        ctx.shadowColor = 'rgba(220, 20, 28, 0.78)';
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        tracePhaseTwoDoomSlash(ctx, slash, angle, slashLength * reach);
+        ctx.strokeStyle = '#020204';
+        ctx.lineWidth = 6;
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = fade * (1 - progress);
+      ctx.fillStyle = '#aaa89d';
+      for (let i = 0; i < 8; i++) {
+        const angle = slash.seed + i * Math.PI / 4;
+        const distance = 10 + progress * (18 + i % 3 * 5);
+        const size = Math.max(1, 4 * (1 - progress));
+        ctx.fillRect(
+          slash.x + Math.cos(angle) * distance - size / 2,
+          slash.y + Math.sin(angle) * distance - size / 2,
+          size,
+          size
+        );
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.font = '10px "Press Start 2P", monospace';
+    for (const judgment of pattern.judgments) {
+      const progress = clamp01(judgment.age / judgment.duration);
+      ctx.globalAlpha = 1 - smoothstep((progress - 0.35) / 0.65);
+      ctx.fillStyle = judgment.kind === 'perfect'
+        ? '#ffd23e'
+        : judgment.kind === 'great' ? '#7fd86b' : judgment.kind === 'ok' ? '#5fd9ff' : '#ff4038';
+      ctx.fillText(judgment.text, judgment.x, judgment.y - 24 - progress * 28);
+    }
+    ctx.restore();
+  }
+
   function renderScene() {
     const sceneW = canvas ? canvas.width : BOARD;
     const sceneH = canvas ? canvas.height : BOARD;
@@ -3538,6 +3739,7 @@
     ctx.clip();
 
     const towerActive = phase === PHASE.SECOND && !!(phase2TowerPattern && phase2TowerPattern.course);
+    const doomActive = phase === PHASE.SECOND && !!phase2DoomPattern;
     const pitfallActive = phase === PHASE.SECOND && !!phase2PitfallPattern;
     const settledGrid = phase === PHASE.SECOND && phase2GridSpecial && phase2GridSpecial.settled;
     if (towerActive) {
@@ -3559,7 +3761,7 @@
       ctx.fillStyle = '#040406';
       ctx.fillRect(0, 0, sceneW, sceneH);
     }
-    if (!towerActive && !pitfallActive && !settledGrid && calcify > 0.001) {
+    if (!towerActive && !pitfallActive && !doomActive && !settledGrid && calcify > 0.001) {
       ctx.save();
       ctx.globalAlpha = calcify;
       if (!cobbledFloorPattern) cobbledFloorPattern = ctx.createPattern(cobbledFloorCanvas, 'repeat');
@@ -3613,12 +3815,14 @@
     renderShockwave();
     ctx.restore();
 
-    if (!towerActive && !pitfallActive && phase === PHASE.SECOND && phase2GridSpecial && !phase2GridSpecial.settled) renderPhaseTwoGridFloor();
-    if (!towerActive && !pitfallActive && phase === PHASE.SECOND && phase2Cracks.length) renderPhaseTwoGroundCracks();
-    if (!towerActive && !pitfallActive && phase === PHASE.SECOND) renderPhaseTwoFinalTile();
+    if (!towerActive && !pitfallActive && !doomActive && phase === PHASE.SECOND && phase2GridSpecial && !phase2GridSpecial.settled) renderPhaseTwoGridFloor();
+    if (!towerActive && !pitfallActive && !doomActive && phase === PHASE.SECOND && phase2Cracks.length) renderPhaseTwoGroundCracks();
+    if (!towerActive && !pitfallActive && !doomActive && phase === PHASE.SECOND) renderPhaseTwoFinalTile();
+    if (doomActive) renderPhaseTwoDoomFloor();
     drawHero();
     if (towerActive) renderPhaseTwoTowerAim();
     if (pitfallActive) renderPhaseTwoPitfallImpact();
+    if (doomActive) renderPhaseTwoDoomEffects();
     ctx.restore();
 
     // Bloody frame follows the arena transform and sits above its contents.
@@ -4947,6 +5151,8 @@
     phase2HexDebugQueued = false;
     phase2TowerPattern = null;
     phase2TowerDebugQueued = false;
+    phase2DoomPattern = null;
+    phase2DoomDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -6622,6 +6828,8 @@
     phase2HexDebugQueued = false;
     phase2TowerPattern = null;
     phase2TowerDebugQueued = false;
+    phase2DoomPattern = null;
+    phase2DoomDebugQueued = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
     entropy = 0;
@@ -7680,11 +7888,15 @@
     phase2SwordRingPattern = null;
     phase2PitfallPattern = null;
     phase2TowerPattern = null;
+    phase2DoomPattern = null;
     nextPhase2AttackBeat = phase2DebugClawQueued ? 0 : 2;
     if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
     if (phase2TowerDebugQueued) {
       phase2TowerDebugQueued = false;
       startPhaseTwoTowerClimb();
+    } else if (phase2DoomDebugQueued) {
+      phase2DoomDebugQueued = false;
+      beginDebugPhaseTwoDoomPattern();
     } else if (phase2RushDebugQueued) beginDebugPhaseTwoRush();
     else if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
     else if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
@@ -7965,7 +8177,7 @@
 
     const heroOriginX = Math.round(hero.x - HERO_W / 2);
     const heroOriginY = Math.round(hero.y - HERO_H / 2) + course.cameraY;
-    let touchingEmbers = 0;
+    let touchingEmber = false;
     for (const ember of course.embers) {
       ember.previousX = ember.x;
       ember.previousY = ember.y;
@@ -7986,10 +8198,10 @@
           ember.x,
           ember.y
         ) <= radius);
-      if (touchesHero) touchingEmbers++;
+      if (touchesHero) touchingEmber = true;
     }
-    if (touchingEmbers > 0) {
-      addVp(VP_PER_BEAT * touchingEmbers * vpBeatStep, true);
+    if (touchingEmber) {
+      addVp(VP_PER_BEAT * PHASE2_TOWER_EMBER_VP_SCALE * vpBeatStep, true);
     }
     course.embers = course.embers.filter((ember) => (
       ember.distance < ember.maxDistance &&
@@ -8167,6 +8379,34 @@
     return true;
   }
 
+  function beginPhaseTwoDoomTransition(course) {
+    const pattern = phase2TowerPattern;
+    if (!pattern || pattern.mode !== 'active' || !phase2Avatar || dead) return false;
+    pattern.mode = 'doom-slam';
+    pattern.elapsed = 0;
+    course.drag = null;
+    course.embers = [];
+    heroMove.x = 0;
+    heroMove.y = 0;
+    keys.clear();
+    const board = getBoardRect();
+    const started = phase2Avatar.slamTo(
+      board.left + board.width / 2,
+      board.top + board.height / 2,
+      PHASE2_DOOM_ENTRY_SLAM_MS
+    );
+    if (!started) resolvePhaseTwoDoomSlam();
+    return true;
+  }
+
+  function resolvePhaseTwoDoomSlam() {
+    const pattern = phase2TowerPattern;
+    if (!pattern || pattern.mode !== 'doom-slam') return;
+    phase2TowerPattern = null;
+    restorePhaseTwoSquareArena(true);
+    startPhaseTwoDoomPattern();
+  }
+
   function debugPhaseTwoTowerClimb() {
     if (!active) return;
     if (phase !== PHASE.SECOND) {
@@ -8179,6 +8419,42 @@
     phase2TowerDebugQueued = false;
     phase2TowerPattern = null;
     startPhaseTwoTowerClimb();
+  }
+
+  function beginDebugPhaseTwoDoomPattern() {
+    if (!phase2CombatStarted || !canvas || !phase2Avatar) return false;
+    phase2DoomDebugQueued = false;
+    phase2PitfallPattern = null;
+    phase2SwordRingPattern = null;
+    phase2GridSpecial = null;
+    phase2ClawRushMode = false;
+    resetPhaseTwoRushEntities();
+    phase2Attacks = [];
+    phase2Cracks = [];
+    restorePhaseTwoSquareArena(true);
+    phase2TowerPattern = { mode: 'doom-slam', elapsed: 0, course: null };
+    const board = getBoardRect();
+    const started = phase2Avatar.slamTo(
+      board.left + board.width / 2,
+      board.top + board.height / 2,
+      PHASE2_DOOM_ENTRY_SLAM_MS
+    );
+    if (!started) resolvePhaseTwoDoomSlam();
+    return true;
+  }
+
+  function debugPhaseTwoDoomPattern() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    phase2DoomDebugQueued = true;
+    if (!phase2AvatarStarted) skipPhaseTwoTransition();
+    if (phase2CombatStarted && phase2DoomDebugQueued) {
+      phase2DoomDebugQueued = false;
+      beginDebugPhaseTwoDoomPattern();
+    }
   }
 
   function phaseTwoTowerDragVector() {
@@ -8288,7 +8564,10 @@
     const flameBpm = PHASE2_BPM_MIN + (bpm - PHASE2_BPM_MIN) * PHASE2_TOWER_FLAME_BPM_SCALE;
     const flameBeatStep = dt / (60000 / flameBpm);
     course.flameY -= PHASE2_TOWER_FLAME_RISE_PER_BEAT * flameBeatStep;
-    course.altitude = Math.max(course.altitude, PHASE2_TOWER_WORLD_H - 72 - course.player.y);
+    course.altitude = Math.max(
+      course.altitude,
+      PHASE2_TOWER_WORLD_H - 72 - PHASE2_TOWER_PLAYER_H - course.player.y
+    );
     syncPhaseTwoTowerHero();
     updatePhaseTwoTowerEmbers(course, seconds, flameBeatStep, dt / beatMs);
     const playerBottom = course.player.y + PHASE2_TOWER_PLAYER_H;
@@ -8297,6 +8576,12 @@
       damagePlayer(PHASE2_TOWER_FLAME_DAMAGE * (bpm / PHASE2_BPM_MIN));
       playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
       if (hp <= 0) die();
+    }
+    if (
+      !dead &&
+      course.altitude >= PHASE2_TOWER_GOAL_METERS * PHASE2_TOWER_PIXELS_PER_METER
+    ) {
+      beginPhaseTwoDoomTransition(course);
     }
   }
 
@@ -8327,6 +8612,283 @@
       return;
     }
     if (pattern.mode === 'active' && pattern.course) updatePhaseTwoTowerCourse(pattern.course, dt);
+  }
+
+  function phaseTwoDoomNoteSize(pattern) {
+    return pattern && pattern.squareSize ? pattern.squareSize : 72;
+  }
+
+  function phaseTwoDoomBounds(pattern) {
+    const inset = BORDER + PAD + phaseTwoDoomNoteSize(pattern) / 2 + 16;
+    const left = inset;
+    const right = Math.max(left + 1, canvas.width - inset);
+    const top = inset;
+    const bottom = Math.max(top + 1, canvas.height - inset);
+    return { left, right, top, bottom, width: right - left, height: bottom - top };
+  }
+
+  function phaseTwoDoomStartRoute(pattern) {
+    const modes = ['orbit', 'figure8', 'zigzag', 'spiral', 'star']
+      .filter((mode) => !pattern.route || mode !== pattern.route.mode);
+    pattern.route = {
+      mode: modes[Math.floor(pattern.random() * modes.length)],
+      step: 0,
+      length: 5 + Math.floor(pattern.random() * 3),
+      phase: pattern.random() * Math.PI * 2,
+      direction: pattern.random() < 0.5 ? -1 : 1,
+    };
+  }
+
+  function phaseTwoDoomNextPoint(pattern) {
+    if (!pattern.route || pattern.route.step >= pattern.route.length) phaseTwoDoomStartRoute(pattern);
+    const route = pattern.route;
+    const bounds = pattern.bounds || phaseTwoDoomBounds(pattern);
+    const i = route.step++;
+    const span = Math.max(1, route.length - 1);
+    const t = route.phase + i * route.direction * Math.PI * 2 / span;
+    let nx = 0.5;
+    let ny = 0.5;
+    if (route.mode === 'orbit') {
+      nx += Math.cos(t) * 0.43;
+      ny += Math.sin(t) * 0.38;
+    } else if (route.mode === 'figure8') {
+      nx += Math.sin(t) * 0.43;
+      ny += Math.sin(t * 2) * 0.34;
+    } else if (route.mode === 'zigzag') {
+      nx = i % 2 ? 0.88 : 0.12;
+      ny = 0.14 + ((i + Math.floor(route.phase * 3)) % 4) * 0.24;
+      if (Math.sin(route.phase) < 0) [nx, ny] = [ny, nx];
+    } else if (route.mode === 'spiral') {
+      const radius = 0.14 + i / span * 0.30;
+      nx += Math.cos(t * 1.35) * radius;
+      ny += Math.sin(t * 1.35) * radius * 0.9;
+    } else {
+      const starAngle = route.phase + i * route.direction * Math.PI * 4 / 5;
+      nx += Math.cos(starAngle) * 0.43;
+      ny += Math.sin(starAngle) * 0.38;
+    }
+    return {
+      x: Math.max(bounds.left, Math.min(bounds.right, bounds.left + nx * bounds.width)),
+      y: Math.max(bounds.top, Math.min(bounds.bottom, bounds.top + ny * bounds.height)),
+    };
+  }
+
+  function phaseTwoDoomSpawnNote(pattern) {
+    let point = phaseTwoDoomNextPoint(pattern);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (!pattern.lastTarget || Math.hypot(point.x - pattern.lastTarget.x, point.y - pattern.lastTarget.y) > pattern.squareSize * 1.25) break;
+      point = phaseTwoDoomNextPoint(pattern);
+    }
+    pattern.lastTarget = point;
+    pattern.notes.push({
+      id: pattern.nextId++,
+      x: point.x,
+      y: point.y,
+      seed: pattern.random() * Math.PI * 2,
+      hitAt: pattern.nextHitAt,
+      judged: false,
+      shakeAge: 0,
+    });
+    playBossSfx('phase2TileCharge');
+  }
+
+  function phaseTwoDoomBeginHop(pattern, note) {
+    if (!note) return;
+    pattern.hop = {
+      fromX: hero.x,
+      fromY: hero.y,
+      toX: note.x,
+      toY: note.y,
+      elapsed: 0,
+      duration: PHASE2_DOOM_HOP_MS,
+    };
+  }
+
+  function phaseTwoDoomAddJudgment(pattern, x, y, text, kind) {
+    pattern.judgments.push({ x, y, text, kind, age: 0, duration: 680 });
+  }
+
+  function phaseTwoDoomAddSlash(pattern, x, y, punish, delay, square) {
+    pattern.slashes.push({
+      x,
+      y,
+      age: -Math.max(0, delay || 0),
+      duration: PHASE2_DOOM_SLASH_MS,
+      punish,
+      soundPlayed: false,
+      seed: pattern.random() * Math.PI * 2,
+      square: square ? { ...square } : null,
+    });
+  }
+
+  function phaseTwoDoomPunish(pattern, note, label) {
+    if (!note || note.judged) return;
+    note.judged = true;
+    phaseTwoDoomAddSlash(pattern, hero.x, hero.y, true);
+    phaseTwoDoomAddJudgment(pattern, note.x, note.y, label, 'miss');
+    vp = Math.max(0, vp - PHASE2_DOOM_PUNISH_VP);
+    damagePlayer(PHASE2_DOOM_PUNISH_DAMAGE, true);
+    playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+    if (hp <= 0) die();
+  }
+
+  function phaseTwoDoomJudge(pattern, note) {
+    const timing = pattern.elapsed - note.hitAt;
+    if (timing < -PHASE2_DOOM_OK_MS) {
+      phaseTwoDoomPunish(pattern, note, 'TOO EARLY');
+      return;
+    }
+    const absoluteTiming = Math.abs(timing);
+    const grade = absoluteTiming <= PHASE2_DOOM_PERFECT_MS
+      ? 'perfect'
+      : absoluteTiming <= PHASE2_DOOM_GREAT_MS ? 'great' : 'ok';
+    note.judged = true;
+    const abandonedSquare = pattern.currentSquare ? { ...pattern.currentSquare } : null;
+    phaseTwoDoomAddSlash(
+      pattern,
+      abandonedSquare ? abandonedSquare.x : hero.x,
+      abandonedSquare ? abandonedSquare.y : hero.y,
+      false,
+      Math.max(45, -timing),
+      abandonedSquare
+    );
+    pattern.currentSquare = { x: note.x, y: note.y, seed: note.seed };
+    phaseTwoDoomBeginHop(pattern, note);
+    phaseTwoDoomAddJudgment(pattern, note.x, note.y, grade.toUpperCase(), grade);
+    if (grade === 'perfect') addVp(PHASE2_DOOM_PERFECT_VP, true);
+  }
+
+  function phaseTwoDoomNoteViewportRect(pattern, note) {
+    const board = getBoardRect();
+    if (!board || !board.width || !note) return null;
+    const size = phaseTwoDoomNoteSize(pattern);
+    const width = size * board.width / canvas.width;
+    const height = size * board.height / canvas.height;
+    const cx = board.left + note.x * board.width / canvas.width;
+    const cy = board.top + note.y * board.height / canvas.height;
+    return {
+      left: cx - width / 2,
+      right: cx + width / 2,
+      top: cy - height / 2,
+      bottom: cy + height / 2,
+    };
+  }
+
+  function phaseTwoDoomClick(clientX, clientY) {
+    const pattern = phase2DoomPattern;
+    if (!pattern || pattern.mode !== 'active' || dead) return false;
+    const available = pattern.notes.filter((note) => !note.judged)
+      .sort((a, b) => a.hitAt - b.hitAt);
+    const clicked = available.find((note) => {
+      const rect = phaseTwoDoomNoteViewportRect(pattern, note);
+      return rect && clientX >= rect.left && clientX <= rect.right &&
+        clientY >= rect.top && clientY <= rect.bottom;
+    });
+    if (!clicked) return false;
+    if (clicked !== available[0]) {
+      available[0].shakeAge = 180;
+      return true;
+    }
+    phaseTwoDoomJudge(pattern, clicked);
+    return true;
+  }
+
+  function activatePhaseTwoDoomPattern(pattern) {
+    pattern.mode = 'active';
+    pattern.elapsed = 0;
+    pattern.squareSize = Math.max(62, Math.min(82, Math.min(canvas.width, canvas.height) * 0.13));
+    pattern.bounds = phaseTwoDoomBounds(pattern);
+    pattern.currentSquare = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      seed: pattern.random() * Math.PI * 2,
+    };
+    pattern.lastTarget = pattern.currentSquare;
+    pattern.route = null;
+    pattern.nextHitAt = PHASE2_DOOM_APPROACH_MS + PHASE2_DOOM_FIRST_NOTE_DELAY_MS;
+    hero.x = pattern.currentSquare.x;
+    hero.y = pattern.currentSquare.y;
+    heroMove.x = 0;
+    heroMove.y = 0;
+    dashPhaseTwoAvatarToBase();
+    const help = overlay && overlay.querySelector('.aether-boss2d-help');
+    if (help && help.firstChild) help.firstChild.nodeValue = 'CLICK THE CLOSING SQUARES';
+  }
+
+  function startPhaseTwoDoomPattern() {
+    if (!phase2CombatStarted || !canvas || phase2DoomPattern) return false;
+    phase2SquareArenaLocked = true;
+    phase2GridSpecial = null;
+    phase2TileRuinPattern = null;
+    phase2SwordRingPattern = null;
+    phase2PitfallPattern = null;
+    phase2Attacks = [];
+    phase2Cracks = [];
+    phase2ClawPatternStopped = true;
+    phase2BurstActive = false;
+    nextPhase2AttackBeat = Infinity;
+    keys.clear();
+    phase2DoomPattern = {
+      mode: 'reshape',
+      elapsed: 0,
+      notes: [],
+      slashes: [],
+      judgments: [],
+      hop: null,
+      nextId: 1,
+      random: mulberry32(0xd0012026),
+    };
+    return true;
+  }
+
+  function updatePhaseTwoDoomPattern(dt) {
+    const pattern = phase2DoomPattern;
+    if (!pattern) return;
+    pattern.elapsed += dt;
+    if (pattern.mode === 'reshape') {
+      const progress = clamp01(pattern.elapsed / PHASE2_DOOM_RESHAPE_MS);
+      updatePhaseTwoLayout(progress);
+      if (progress >= 1) activatePhaseTwoDoomPattern(pattern);
+      return;
+    }
+
+    if (pattern.hop) {
+      const hop = pattern.hop;
+      hop.elapsed += dt;
+      const progress = clamp01(hop.elapsed / hop.duration);
+      const travel = smoothstep(progress);
+      hero.x = hop.fromX + (hop.toX - hop.fromX) * travel;
+      hero.y = hop.fromY + (hop.toY - hop.fromY) * travel - Math.sin(progress * Math.PI) * 13;
+      heroSquash = Math.sin(progress * Math.PI) * 0.12;
+      if (progress >= 1) {
+        hero.x = hop.toX;
+        hero.y = hop.toY;
+        heroSquash = 0;
+        pattern.hop = null;
+      }
+    }
+    for (const note of pattern.notes) {
+      note.shakeAge = Math.max(0, note.shakeAge - dt);
+      if (!note.judged && pattern.elapsed > note.hitAt + PHASE2_DOOM_OK_MS) {
+        phaseTwoDoomPunish(pattern, note, 'MISS');
+      }
+    }
+    for (const slash of pattern.slashes) {
+      slash.age += dt;
+      if (slash.age >= 0 && !slash.soundPlayed) {
+        slash.soundPlayed = true;
+        playBossSfx('phase2ClawCut');
+      }
+    }
+    for (const judgment of pattern.judgments) judgment.age += dt;
+    pattern.notes = pattern.notes.filter((note) => !note.judged);
+    pattern.slashes = pattern.slashes.filter((slash) => slash.age < slash.duration);
+    pattern.judgments = pattern.judgments.filter((judgment) => judgment.age < judgment.duration);
+
+    while (pattern.elapsed >= pattern.nextHitAt - PHASE2_DOOM_APPROACH_MS) {
+      phaseTwoDoomSpawnNote(pattern);
+      pattern.nextHitAt += beatMs * PHASE2_DOOM_NOTE_BEATS;
+    }
   }
 
   function spawnPhaseTwoRushEye() {
@@ -10071,7 +10633,7 @@
   function updateSecondPhase(dt) {
     for (const a of fadingAttacks) a.fadeTime += dt;
     fadingAttacks = fadingAttacks.filter((a) => a.fadeTime < a.fadeDuration);
-    if (phase2TowerPattern) {
+    if (phase2TowerPattern || phase2DoomPattern) {
       heroMove.x = 0;
       heroMove.y = 0;
     } else if (phase2PitfallPattern) {
@@ -10092,6 +10654,9 @@
             if (phase2TowerPattern && phase2TowerPattern.mode === 'slam') {
               resolvePhaseTwoTowerImpact();
             }
+            if (phase2TowerPattern && phase2TowerPattern.mode === 'doom-slam') {
+              resolvePhaseTwoDoomSlam();
+            }
             if (phase2PitfallPattern && phase2PitfallPattern.mode === 'ram') {
               resolvePhaseTwoHexRamImpact(phase2PitfallPattern);
             }
@@ -10110,6 +10675,11 @@
         updatePhaseTwoTempo(dt);
         if (phase2TowerPattern) {
           updatePhaseTwoTowerPattern(dt);
+          updateCombat(dt);
+          return;
+        }
+        if (phase2DoomPattern) {
+          updatePhaseTwoDoomPattern(dt);
           updateCombat(dt);
           return;
         }
@@ -13746,7 +14316,7 @@
       return;
     }
     if (MOVE_CODES.has(event.code)) {
-      if (phase2TowerPattern) {
+      if (phase2TowerPattern || phase2DoomPattern) {
         event.preventDefault();
         return;
       }
@@ -13771,6 +14341,10 @@
 
   function onMouseDown(event) {
     if (!active || event.button !== 0 || combatPaused || dead) return;
+    if (phaseTwoDoomClick(event.clientX, event.clientY)) {
+      event.preventDefault();
+      return;
+    }
     if (phaseTwoTowerDragStart(event.clientX, event.clientY)) event.preventDefault();
   }
 
@@ -13860,6 +14434,8 @@
     phase2HexDebugQueued = false;
     phase2TowerPattern = null;
     phase2TowerDebugQueued = false;
+    phase2DoomPattern = null;
+    phase2DoomDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
