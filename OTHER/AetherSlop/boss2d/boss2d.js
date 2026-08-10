@@ -690,6 +690,8 @@
   let phase2PitfallPattern = null;
   let phase2PitfallDebugQueued = false;
   let phase2HexDebugQueued = false;
+  let phase2TowerPattern = null;
+  let phase2TowerDebugQueued = false;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
   let nextSlotId = 1;
@@ -732,6 +734,27 @@
   const PHASE2_RUSH_ORB_RADIUS = 5.625;
   const PHASE2_RUSH_ORB_SHADOW_RADIUS = 42;
   const PHASE2_RUSH_ORB_DAMAGE = 37.5;
+  const PHASE2_TOWER_ENTRY_SLAM_MS = 1120;
+  const PHASE2_TOWER_EXPAND_MS = 760;
+  const PHASE2_TOWER_BOSS_DASH_MS = 520;
+  const PHASE2_TOWER_WORLD_H = 20000;
+  const PHASE2_TOWER_G = 1800;
+  const PHASE2_TOWER_VCAP = 1060;
+  const PHASE2_TOWER_DRAG_K = 3.4;
+  const PHASE2_TOWER_MIN_DRAG = 18;
+  const PHASE2_TOWER_PLAYER_W = 22;
+  const PHASE2_TOWER_PLAYER_H = 30;
+  const PHASE2_TOWER_SIDE_CHANNEL = Math.ceil(PHASE2_TOWER_PLAYER_W * 1.5);
+  const PHASE2_TOWER_PLATFORM_H = 12;
+  const PHASE2_TOWER_ARROW_MAX = 50;
+  const PHASE2_TOWER_FLAME_RISE_PER_BEAT = 22;
+  const PHASE2_TOWER_FLAME_BPM_SCALE = 0.5;
+  const PHASE2_TOWER_FLAME_DAMAGE = 90;
+  const PHASE2_TOWER_EMBERS_PER_BEAT = 7.2;
+  const PHASE2_TOWER_EMBER_MIN_SPEED = 135;
+  const PHASE2_TOWER_EMBER_SPEED_RANGE = 90;
+  const PHASE2_TOWER_EMBER_MIN_RADIUS = 7;
+  const PHASE2_TOWER_EMBER_RADIUS_RANGE = 5;
   const PHASE2_GRID_CHANNEL_BEATS = 3;
   const PHASE2_GRID_RECALL_MS = 460;
   const PHASE2_GRID_IMPACT_MS = 220;
@@ -926,6 +949,7 @@
     if (!overlay) return;
     phase2SquareArenaLocked = false;
     overlay.classList.remove('hex-arena-active');
+    overlay.classList.remove('tower-climb-active');
     overlay.classList.remove('avatar-phase-two');
     overlay.style.removeProperty('--phase2-stage-w');
     overlay.style.removeProperty('--phase2-stage-h');
@@ -933,8 +957,13 @@
     overlay.style.removeProperty('--phase2-row-left');
     overlay.style.removeProperty('--phase2-row-top');
     overlay.style.removeProperty('--phase2-wrath-top');
+    overlay.style.removeProperty('--tower-ui-left');
+    overlay.style.removeProperty('--tower-ui-width');
+    overlay.style.removeProperty('--tower-ui-top');
     phase2LayoutAnchor = null;
     phase2LayoutSignature = '';
+    const help = overlay.querySelector('.aether-boss2d-help');
+    if (help && help.firstChild) help.firstChild.nodeValue = 'WASD / ARROWS MOVE';
     if (canvas && (canvas.width !== BOARD || canvas.height !== BOARD)) {
       canvas.width = BOARD;
       canvas.height = BOARD;
@@ -1006,7 +1035,11 @@
   function restorePhaseTwoSquareArena(force) {
     if (!overlay || !canvas || (phase2SquareArenaLocked && !force)) return;
     phase2SquareArenaLocked = true;
+    phase2TowerPattern = null;
     overlay.classList.remove('hex-arena-active');
+    overlay.classList.remove('tower-climb-active');
+    const help = overlay.querySelector('.aether-boss2d-help');
+    if (help && help.firstChild) help.firstChild.nodeValue = 'WASD / ARROWS MOVE';
     phase2GridSpecial = null;
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
@@ -1637,6 +1670,16 @@
       eyeRushBtn.blur();
     });
     debugPanel.appendChild(eyeRushBtn);
+
+    const towerClimbBtn = document.createElement('button');
+    towerClimbBtn.type = 'button';
+    towerClimbBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    towerClimbBtn.textContent = 'BLACK SPIRE';
+    towerClimbBtn.addEventListener('click', () => {
+      debugPhaseTwoTowerClimb();
+      towerClimbBtn.blur();
+    });
+    debugPanel.appendChild(towerClimbBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -3296,6 +3339,195 @@
     }
   }
 
+  function renderPhaseTwoTowerClimb(sceneW, sceneH) {
+    const pattern = phase2TowerPattern;
+    const course = pattern && pattern.course;
+    if (!course) return;
+    const cameraY = course.cameraY;
+    ctx.save();
+    ctx.fillStyle = '#08080a';
+    ctx.fillRect(0, 0, sceneW, sceneH);
+
+    const wallGradient = ctx.createLinearGradient(0, 0, sceneW, 0);
+    wallGradient.addColorStop(0, 'rgba(118, 116, 108, 0.18)');
+    wallGradient.addColorStop(0.10, 'rgba(20, 20, 23, 0.12)');
+    wallGradient.addColorStop(0.50, 'rgba(0, 0, 0, 0)');
+    wallGradient.addColorStop(0.90, 'rgba(20, 20, 23, 0.12)');
+    wallGradient.addColorStop(1, 'rgba(118, 116, 108, 0.18)');
+    ctx.fillStyle = wallGradient;
+    ctx.fillRect(0, 0, sceneW, sceneH);
+
+    const firstCourse = Math.floor(cameraY / 44) * 44;
+    ctx.strokeStyle = 'rgba(176, 173, 160, 0.09)';
+    ctx.lineWidth = 1;
+    for (let worldY = firstCourse; worldY <= cameraY + sceneH + 44; worldY += 44) {
+      const y = Math.round(worldY - cameraY) + 0.5;
+      const offset = (Math.floor(worldY / 44) % 2) * 38;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(sceneW, y);
+      for (let x = offset; x < sceneW; x += 76) {
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.sin(worldY * 0.017 + x) * 2, y + 44);
+      }
+      ctx.stroke();
+    }
+
+    for (const platform of course.platforms) {
+      const y = platform.y - cameraY;
+      if (y < -PHASE2_TOWER_PLATFORM_H - 4 || y > sceneH + 4) continue;
+      const x = Math.round(platform.x);
+      const width = Math.round(platform.w);
+      ctx.fillStyle = '#111114';
+      ctx.fillRect(x - 2, Math.round(y) - 2, width + 4, PHASE2_TOWER_PLATFORM_H + 5);
+      ctx.fillStyle = '#aaa89d';
+      ctx.fillRect(x, Math.round(y), width, PHASE2_TOWER_PLATFORM_H);
+      ctx.fillStyle = '#d1cec0';
+      ctx.fillRect(x + 2, Math.round(y) + 1, Math.max(0, width - 4), 2);
+      ctx.fillStyle = '#55554f';
+      ctx.fillRect(x + 3, Math.round(y) + 5, Math.max(0, width - 6), PHASE2_TOWER_PLATFORM_H - 5);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.38)';
+      for (let chip = 7; chip < width - 3; chip += 13) {
+        const chipY = (chip * 17 + Math.round(platform.y)) % 5;
+        ctx.fillRect(x + chip, Math.round(y) + 4 + chipY, 3, 2);
+      }
+    }
+
+    const flameScreenY = course.flameY - cameraY;
+    const flameBaseY = Math.max(-80, Math.min(sceneH + 100, flameScreenY));
+    const flamePoints = [];
+    for (let x = -16; x <= sceneW + 16; x += 12) {
+      flamePoints.push({ x, y: flameBaseY + phaseTwoTowerFlameSurfaceOffset(x) });
+    }
+    ctx.beginPath();
+    ctx.moveTo(flamePoints[0].x, sceneH + 30);
+    for (const point of flamePoints) ctx.lineTo(point.x, point.y);
+    ctx.lineTo(sceneW + 20, sceneH + 30);
+    ctx.closePath();
+    ctx.shadowColor = 'rgba(174, 12, 18, 0.70)';
+    ctx.shadowBlur = 22;
+    ctx.fillStyle = '#000000';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(205, 25, 31, 0.82)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(flamePoints[0].x, flamePoints[0].y);
+    for (let i = 1; i < flamePoints.length; i++) ctx.lineTo(flamePoints[i].x, flamePoints[i].y);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(75, 73, 72, 0.34)';
+    ctx.lineWidth = 1;
+    for (let trail = 0; trail < 3; trail++) {
+      ctx.beginPath();
+      for (let i = trail; i < flamePoints.length; i += 3) {
+        const point = flamePoints[i];
+        const y = point.y + 14 + trail * 11 + Math.sin(clock * 0.01 + i) * 5;
+        if (i === trail) ctx.moveTo(point.x, y); else ctx.lineTo(point.x, y);
+      }
+      ctx.stroke();
+    }
+
+    for (const ember of course.embers) {
+      const progress = clamp01(ember.distance / ember.maxDistance);
+      const life = 1 - progress;
+      const radius = ember.startRadius * Math.pow(life, 0.72);
+      const y = ember.y - cameraY;
+      if (y < -radius * 3 || y > sceneH + radius * 3) continue;
+      const previousY = ember.previousY - cameraY;
+      ctx.save();
+      ctx.globalAlpha = Math.pow(life, 0.82);
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(113, 35, 148, 0.58)';
+      ctx.lineWidth = Math.max(1, radius * 0.55);
+      ctx.shadowColor = 'rgba(158, 57, 202, 0.82)';
+      ctx.shadowBlur = Math.max(3, radius * 1.45);
+      ctx.beginPath();
+      ctx.moveTo(ember.previousX, previousY);
+      ctx.lineTo(ember.x, y);
+      ctx.stroke();
+      ctx.fillStyle = '#a847cf';
+      ctx.beginPath();
+      ctx.arc(ember.x, y, Math.max(0.6, radius), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(225, 153, 255, 0.78)';
+      ctx.beginPath();
+      ctx.arc(ember.x, y, Math.max(0.4, radius * 0.34), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // The fire erases platform bodies, but their pale stone rims remain visible
+    // through it so an engulfed route still reads as geometry rather than void.
+    ctx.shadowColor = 'rgba(224, 221, 208, 0.42)';
+    ctx.shadowBlur = 3;
+    ctx.strokeStyle = 'rgba(218, 216, 203, 0.88)';
+    ctx.lineWidth = 1.5;
+    for (const platform of course.platforms) {
+      const y = platform.y - cameraY;
+      if (y < -PHASE2_TOWER_PLATFORM_H - 4 || y > sceneH + 4) continue;
+      ctx.strokeRect(
+        Math.round(platform.x) - 0.5,
+        Math.round(y) - 0.5,
+        Math.round(platform.w) + 1,
+        PHASE2_TOWER_PLATFORM_H + 1
+      );
+    }
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  function renderPhaseTwoTowerAim() {
+    const pattern = phase2TowerPattern;
+    const course = pattern && pattern.mode === 'active' && pattern.course;
+    if (!course || !course.grounded || !course.drag) return;
+    const launch = phaseTwoTowerDragVector();
+    if (launch.magnitude <= PHASE2_TOWER_MIN_DRAG * PHASE2_TOWER_DRAG_K) return;
+    const length = 14 + launch.magnitude / phaseTwoTowerLaunchCap() * (PHASE2_TOWER_ARROW_MAX - 14);
+    const angle = Math.atan2(launch.vy, launch.vx);
+    const startX = hero.x;
+    const startY = hero.y;
+    const endX = startX + Math.cos(angle) * length;
+    const endY = startY + Math.sin(angle) * length;
+    ctx.save();
+    if (phaseTwoTowerHasTrajectoryPreview() && launch.vy < 0) {
+      const predicted = phaseTwoTowerTrajectoryPoints(course, launch);
+      let apexIndex = 0;
+      for (let i = 1; i < predicted.length; i++) {
+        if (predicted[i].y < predicted[apexIndex].y) apexIndex = i;
+      }
+      const points = predicted.slice(0, apexIndex + 3);
+      for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const descentStep = Math.max(0, i - apexIndex);
+        const screenY = point.y - course.cameraY;
+        if (screenY < -8 || screenY > canvas.height + 8) continue;
+        ctx.beginPath();
+        ctx.arc(point.x, screenY, descentStep === 0 ? 3 : descentStep === 1 ? 2.5 : 2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(78, 12, 16, ${descentStep === 0 ? 0.72 : descentStep === 1 ? 0.42 : 0.14})`;
+        ctx.fill();
+        ctx.strokeStyle = `rgba(226, 220, 205, ${descentStep === 0 ? 0.92 : descentStep === 1 ? 0.55 : 0.18})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = '#dfdcd0';
+    ctx.fillStyle = '#dfdcd0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+    ctx.translate(endX, endY);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-8, -4);
+    ctx.lineTo(-8, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
   function renderScene() {
     const sceneW = canvas ? canvas.width : BOARD;
     const sceneH = canvas ? canvas.height : BOARD;
@@ -3305,9 +3537,12 @@
     arenaPath(ctx, 0);
     ctx.clip();
 
+    const towerActive = phase === PHASE.SECOND && !!(phase2TowerPattern && phase2TowerPattern.course);
     const pitfallActive = phase === PHASE.SECOND && !!phase2PitfallPattern;
     const settledGrid = phase === PHASE.SECOND && phase2GridSpecial && phase2GridSpecial.settled;
-    if (pitfallActive) {
+    if (towerActive) {
+      renderPhaseTwoTowerClimb(sceneW, sceneH);
+    } else if (pitfallActive) {
       ctx.fillStyle = '#040406';
       ctx.fillRect(0, 0, sceneW, sceneH);
       if (!cobbledFloorPattern) cobbledFloorPattern = ctx.createPattern(cobbledFloorCanvas, 'repeat');
@@ -3324,7 +3559,7 @@
       ctx.fillStyle = '#040406';
       ctx.fillRect(0, 0, sceneW, sceneH);
     }
-    if (!pitfallActive && !settledGrid && calcify > 0.001) {
+    if (!towerActive && !pitfallActive && !settledGrid && calcify > 0.001) {
       ctx.save();
       ctx.globalAlpha = calcify;
       if (!cobbledFloorPattern) cobbledFloorPattern = ctx.createPattern(cobbledFloorCanvas, 'repeat');
@@ -3357,7 +3592,7 @@
     if (phase === PHASE.PENTAGRAM || phase === PHASE.ACTIVE) renderPentagram();
 
     // Tentacles reach in from the dark edges once they have spawned.
-    if (!pitfallActive && tentacles.length) {
+    if (!towerActive && !pitfallActive && tentacles.length) {
       let growth = 1;
       let fade = 1;
       let retreat = 0;
@@ -3378,10 +3613,11 @@
     renderShockwave();
     ctx.restore();
 
-    if (!pitfallActive && phase === PHASE.SECOND && phase2GridSpecial && !phase2GridSpecial.settled) renderPhaseTwoGridFloor();
-    if (!pitfallActive && phase === PHASE.SECOND && phase2Cracks.length) renderPhaseTwoGroundCracks();
-    if (!pitfallActive && phase === PHASE.SECOND) renderPhaseTwoFinalTile();
+    if (!towerActive && !pitfallActive && phase === PHASE.SECOND && phase2GridSpecial && !phase2GridSpecial.settled) renderPhaseTwoGridFloor();
+    if (!towerActive && !pitfallActive && phase === PHASE.SECOND && phase2Cracks.length) renderPhaseTwoGroundCracks();
+    if (!towerActive && !pitfallActive && phase === PHASE.SECOND) renderPhaseTwoFinalTile();
     drawHero();
+    if (towerActive) renderPhaseTwoTowerAim();
     if (pitfallActive) renderPhaseTwoPitfallImpact();
     ctx.restore();
 
@@ -4709,6 +4945,8 @@
     phase2PitfallPattern = null;
     phase2PitfallDebugQueued = false;
     phase2HexDebugQueued = false;
+    phase2TowerPattern = null;
+    phase2TowerDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -6379,6 +6617,11 @@
     phase2TileRuinDebugQueued = false;
     phase2SwordRingPattern = null;
     phase2SwordRingDebugQueued = false;
+    phase2PitfallPattern = null;
+    phase2PitfallDebugQueued = false;
+    phase2HexDebugQueued = false;
+    phase2TowerPattern = null;
+    phase2TowerDebugQueued = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
     entropy = 0;
@@ -7436,9 +7679,13 @@
     phase2TileRuinDebugQueued = false;
     phase2SwordRingPattern = null;
     phase2PitfallPattern = null;
+    phase2TowerPattern = null;
     nextPhase2AttackBeat = phase2DebugClawQueued ? 0 : 2;
     if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
-    if (phase2RushDebugQueued) beginDebugPhaseTwoRush();
+    if (phase2TowerDebugQueued) {
+      phase2TowerDebugQueued = false;
+      startPhaseTwoTowerClimb();
+    } else if (phase2RushDebugQueued) beginDebugPhaseTwoRush();
     else if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
     else if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
     else if (phase2GridDebugQueued) startPhaseTwoGridSpecial();
@@ -7591,6 +7838,497 @@
     phase2RushEyeBurstPending = false;
   }
 
+  function phaseTwoTowerMaxDx(dyUp) {
+    if (dyUp <= 0) return 380;
+    const vy = Math.sqrt(2 * PHASE2_TOWER_G * (dyUp + 30));
+    if (vy >= PHASE2_TOWER_VCAP) return 40;
+    const vx = Math.sqrt(PHASE2_TOWER_VCAP * PHASE2_TOWER_VCAP - vy * vy);
+    const t = (vy - Math.sqrt(Math.max(0, vy * vy - 2 * PHASE2_TOWER_G * dyUp))) /
+      PHASE2_TOWER_G;
+    return Math.max(40, vx * t * 0.85);
+  }
+
+  function phaseTwoTowerLaunchCap() {
+    if (typeof hasTree !== 'function' || typeof bCount !== 'function' || typeof bUp !== 'function') {
+      return PHASE2_TOWER_VCAP * 1.1 * 1.1 * 1.35;
+    }
+    let cap = PHASE2_TOWER_VCAP;
+    const ownsTreeNode = (id) => typeof hasTree === 'function' && hasTree(id);
+    const buildingCount = (id) => typeof bCount === 'function' ? bCount(id) : 0;
+    const upgradeLevel = (id) => typeof bUp === 'function' ? bUp(id) : 0;
+    if (ownsTreeNode('xspire1')) cap *= 1.1;
+    if (ownsTreeNode('xspire3')) cap *= 1.1;
+    const spireworks = ownsTreeNode('xspire5') ? 1.5 : 1;
+    const buildingBonus = (
+      0.003 * buildingCount('skyhookyard') +
+      0.015 * upgradeLevel('skyhook_tension')
+    ) * spireworks;
+    cap *= 1 + Math.min(0.35, buildingBonus);
+    return cap;
+  }
+
+  function phaseTwoTowerHasTrajectoryPreview() {
+    return typeof hasTree !== 'function' || hasTree('xspire6');
+  }
+
+  function phaseTwoTowerTrajectoryPoints(course, launch) {
+    const points = [];
+    let x = course.player.x;
+    let y = course.player.y;
+    let vx = launch.vx;
+    let vy = launch.vy;
+    const dt = 1 / 120;
+
+    for (let step = 0; step < 180; step++) {
+      vy += PHASE2_TOWER_G * dt;
+      let nextX = x + vx * dt;
+      let nextY = y + vy * dt;
+      let landed = false;
+
+      if (nextX < 0) { nextX = 0; vx = -vx * 0.55; }
+      if (nextX > BOARD - PHASE2_TOWER_PLAYER_W) {
+        nextX = BOARD - PHASE2_TOWER_PLAYER_W;
+        vx = -vx * 0.55;
+      }
+      if (vy < 0) {
+        for (const platform of course.platforms) {
+          const underside = platform.y + PHASE2_TOWER_PLATFORM_H;
+          if (y >= underside - 0.01 && nextY < underside &&
+              nextX + PHASE2_TOWER_PLAYER_W > platform.x &&
+              nextX < platform.x + platform.w) {
+            nextY = underside + 0.1;
+            vy = -vy * 0.2;
+            break;
+          }
+        }
+      }
+      if (vy > 0) {
+        const previousFoot = y + PHASE2_TOWER_PLAYER_H;
+        const nextFoot = nextY + PHASE2_TOWER_PLAYER_H;
+        for (const platform of course.platforms) {
+          if (previousFoot <= platform.y + 0.01 && nextFoot >= platform.y) {
+            const centerX = nextX + PHASE2_TOWER_PLAYER_W / 2;
+            if (centerX >= platform.x - 2 && centerX <= platform.x + platform.w + 2) {
+              nextY = platform.y - PHASE2_TOWER_PLAYER_H;
+              landed = true;
+              break;
+            }
+          }
+        }
+      }
+
+      x = nextX;
+      y = nextY;
+      if (step % 8 === 7 || landed) {
+        points.push({
+          x: x + PHASE2_TOWER_PLAYER_W / 2,
+          y: y + PHASE2_TOWER_PLAYER_H / 2,
+        });
+      }
+      if (landed) break;
+    }
+    return points;
+  }
+
+  function phaseTwoTowerFlameSurfaceOffset(x) {
+    const wave = Math.sin(x * 0.071 + clock * 0.008) * 13 +
+      Math.sin(x * 0.19 - clock * 0.013) * 7;
+    const tongue = Math.pow(Math.max(0, Math.sin(x * 0.113 + clock * 0.011)), 5) * 34;
+    return wave - tongue;
+  }
+
+  function spawnPhaseTwoTowerEmber(course) {
+    const random = course.emberRng;
+    const x = 12 + random() * (BOARD - 24);
+    const angle = -Math.PI / 2 + (random() * 2 - 1) * 0.82;
+    const speed = PHASE2_TOWER_EMBER_MIN_SPEED + random() * PHASE2_TOWER_EMBER_SPEED_RANGE;
+    const y = course.flameY + phaseTwoTowerFlameSurfaceOffset(x) - random() * 8;
+    course.embers.push({
+      x,
+      y,
+      previousX: x,
+      previousY: y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      distance: 0,
+      maxDistance: canvas.height / 3,
+      startRadius: PHASE2_TOWER_EMBER_MIN_RADIUS + random() * PHASE2_TOWER_EMBER_RADIUS_RANGE,
+    });
+  }
+
+  function updatePhaseTwoTowerEmbers(course, seconds, flameBeatStep, vpBeatStep) {
+    course.emberSpawnBudget += PHASE2_TOWER_EMBERS_PER_BEAT * flameBeatStep;
+    while (course.emberSpawnBudget >= 1) {
+      course.emberSpawnBudget--;
+      spawnPhaseTwoTowerEmber(course);
+    }
+
+    const heroOriginX = Math.round(hero.x - HERO_W / 2);
+    const heroOriginY = Math.round(hero.y - HERO_H / 2) + course.cameraY;
+    let touchingEmbers = 0;
+    for (const ember of course.embers) {
+      ember.previousX = ember.x;
+      ember.previousY = ember.y;
+      const dx = ember.vx * seconds;
+      const dy = ember.vy * seconds;
+      ember.x += dx;
+      ember.y += dy;
+      ember.distance += Math.hypot(dx, dy);
+      const life = Math.max(0, 1 - ember.distance / ember.maxDistance);
+      const radius = ember.startRadius * Math.pow(life, 0.72);
+      if (radius <= 0) continue;
+      const touchesHero = HERO_BODY_PIXEL_OFFSETS.some((point) =>
+        distToSeg(
+          heroOriginX + point.x,
+          heroOriginY + point.y,
+          ember.previousX,
+          ember.previousY,
+          ember.x,
+          ember.y
+        ) <= radius);
+      if (touchesHero) touchingEmbers++;
+    }
+    if (touchingEmbers > 0) {
+      addVp(VP_PER_BEAT * touchingEmbers * vpBeatStep, true);
+    }
+    course.embers = course.embers.filter((ember) => (
+      ember.distance < ember.maxDistance &&
+      ember.x > -ember.startRadius * 2 &&
+      ember.x < BOARD + ember.startRadius * 2
+    ));
+  }
+
+  function buildPhaseTwoTowerPlatforms(width) {
+    const random = mulberry32(20260611);
+    // Keep a full visible escape channel between the inner frame and every
+    // generated ledge, wide enough for 1.5 collision boxes on either side.
+    const margin = BORDER + PAD + PHASE2_TOWER_SIDE_CHANNEL;
+    const floorY = PHASE2_TOWER_WORLD_H - 72;
+    const platforms = [{ x: 0, y: floorY, w: width }];
+    let previous = platforms[0];
+    while (previous.y > 280) {
+      const climb = 1 - previous.y / PHASE2_TOWER_WORLD_H;
+      const gap = 120 + 95 * climb + random() * 30;
+      const y = previous.y - gap;
+      const platformWidth = Math.max(82, (220 - 105 * climb) * 0.78 + random() * 24);
+      const reach = phaseTwoTowerMaxDx(gap) + (previous.w + platformWidth) / 2 - 12;
+      const center = previous.x + previous.w / 2 + (random() * 2 - 1) * reach;
+      const x = Math.min(width - platformWidth - margin, Math.max(margin, center - platformWidth / 2));
+      const platform = { x, y, w: platformWidth };
+      platforms.push(platform);
+      const extras = random() < 0.85 ? (random() < 0.35 ? 2 : 1) : 0;
+      for (let i = 0; i < extras; i++) {
+        const extraWidth = Math.max(68, (160 - 70 * climb) * 0.72 + random() * 20);
+        const extraX = margin + random() * (width - extraWidth - 2 * margin);
+        const extraY = random() < 0.5 ? y : y - 14 - random() * 34;
+        if (extraX > x + platformWidth + 26 || extraX + extraWidth < x - 26) {
+          platforms.push({ x: extraX, y: extraY, w: extraWidth });
+        }
+      }
+      previous = platform;
+    }
+    return platforms;
+  }
+
+  function phaseTwoTowerTargetHeight() {
+    return Math.max(500, Math.round((window.innerHeight - 10) / 2) * 2);
+  }
+
+  function updatePhaseTwoTowerLayout(progress) {
+    if (!overlay || !canvas) return;
+    const p = shockwaveArenaProgress(progress);
+    const targetHeight = phaseTwoTowerTargetHeight();
+    const height = Math.max(500, Math.round((500 + (targetHeight - 500) * p) / 2) * 2);
+    // The stage child begins 40px into its row (VP bar + gap). Offset the row
+    // by that amount so the tower itself, rather than the whole HUD row, is centered.
+    const rowLeft = window.innerWidth / 2 - BOARD / 2 - 40;
+    const rowTop = 5 + (targetHeight - height) / 2;
+    overlay.classList.add('tower-climb-active');
+    overlay.style.setProperty('--phase2-row-left', rowLeft.toFixed(1) + 'px');
+    overlay.style.setProperty('--phase2-row-top', rowTop.toFixed(1) + 'px');
+    overlay.style.setProperty('--phase2-stage-w', BOARD + 'px');
+    overlay.style.setProperty('--phase2-stage-h', height + 'px');
+    overlay.style.setProperty('--phase2-vbar-h', height + 'px');
+    if (canvas.width !== BOARD || canvas.height !== height) {
+      canvas.width = BOARD;
+      canvas.height = height;
+      ctx.imageSmoothingEnabled = false;
+      frameBoardRect = null;
+    }
+    Object.assign(arena, {
+      x: BOARD / 2,
+      y: height / 2,
+      width: BOARD,
+      height,
+      rotation: 0,
+      shape: 'rect',
+      from: null,
+      target: null,
+      transitionTime: 0,
+      transitionDuration: 0,
+    });
+    const board = getBoardRect();
+    const avatar = phase2Avatar && phase2Avatar.state && phase2Avatar.state.avatar;
+    const bossTarget = phaseTwoTowerBossTarget();
+    const uiWidth = Math.max(210, Math.min(420, board.left - 58));
+    const uiLeft = Math.max(
+      18,
+      Math.min(board.left - uiWidth - 24, bossTarget.x - uiWidth / 2)
+    );
+    const uiTop = Math.min(window.innerHeight - 58, bossTarget.y + (avatar ? avatar.size : 250) * 0.48);
+    overlay.style.setProperty('--tower-ui-left', uiLeft.toFixed(1) + 'px');
+    overlay.style.setProperty('--tower-ui-width', uiWidth.toFixed(1) + 'px');
+    overlay.style.setProperty('--tower-ui-top', uiTop.toFixed(1) + 'px');
+  }
+
+  function createPhaseTwoTowerCourse() {
+    const floorY = PHASE2_TOWER_WORLD_H - 72;
+    const viewHeight = canvas.height;
+    const player = {
+      x: BOARD / 2 - PHASE2_TOWER_PLAYER_W / 2,
+      y: floorY - PHASE2_TOWER_PLAYER_H,
+    };
+    return {
+      player,
+      vx: 0,
+      vy: 0,
+      grounded: true,
+      drag: null,
+      cameraY: Math.max(0, Math.min(
+        PHASE2_TOWER_WORLD_H - viewHeight,
+        player.y - viewHeight * 0.55
+      )),
+      platforms: buildPhaseTwoTowerPlatforms(BOARD),
+      flameY: player.y + phaseTwoTowerTargetHeight() * 0.44,
+      embers: [],
+      emberSpawnBudget: 0,
+      emberRng: mulberry32(0xe8b3a2),
+      lastFlameDamageBeat: -1,
+      altitude: 0,
+    };
+  }
+
+  function syncPhaseTwoTowerHero() {
+    const course = phase2TowerPattern && phase2TowerPattern.course;
+    if (!course) return;
+    hero.x = course.player.x + PHASE2_TOWER_PLAYER_W / 2;
+    hero.y = course.player.y + PHASE2_TOWER_PLAYER_H / 2 - course.cameraY;
+    heroMove.x = Math.sign(course.vx);
+    heroMove.y = Math.sign(course.vy);
+  }
+
+  function phaseTwoTowerBossTarget() {
+    const board = getBoardRect();
+    const avatar = phase2Avatar && phase2Avatar.state && phase2Avatar.state.avatar;
+    const size = avatar ? avatar.size : 250;
+    const desiredX = board.left * 0.50;
+    return {
+      x: Math.max(size * 0.48, Math.min(board.left - size * 0.44, desiredX)),
+      y: Math.max(size * 0.48, Math.min(window.innerHeight * 0.30, 250)),
+    };
+  }
+
+  function resolvePhaseTwoTowerImpact() {
+    const pattern = phase2TowerPattern;
+    if (!pattern || pattern.mode !== 'slam') return;
+    pattern.mode = 'expand';
+    pattern.elapsed = 0;
+    pattern.course = createPhaseTwoTowerCourse();
+    pattern.dashStarted = false;
+    phase2SquareArenaLocked = true;
+    phase2Attacks = [];
+    keys.clear();
+    updatePhaseTwoTowerLayout(0);
+    syncPhaseTwoTowerHero();
+    const help = overlay && overlay.querySelector('.aether-boss2d-help');
+    if (help && help.firstChild) help.firstChild.nodeValue = 'MOUSE DRAG / RELEASE TO LEAP';
+  }
+
+  function startPhaseTwoTowerClimb() {
+    if (!phase2CombatStarted || !canvas || !phase2Avatar || phase2TowerPattern) return false;
+    restorePhaseTwoSquareArena(true);
+    phase2PitfallPattern = null;
+    phase2GridSpecial = null;
+    phase2TileRuinPattern = null;
+    phase2SwordRingPattern = null;
+    phase2Cracks = [];
+    phase2Attacks = [];
+    phase2ClawPatternStopped = true;
+    phase2BurstActive = false;
+    nextPhase2AttackBeat = Infinity;
+    phase2TowerPattern = { mode: 'slam', elapsed: 0, course: null, dashStarted: false };
+    const board = getBoardRect();
+    const started = phase2Avatar.slamTo(
+      board.left + board.width / 2,
+      board.top + board.height / 2,
+      PHASE2_TOWER_ENTRY_SLAM_MS
+    );
+    if (!started) resolvePhaseTwoTowerImpact();
+    return true;
+  }
+
+  function debugPhaseTwoTowerClimb() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    phase2TowerDebugQueued = true;
+    if (!phase2AvatarStarted) skipPhaseTwoTransition();
+    if (!phase2CombatStarted) return;
+    phase2TowerDebugQueued = false;
+    phase2TowerPattern = null;
+    startPhaseTwoTowerClimb();
+  }
+
+  function phaseTwoTowerDragVector() {
+    const course = phase2TowerPattern && phase2TowerPattern.course;
+    if (!course || !course.drag) return { vx: 0, vy: 0, magnitude: 0 };
+    const drag = course.drag;
+    const launchCap = phaseTwoTowerLaunchCap();
+    let vx = (drag.startX - drag.currentX) * PHASE2_TOWER_DRAG_K;
+    let vy = (drag.startY - drag.currentY) * PHASE2_TOWER_DRAG_K;
+    const magnitude = Math.hypot(vx, vy);
+    if (magnitude > launchCap) {
+      vx *= launchCap / magnitude;
+      vy *= launchCap / magnitude;
+    }
+    return { vx, vy, magnitude: Math.min(magnitude, launchCap) };
+  }
+
+  function phaseTwoTowerDragStart(clientX, clientY) {
+    const pattern = phase2TowerPattern;
+    const course = pattern && pattern.mode === 'active' && pattern.course;
+    if (!course || !course.grounded || dead) return false;
+    const board = getBoardRect();
+    if (clientX < board.left || clientX > board.right || clientY < board.top || clientY > board.bottom) {
+      return false;
+    }
+    course.drag = { startX: clientX, startY: clientY, currentX: clientX, currentY: clientY };
+    return true;
+  }
+
+  function phaseTwoTowerDragMove(clientX, clientY) {
+    const course = phase2TowerPattern && phase2TowerPattern.course;
+    if (!course || !course.drag) return;
+    course.drag.currentX = clientX;
+    course.drag.currentY = clientY;
+  }
+
+  function phaseTwoTowerDragEnd() {
+    const course = phase2TowerPattern && phase2TowerPattern.course;
+    if (!course || !course.drag) return;
+    const drag = course.drag;
+    const pulled = Math.hypot(drag.startX - drag.currentX, drag.startY - drag.currentY);
+    const launch = phaseTwoTowerDragVector();
+    course.drag = null;
+    if (pulled < PHASE2_TOWER_MIN_DRAG || launch.vy >= 0) return;
+    course.vx = launch.vx;
+    course.vy = launch.vy;
+    course.grounded = false;
+  }
+
+  function phaseTwoTowerPhysicsStep(course, dt) {
+    if (course.grounded) return;
+    const player = course.player;
+    course.vy += PHASE2_TOWER_G * dt;
+    let nextX = player.x + course.vx * dt;
+    let nextY = player.y + course.vy * dt;
+    if (nextX < 0) {
+      nextX = 0;
+      course.vx = -course.vx * 0.55;
+    }
+    if (nextX > BOARD - PHASE2_TOWER_PLAYER_W) {
+      nextX = BOARD - PHASE2_TOWER_PLAYER_W;
+      course.vx = -course.vx * 0.55;
+    }
+    if (course.vy < 0) {
+      for (const platform of course.platforms) {
+        const underside = platform.y + PHASE2_TOWER_PLATFORM_H;
+        if (player.y >= underside - 0.01 && nextY < underside &&
+            nextX + PHASE2_TOWER_PLAYER_W > platform.x && nextX < platform.x + platform.w) {
+          nextY = underside + 0.1;
+          course.vy = -course.vy * 0.2;
+          break;
+        }
+      }
+    }
+    if (course.vy > 0) {
+      const previousFoot = player.y + PHASE2_TOWER_PLAYER_H;
+      const nextFoot = nextY + PHASE2_TOWER_PLAYER_H;
+      for (const platform of course.platforms) {
+        if (previousFoot <= platform.y + 0.01 && nextFoot >= platform.y) {
+          const centerX = nextX + PHASE2_TOWER_PLAYER_W / 2;
+          if (centerX >= platform.x - 2 && centerX <= platform.x + platform.w + 2) {
+            nextY = platform.y - PHASE2_TOWER_PLAYER_H;
+            course.vx = 0;
+            course.vy = 0;
+            course.grounded = true;
+            break;
+          }
+        }
+      }
+    }
+    player.x = nextX;
+    player.y = nextY;
+  }
+
+  function updatePhaseTwoTowerCourse(course, dt) {
+    const seconds = Math.min(0.05, dt / 1000);
+    phaseTwoTowerPhysicsStep(course, seconds / 2);
+    phaseTwoTowerPhysicsStep(course, seconds / 2);
+    const targetCamera = Math.max(0, Math.min(
+      PHASE2_TOWER_WORLD_H - canvas.height,
+      course.player.y - canvas.height * 0.55
+    ));
+    const cameraEase = 1 - Math.pow(0.84, dt / (1000 / 60));
+    course.cameraY += (targetCamera - course.cameraY) * cameraEase;
+    // Preserve the baseline rise at 150 BPM, but apply only half of the extra
+    // entropy tempo so the flame does not become oppressive late in the fight.
+    const flameBpm = PHASE2_BPM_MIN + (bpm - PHASE2_BPM_MIN) * PHASE2_TOWER_FLAME_BPM_SCALE;
+    const flameBeatStep = dt / (60000 / flameBpm);
+    course.flameY -= PHASE2_TOWER_FLAME_RISE_PER_BEAT * flameBeatStep;
+    course.altitude = Math.max(course.altitude, PHASE2_TOWER_WORLD_H - 72 - course.player.y);
+    syncPhaseTwoTowerHero();
+    updatePhaseTwoTowerEmbers(course, seconds, flameBeatStep, dt / beatMs);
+    const playerBottom = course.player.y + PHASE2_TOWER_PLAYER_H;
+    if (playerBottom >= course.flameY && course.lastFlameDamageBeat !== beatIndex) {
+      course.lastFlameDamageBeat = beatIndex;
+      damagePlayer(PHASE2_TOWER_FLAME_DAMAGE * (bpm / PHASE2_BPM_MIN));
+      playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+      if (hp <= 0) die();
+    }
+  }
+
+  function updatePhaseTwoTowerPattern(dt) {
+    const pattern = phase2TowerPattern;
+    if (!pattern) return;
+    pattern.elapsed += dt;
+    if (pattern.mode === 'slam') return;
+    if (pattern.mode === 'expand') {
+      const progress = clamp01(pattern.elapsed / PHASE2_TOWER_EXPAND_MS);
+      updatePhaseTwoTowerLayout(progress);
+      pattern.course.cameraY = Math.max(0, Math.min(
+        PHASE2_TOWER_WORLD_H - canvas.height,
+        pattern.course.player.y - canvas.height * 0.55
+      ));
+      syncPhaseTwoTowerHero();
+      if (progress >= 1 && !pattern.dashStarted && phase2Avatar && !phase2Avatar.slamming) {
+        pattern.dashStarted = phase2Avatar.dashTo(
+          phaseTwoTowerBossTarget().x,
+          phaseTwoTowerBossTarget().y,
+          PHASE2_TOWER_BOSS_DASH_MS
+        );
+      }
+      if (progress >= 1 && pattern.dashStarted && (!phase2Avatar || !phase2Avatar.dashing)) {
+        pattern.mode = 'active';
+        pattern.elapsed = 0;
+      }
+      return;
+    }
+    if (pattern.mode === 'active' && pattern.course) updatePhaseTwoTowerCourse(pattern.course, dt);
+  }
+
   function spawnPhaseTwoRushEye() {
     if (!phase2ClawRushMode || phase2RushEyesSpawned >= PHASE2_RUSH_EYE_COUNT) return false;
     const slot = PHASE2_RUSH_EYE_SPAWN_ORDER[phase2RushEyesSpawned++];
@@ -7619,9 +8357,7 @@
     phase2RushEyeBurstPending = false;
     phase2BurstActive = false;
     nextPhase2AttackBeat = Infinity;
-    if (phase2Avatar && typeof phase2Avatar.dashHome === 'function') {
-      phase2Avatar.dashHome(getBoardRect(), PHASE2_BOSS_RETURN_DASH_MS);
-    }
+    startPhaseTwoTowerClimb();
   }
 
   function strikePhaseTwoRushEyes() {
@@ -9335,7 +10071,10 @@
   function updateSecondPhase(dt) {
     for (const a of fadingAttacks) a.fadeTime += dt;
     fadingAttacks = fadingAttacks.filter((a) => a.fadeTime < a.fadeDuration);
-    if (phase2PitfallPattern) {
+    if (phase2TowerPattern) {
+      heroMove.x = 0;
+      heroMove.y = 0;
+    } else if (phase2PitfallPattern) {
       updatePhaseTwoPitfallMovement(dt);
     } else if (phase2SwordRingPattern || (phase2GridSpecial && phase2GridSpecial.struck)) {
       heroMove.x = 0;
@@ -9350,6 +10089,9 @@
           onEmerge: () => playBossSfx('phase2Emerge'),
           onSlam: () => {
             playBossSfx('phase2Slam');
+            if (phase2TowerPattern && phase2TowerPattern.mode === 'slam') {
+              resolvePhaseTwoTowerImpact();
+            }
             if (phase2PitfallPattern && phase2PitfallPattern.mode === 'ram') {
               resolvePhaseTwoHexRamImpact(phase2PitfallPattern);
             }
@@ -9366,6 +10108,11 @@
         beginPhaseTwoCombat();
         if (phase2DebugClawQueued && phase2Attacks.length === 0) onPhaseTwoBeat(beatIndex);
         updatePhaseTwoTempo(dt);
+        if (phase2TowerPattern) {
+          updatePhaseTwoTowerPattern(dt);
+          updateCombat(dt);
+          return;
+        }
         if (phase2PitfallPattern) {
           updatePhaseTwoPitfallPattern(dt);
           updateCombat(dt);
@@ -12920,7 +13667,7 @@
         phaseTime += dt;
         updateArena(dt);
         updatePhase(dt);
-        if (phase === PHASE.ACTIVE || phase === PHASE.SECOND) clampHero();
+        if ((phase === PHASE.ACTIVE || phase === PHASE.SECOND) && !phase2TowerPattern) clampHero();
       }
       renderBackground(time, false);
       renderScene();
@@ -12938,7 +13685,7 @@
     phaseTime += dt;
     updateArena(dt);
     updatePhase(dt);
-    if (phase === PHASE.ACTIVE || phase === PHASE.SECOND) clampHero();
+    if ((phase === PHASE.ACTIVE || phase === PHASE.SECOND) && !phase2TowerPattern) clampHero();
     renderBackground(time, false);
     renderScene();
     renderAttackLayer();
@@ -12999,6 +13746,10 @@
       return;
     }
     if (MOVE_CODES.has(event.code)) {
+      if (phase2TowerPattern) {
+        event.preventDefault();
+        return;
+      }
       if (phase2GridSpecial && phase2GridSpecial.tileMode) {
         if (!event.repeat) {
           if (event.code === 'KeyW' || event.code === 'ArrowUp') queuePhaseTwoGridHop(0, -1);
@@ -13016,6 +13767,21 @@
 
   function onKeyUp(event) {
     if (MOVE_CODES.has(event.code)) keys.delete(event.code);
+  }
+
+  function onMouseDown(event) {
+    if (!active || event.button !== 0 || combatPaused || dead) return;
+    if (phaseTwoTowerDragStart(event.clientX, event.clientY)) event.preventDefault();
+  }
+
+  function onMouseMove(event) {
+    if (!active) return;
+    phaseTwoTowerDragMove(event.clientX, event.clientY);
+  }
+
+  function onMouseUp(event) {
+    if (!active || event.button !== 0) return;
+    phaseTwoTowerDragEnd();
   }
 
   function dispatchState() {
@@ -13092,6 +13858,8 @@
     phase2PitfallPattern = null;
     phase2PitfallDebugQueued = false;
     phase2HexDebugQueued = false;
+    phase2TowerPattern = null;
+    phase2TowerDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -13148,6 +13916,14 @@
     sizeBackground();
     sizeAttackCanvas();
     sizeDeathCanvas();
+    if (phase2TowerPattern && phase2TowerPattern.course) {
+      updatePhaseTwoTowerLayout(1);
+      syncPhaseTwoTowerHero();
+      if (phase2Avatar && phase2TowerPattern.mode === 'active') {
+        const target = phaseTwoTowerBossTarget();
+        phase2Avatar.dashTo(target.x, target.y, 220);
+      }
+    }
     resetRun();
     dispatchState();
   }
@@ -13202,9 +13978,13 @@
 
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('keyup', onKeyUp);
+  document.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
   window.addEventListener('resize', onResize);
   window.addEventListener('blur', () => {
     keys.clear();
+    if (phase2TowerPattern && phase2TowerPattern.course) phase2TowerPattern.course.drag = null;
     stopSoundDebugHold();
   });
 

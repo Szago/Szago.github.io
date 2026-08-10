@@ -807,6 +807,50 @@
   box-shadow: 0 0 12px rgba(218, 216, 196, 0.55);
 }
 
+#aether-boss2d-overlay.avatar-phase-two.tower-climb-active .aether-boss2d-stage-row {
+  top: var(--phase2-row-top, 5px);
+}
+
+#aether-boss2d-overlay.tower-climb-active .aether-boss2d-vbar {
+  height: var(--phase2-vbar-h, 500px);
+  gap: 0;
+}
+
+#aether-boss2d-overlay.tower-climb-active .aether-boss2d-vbar-label {
+  position: absolute;
+  top: 5px;
+  z-index: 2;
+  padding: 2px;
+  background: rgba(4, 4, 6, 0.76);
+}
+
+#aether-boss2d-overlay.tower-climb-active .aether-boss2d-vbar-track {
+  height: 100%;
+}
+
+#aether-boss2d-overlay.avatar-phase-two.tower-climb-active .aether-boss2d-wrath {
+  left: var(--tower-ui-left, 620px);
+  top: var(--tower-ui-top, 340px);
+  width: var(--tower-ui-width, 320px);
+  transform: none;
+  align-items: flex-start;
+}
+
+#aether-boss2d-overlay.avatar-phase-two.tower-climb-active .aether-boss2d-wrath-name,
+#aether-boss2d-overlay.avatar-phase-two.tower-climb-active .aether-boss2d-wrath-track {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#aether-boss2d-overlay.tower-climb-active .aether-boss2d-stage {
+  box-shadow: 0 0 0 2px #111, 0 0 24px rgba(190, 188, 174, 0.30);
+}
+
+#aether-boss2d-overlay.tower-climb-active .aether-boss2d-audio-mix {
+  left: auto;
+  right: 12px;
+}
+
 /* Controls reference, tucked into the bottom-right corner of the screen. */
 .aether-boss2d-help {
   position: fixed;

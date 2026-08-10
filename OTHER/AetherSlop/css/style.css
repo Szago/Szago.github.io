@@ -2186,6 +2186,23 @@ body.endgame-calamity .plot:hover canvas {
   pointer-events: none;
 }
 #sp-player canvas { display: block; filter: drop-shadow(0 0 5px rgba(255, 230, 150, 0.7)); }
+#sp-trajectory {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+}
+.sp-trajectory-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border: 2px solid rgba(255, 220, 92, 0.95);
+  border-radius: 50%;
+  background: rgba(125, 202, 255, 0.34);
+  box-shadow: 0 0 4px rgba(116, 195, 255, 0.65);
+  will-change: left, top, transform;
+}
 #sp-arrow {
   position: absolute;
   height: 4px;

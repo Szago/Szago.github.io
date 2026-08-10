@@ -133,7 +133,7 @@ function spirePlats() {
 
 /* ---------------- modal & world DOM ---------------- */
 
-let sp = null; // live session: { vx, vy, grounded, drag, camY, raf, peakY, jumpY, playerEl, arrowEl }
+let sp = null; // live session: { vx, vy, grounded, drag, camY, raf, peakY, jumpY, playerEl, arrowEl, trajectoryEl }
 
 function openSpire() {
   spireEnsure(state);
@@ -142,7 +142,7 @@ function openSpire() {
     vx: 0, vy: 0, grounded: false, drag: null,
     camY: 0, raf: 0, last: 0,
     peakY: state.spire.y, jumpY: state.spire.y,
-    playerEl: $('sp-player'), arrowEl: $('sp-arrow'),
+    playerEl: $('sp-player'), arrowEl: $('sp-arrow'), trajectoryEl: $('sp-trajectory'),
   };
   sp.camY = Math.max(0, Math.min(SPIRE_H - spViewH(), state.spire.y - spViewH() * 0.55));
   $('spire-modal').classList.remove('hidden');
@@ -197,6 +197,11 @@ function buildSpireWorld() {
     'The Crown of the Silver Spire: permanent x' + spCrownMult() + ' gold production!';
   crown.appendChild(spriteCanvas('crown', 6));
   world.appendChild(crown);
+
+  const trajectory = document.createElement('div');
+  trajectory.id = 'sp-trajectory';
+  trajectory.className = 'hidden';
+  world.appendChild(trajectory);
 
   const player = document.createElement('div');
   player.id = 'sp-player';
@@ -316,6 +321,105 @@ function spDragVec() {
   return { vx, vy, mag: Math.min(mag, cap) };
 }
 
+function spHasTrajectoryPreview() {
+  return typeof hasTree === 'function' && hasTree('xspire6');
+}
+
+function spTrajectoryPoints(v) {
+  const points = [];
+  const platforms = spirePlats();
+  let x = state.spire.x;
+  let y = state.spire.y;
+  let vx = v.vx;
+  let vy = v.vy;
+  const dt = 1 / 120;
+
+  for (let step = 0; step < 180; step++) {
+    vy += SPIRE_G * dt;
+    let nx = x + vx * dt;
+    let ny = y + vy * dt;
+    let landed = false;
+
+    if (nx < 0) { nx = 0; vx = -vx * 0.55; }
+    if (nx > SPIRE_W - SPIRE_PW) {
+      nx = SPIRE_W - SPIRE_PW;
+      vx = -vx * 0.55;
+    }
+    if (vy < 0) {
+      for (const p of platforms) {
+        const underside = p.y + SPIRE_PLAT_H;
+        if (y >= underside - 0.01 && ny < underside &&
+            nx + SPIRE_PW > p.x && nx < p.x + p.w) {
+          ny = underside + 0.1;
+          vy = -vy * 0.2;
+          break;
+        }
+      }
+    }
+    if (vy > 0) {
+      const previousFoot = y + SPIRE_PH;
+      const nextFoot = ny + SPIRE_PH;
+      for (const p of platforms) {
+        if (previousFoot <= p.y + 0.01 && nextFoot >= p.y) {
+          const centerX = nx + SPIRE_PW / 2;
+          if (centerX >= p.x - 2 && centerX <= p.x + p.w + 2) {
+            ny = p.y - SPIRE_PH;
+            landed = true;
+            break;
+          }
+        }
+      }
+    }
+
+    x = nx;
+    y = ny;
+    if (step % 8 === 7 || landed) {
+      points.push({ x: x + SPIRE_PW / 2, y: y + SPIRE_PH / 2 });
+    }
+    if (landed) break;
+  }
+  return points;
+}
+
+function spHideTrajectory() {
+  if (sp && sp.trajectoryEl) sp.trajectoryEl.classList.add('hidden');
+}
+
+function spRenderTrajectory(v) {
+  const trajectory = sp.trajectoryEl;
+  if (!trajectory || !spHasTrajectoryPreview() || v.vy >= 0) {
+    spHideTrajectory();
+    return;
+  }
+  const predicted = spTrajectoryPoints(v);
+  let apexIndex = 0;
+  for (let i = 1; i < predicted.length; i++) {
+    if (predicted[i].y < predicted[apexIndex].y) apexIndex = i;
+  }
+  const points = predicted.slice(0, apexIndex + 3);
+  trajectory.classList.remove('hidden');
+  while (trajectory.children.length < points.length) {
+    const dot = document.createElement('span');
+    dot.className = 'sp-trajectory-dot';
+    trajectory.appendChild(dot);
+  }
+  for (let i = 0; i < trajectory.children.length; i++) {
+    const dot = trajectory.children[i];
+    const point = points[i];
+    if (!point) {
+      dot.style.display = 'none';
+      continue;
+    }
+    const descentStep = Math.max(0, i - apexIndex);
+    dot.style.display = 'block';
+    dot.style.left = point.x.toFixed(1) + 'px';
+    dot.style.top = point.y.toFixed(1) + 'px';
+    dot.style.opacity = descentStep === 0 ? '0.92' : descentStep === 1 ? '0.55' : '0.18';
+    dot.style.transform = 'translate(-50%, -50%) scale(' +
+      (descentStep === 0 ? '1' : descentStep === 1 ? '0.84' : '0.66') + ')';
+  }
+}
+
 function spDragEnd() {
   if (!sp || !sp.drag) return;
   const d = sp.drag;
@@ -323,6 +427,7 @@ function spDragEnd() {
   const v = spDragVec();
   sp.drag = null;
   sp.arrowEl.classList.add('hidden');
+  spHideTrajectory();
   if (pulled < SPIRE_MIN_DRAG || v.vy >= 0) return;  // tiny pulls & downward shots cancel
   sp.vx = v.vx; sp.vy = v.vy;
   sp.grounded = false;
@@ -358,6 +463,7 @@ function spRender() {
   if (sp.drag && sp.grounded) {
     const v = spDragVec();
     if (v.mag > SPIRE_MIN_DRAG * SPIRE_DRAG_K) {
+      spRenderTrajectory(v);
       const len = 14 + (v.mag / spVcap()) * (SPIRE_ARROW_MAX - 14);
       const ang = Math.atan2(v.vy, v.vx) * 180 / Math.PI;
       const a = sp.arrowEl;
@@ -368,7 +474,11 @@ function spRender() {
       a.style.transform = 'rotate(' + ang.toFixed(1) + 'deg)';
     } else {
       sp.arrowEl.classList.add('hidden');
+      spHideTrajectory();
     }
+  } else {
+    sp.arrowEl.classList.add('hidden');
+    spHideTrajectory();
   }
   spUpdateHud();
 }
@@ -433,5 +543,11 @@ document.addEventListener('DOMContentLoaded', () => {
   view.addEventListener('mousedown', ev => { ev.preventDefault(); spDragStart(ev.clientX, ev.clientY); });
   view.addEventListener('mousemove', ev => spDragMove(ev.clientX, ev.clientY));
   window.addEventListener('mouseup', () => spDragEnd());
-  view.addEventListener('mouseleave', () => { if (sp && sp.drag) { sp.drag = null; sp.arrowEl.classList.add('hidden'); } });
+  view.addEventListener('mouseleave', () => {
+    if (sp && sp.drag) {
+      sp.drag = null;
+      sp.arrowEl.classList.add('hidden');
+      spHideTrajectory();
+    }
+  });
 });

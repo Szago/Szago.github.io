@@ -1374,6 +1374,7 @@ const PRESTIGE_TREE = (() => {
   n('spirita1', 6, 'spirit', 0, 'Legion Eternal', 'Spirit Hands click rate DOUBLED.');
   n('xspirit6', 6, 'spirit', 0, 'Eternal Procession', 'Spirit clicks deal +1% damage per Ascension performed (cap +100%).', { req: 'spirita1', side: 1 });
   n('spirita2', 6, 'spirit', 1, 'Spirit Sovereign', 'Spirit clicks deal +300% damage.');
+  n('xspire6', 6, 'spirit', 1, 'Aether Ballistics', 'SILVER SPIRE: dragging a launch reveals a dotted projected path, including wall bounces.', { req: 'xspire5', side: -1, cost: 4000000 });
   n('xwar15', 6, 'war', 1, 'Aura of the First King', 'Raises the Hero aura soft cap from +250% to +500%.', { req: 'xwar14', side: -1 });
   n('spirita3', 6, 'spirit', 2, 'One With the Ghosts', 'YOUR clicks gain all spirit damage bonuses.', { req: ['spirita2', 'xspirit6'] });
   n('auto16', 6, 'auto', 0, 'The Arcane Vizier', 'TOGGLE: automatically learns ARCANE SKILLS the moment you can afford them.');
