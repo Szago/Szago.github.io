@@ -53,8 +53,60 @@
     ],
   };
   const HERO_SCALE = 3;
-  const HERO_W = HERO.rows[0].length * HERO_SCALE; // 45
-  const HERO_H = HERO.rows.length * HERO_SCALE;    // 36
+  const HERO_W = HERO.rows[0].length * HERO_SCALE;
+  const HERO_H = HERO.rows.length * HERO_SCALE;
+  const HERO_BODY_CELLS = (function buildHeroBodyCells() {
+    const opaque = new Set();
+    for (let y = 0; y < HERO.rows.length; y++) {
+      for (let x = 0; x < HERO.rows[y].length; x++) {
+        const token = HERO.rows[y][x];
+        if (token !== '.' && token !== ' ' && HERO.pal[token]) opaque.add(x + ',' + y);
+      }
+    }
+    const visited = new Set();
+    let largest = [];
+    for (const key of opaque) {
+      if (visited.has(key)) continue;
+      const component = [];
+      const pending = [key];
+      visited.add(key);
+      while (pending.length) {
+        const current = pending.pop();
+        const [x, y] = current.split(',').map(Number);
+        component.push({ x, y });
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const neighbor = (x + dx) + ',' + (y + dy);
+          if (opaque.has(neighbor) && !visited.has(neighbor)) {
+            visited.add(neighbor);
+            pending.push(neighbor);
+          }
+        }
+      }
+      if (component.length > largest.length) largest = component;
+    }
+    return largest;
+  })();
+  const HERO_BODY_BOUNDS = HERO_BODY_CELLS.reduce((bounds, cell) => ({
+    minX: Math.min(bounds.minX, cell.x),
+    minY: Math.min(bounds.minY, cell.y),
+    maxX: Math.max(bounds.maxX, cell.x),
+    maxY: Math.max(bounds.maxY, cell.y),
+  }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+  const HERO_BODY_CENTER_LOCAL = {
+    x: (HERO_BODY_BOUNDS.minX + HERO_BODY_BOUNDS.maxX + 1) * HERO_SCALE / 2,
+    y: (HERO_BODY_BOUNDS.minY + HERO_BODY_BOUNDS.maxY + 1) * HERO_SCALE / 2,
+  };
+  const HERO_BODY_PIXEL_OFFSETS = [];
+  for (const cell of HERO_BODY_CELLS) {
+    for (let pixelY = 0; pixelY < HERO_SCALE; pixelY++) {
+      for (let pixelX = 0; pixelX < HERO_SCALE; pixelX++) {
+        HERO_BODY_PIXEL_OFFSETS.push({
+          x: cell.x * HERO_SCALE + pixelX + 0.5,
+          y: cell.y * HERO_SCALE + pixelY + 0.5,
+        });
+      }
+    }
+  }
   const MOVE_SPEED = 0.21; // base px per ms at BASE_BPM; scales with tempo
 
   // ---- Module state ------------------------------------------------------
@@ -590,6 +642,9 @@
   let phase2ClawRushMode = false;
   let phase2RushEyes = [];
   let phase2RushOrbs = [];
+  let phase2RushDyingEyes = [];
+  let phase2RushEyesSpawned = 0;
+  let phase2RushPhaseComplete = false;
   let phase2RushEyeBurstPending = false;
   let phase2RushDebugQueued = false;
   let phase2TileRuinPattern = null;
@@ -625,13 +680,17 @@
   const PHASE2_CLAW_FIRE_BEATS = 0.42;
   const PHASE2_CLAW_REST_BEATS = 1;
   const PHASE2_CLAW_RUSH_TIME_SCALE = 0.62;
+  const PHASE2_CLAW_RUSH_TRAVEL_SCALE = 3.2;
   const PHASE2_CLAW_RUSH_WIDTH_SCALE = 0.62;
+  const PHASE2_CLAW_RUSH_REACH_EXPONENT = 2.35;
+  const PHASE2_CLAW_RUSH_HOLD_SCALE = 1.5;
   const PHASE2_RUSH_EYE_COUNT = 6;
-  const PHASE2_RUSH_EYE_FIRE_BEATS = 4.5;
-  const PHASE2_RUSH_ORB_SPEED_PER_BEAT = 70;
-  const PHASE2_RUSH_ORB_RADIUS = 9;
-  const PHASE2_RUSH_ORB_SHADOW_RADIUS = 21;
-  const PHASE2_RUSH_ORB_DAMAGE = 75;
+  const PHASE2_RUSH_EYE_SPAWN_ORDER = [0, 3, 1, 4, 2, 5];
+  const PHASE2_RUSH_EYE_FIRE_BEATS = 6;
+  const PHASE2_RUSH_ORB_SPEED_PER_BEAT = 40;
+  const PHASE2_RUSH_ORB_RADIUS = 5.625;
+  const PHASE2_RUSH_ORB_SHADOW_RADIUS = 42;
+  const PHASE2_RUSH_ORB_DAMAGE = 37.5;
   const PHASE2_GRID_CHANNEL_BEATS = 3;
   const PHASE2_GRID_RECALL_MS = 460;
   const PHASE2_GRID_IMPACT_MS = 220;
@@ -704,9 +763,7 @@
   const PHASE2_HEX_WHIRLPOOL_CAST_BEATS = 2.5;
   const PHASE2_HEX_WHIRLPOOL_SWITCH_BEATS = 2.4;
   const PHASE2_HEX_WHIRLPOOL_SPEED_DELTA = 0.25;
-  const PHASE2_HEX_VP_HITBOX_SCALE = 0.40;
   const PHASE2_HEX_VP_CONTACT_PADDING = 0.75;
-  const PHASE2_HEX_VP_HITBOX_SAMPLES = 6;
   const DEATH_SLOW_MS = 900;
   const DEATH_FADE_START = 90;
   const DEATH_FADE_END = 1080;
@@ -1470,15 +1527,15 @@
     });
     debugPanel.appendChild(shadowClawBtn);
 
-    const rushClawBtn = document.createElement('button');
-    rushClawBtn.type = 'button';
-    rushClawBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
-    rushClawBtn.textContent = 'RUSH CLAWS';
-    rushClawBtn.addEventListener('click', () => {
+    const eyeRushBtn = document.createElement('button');
+    eyeRushBtn.type = 'button';
+    eyeRushBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    eyeRushBtn.textContent = 'EYE RUSH';
+    eyeRushBtn.addEventListener('click', () => {
       debugPhaseTwoRush();
-      rushClawBtn.blur();
+      eyeRushBtn.blur();
     });
-    debugPanel.appendChild(rushClawBtn);
+    debugPanel.appendChild(eyeRushBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -1559,6 +1616,18 @@
   }
 
   // ---- Rendering ---------------------------------------------------------
+  function drawHeroDamageMarker() {
+    const center = heroBodyCenterWorld();
+    const x = Math.round(center.x) - 2;
+    const y = Math.round(center.y) - 2;
+    ctx.fillStyle = '#7d0711';
+    ctx.fillRect(x, y, 5, 5);
+    ctx.fillStyle = '#df1826';
+    ctx.fillRect(x + 1, y + 1, 3, 3);
+    ctx.fillStyle = '#ff5961';
+    ctx.fillRect(x + 2, y + 2, 1, 1);
+  }
+
   function drawHero() {
     const rows = HERO.rows;
     const squashed = heroSquash > 0.001;
@@ -1581,6 +1650,7 @@
         }
       }
       ctx.restore();
+      drawHeroDamageMarker();
       return;
     }
     const ox = Math.round(hero.x - HERO_W / 2);
@@ -1596,6 +1666,7 @@
         ctx.fillRect(ox + x * HERO_SCALE, oy + y * HERO_SCALE, HERO_SCALE, HERO_SCALE);
       }
     }
+    drawHeroDamageMarker();
   }
 
   // ---- Falling shadow + landing shockwave -------------------------------
@@ -3245,6 +3316,99 @@
     };
   }
 
+  function heroSpriteOriginWorld() {
+    return {
+      x: Math.round(hero.x - HERO_W / 2),
+      y: Math.round(hero.y - HERO_H / 2),
+    };
+  }
+
+  function heroBodyCenterWorld() {
+    const origin = heroSpriteOriginWorld();
+    return {
+      x: origin.x + HERO_BODY_CENTER_LOCAL.x,
+      y: origin.y + HERO_BODY_CENTER_LOCAL.y,
+    };
+  }
+
+  function heroBodyWorldRewardPoints() {
+    const origin = heroSpriteOriginWorld();
+    return HERO_BODY_PIXEL_OFFSETS.map((offset) => ({
+      x: origin.x + offset.x,
+      y: origin.y + offset.y,
+    }));
+  }
+
+  function heroViewportHitboxes(board) {
+    const rect = board || getBoardRect();
+    const worldW = canvas && canvas.width ? canvas.width : BOARD;
+    const worldH = canvas && canvas.height ? canvas.height : BOARD;
+    const scaleX = rect.width / worldW;
+    const scaleY = rect.height / worldH;
+    const bodyCenter = heroBodyCenterWorld();
+    const center = worldPointToViewport(bodyCenter.x, bodyCenter.y, rect);
+    const damageHalfX = 2.5 * scaleX;
+    const damageHalfY = 2.5 * scaleY;
+    const damagePoints = [];
+    for (let row = 0; row < 3; row++) {
+      for (let column = 0; column < 3; column++) {
+        damagePoints.push({
+          x: center.x - damageHalfX + damageHalfX * column,
+          y: center.y - damageHalfY + damageHalfY * row,
+        });
+      }
+    }
+    const rewardPoints = heroBodyWorldRewardPoints().map((point) =>
+      worldPointToViewport(point.x, point.y, rect));
+    return {
+      center,
+      damagePoints,
+      rewardPoints,
+      damageRect: {
+        left: center.x - damageHalfX,
+        top: center.y - damageHalfY,
+        right: center.x + damageHalfX,
+        bottom: center.y + damageHalfY,
+      },
+    };
+  }
+
+  function segmentIntersectsRect(x1, y1, x2, y2, rect) {
+    let near = 0;
+    let far = 1;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const clipAxis = (start, delta, minimum, maximum) => {
+      if (Math.abs(delta) < 0.000001) return start >= minimum && start <= maximum;
+      let axisNear = (minimum - start) / delta;
+      let axisFar = (maximum - start) / delta;
+      if (axisNear > axisFar) [axisNear, axisFar] = [axisFar, axisNear];
+      near = Math.max(near, axisNear);
+      far = Math.min(far, axisFar);
+      return near <= far;
+    };
+    return clipAxis(x1, dx, rect.left, rect.right) &&
+      clipAxis(y1, dy, rect.top, rect.bottom);
+  }
+
+  function pointRectDistance(px, py, rect) {
+    const dx = Math.max(rect.left - px, 0, px - rect.right);
+    const dy = Math.max(rect.top - py, 0, py - rect.bottom);
+    return Math.hypot(dx, dy);
+  }
+
+  function segmentRectDistance(x1, y1, x2, y2, rect) {
+    if (segmentIntersectsRect(x1, y1, x2, y2, rect)) return 0;
+    return Math.min(
+      pointRectDistance(x1, y1, rect),
+      pointRectDistance(x2, y2, rect),
+      distToSeg(rect.left, rect.top, x1, y1, x2, y2),
+      distToSeg(rect.right, rect.top, x1, y1, x2, y2),
+      distToSeg(rect.right, rect.bottom, x1, y1, x2, y2),
+      distToSeg(rect.left, rect.bottom, x1, y1, x2, y2)
+    );
+  }
+
   function getBoardRect() {
     if (!frameBoardRect && canvas) frameBoardRect = canvas.getBoundingClientRect();
     return frameBoardRect;
@@ -3406,22 +3570,37 @@
 
   // Counts how many live skills and how many shadows the hero overlaps right now
   // (overlaps stack, so two skills hurt twice as fast, two shadows earn twice).
-  function countOverlaps(vx, vy) {
+  function countOverlaps(hitboxes) {
     let live = 0;
     let shadow = 0;
     const activeAttacks = phase === PHASE.SECOND ? phase2Attacks : attacks;
     for (const a of activeAttacks) {
-      const zone = heroAttackZone(a, vx, vy);
-      if (zone === 'live') live++;
-      else if (zone === 'shadow') shadow++;
+      if (hitboxes.damagePoints.some((point) => heroAttackZone(a, point.x, point.y) === 'live')) {
+        live++;
+      }
+      if (hitboxes.rewardPoints.some((point) => heroAttackZone(a, point.x, point.y) === 'shadow')) {
+        shadow++;
+      }
     }
-    if (phase === PHASE.SECOND && phaseTwoBossContains(vx, vy)) live++;
+    if (
+      phase === PHASE.SECOND &&
+      hitboxes.damagePoints.some((point) => phaseTwoBossContains(point.x, point.y))
+    ) live++;
     // Overlapping cracks are rendered as one connected hole and count as one
     // terrain hazard, rather than multiplying damage at their intersections.
     const hoppingTiles = phase2GridSpecial && phase2GridSpecial.hop;
-    if (phase === PHASE.SECOND && !hoppingTiles && viewportTouchesPhaseTwoCrack(vx, vy)) live++;
-    if (phase === PHASE.SECOND && phaseTwoTileRuinContains(vx, vy)) live++;
-    if (phase === PHASE.SECOND && phaseTwoTileRuinShadowContains(vx, vy)) shadow++;
+    if (
+      phase === PHASE.SECOND && !hoppingTiles &&
+      hitboxes.damagePoints.some((point) => viewportTouchesPhaseTwoCrack(point.x, point.y))
+    ) live++;
+    if (
+      phase === PHASE.SECOND &&
+      hitboxes.damagePoints.some((point) => phaseTwoTileRuinContains(point.x, point.y))
+    ) live++;
+    if (
+      phase === PHASE.SECOND &&
+      hitboxes.rewardPoints.some((point) => phaseTwoTileRuinShadowContains(point.x, point.y))
+    ) shadow++;
     return { live, shadow };
   }
 
@@ -3478,13 +3657,10 @@
 
   function updateCombat(dt) {
     if (!canvas || dead) return;
-    // The hero's centre, carried into the attack canvas's viewport space.
     const board = getBoardRect();
-    const heroV = worldPointToViewport(hero.x, hero.y, board);
-    const vx = heroV.x;
-    const vy = heroV.y;
+    const hitboxes = heroViewportHitboxes(board);
     const beats = dt / beatMs;
-    const { live, shadow } = countOverlaps(vx, vy);
+    const { live, shadow } = countOverlaps(hitboxes);
     const vpBefore = vp;
     // Damage scales with overlaps (two attacks at once drain twice as fast).
     if (live > 0) hp = Math.max(0, hp - DAMAGE_PER_BEAT * live * beats);
@@ -3578,9 +3754,11 @@
         entropy = Math.min(ENTROPY_MAX, entropy + ENTROPY_PER_STRIKE);
         bpm = phaseTwoBpm();
         beatMs = 60000 / bpm;
-        phase2PlayerHits++;
-        registerPhaseTwoHexPlayerHit();
-        if (phase2PlayerHits === 2 && !phase2GridSpecial) startPhaseTwoGridSpecial();
+        if (!strikePhaseTwoRushEyes() && !phase2RushPhaseComplete) {
+          phase2PlayerHits++;
+          registerPhaseTwoHexPlayerHit();
+          if (phase2PlayerHits === 2 && !phase2GridSpecial) startPhaseTwoGridSpecial();
+        }
         surgeWrath();
         return 1 - Math.sin(Math.min(1, p) * Math.PI) * (1 - STRIKE_SLOW);
       }
@@ -4308,9 +4486,7 @@
     phase2PostGridCycles = 0;
     phase2ClawPatternStopped = false;
     phase2ClawRushMode = false;
-    phase2RushEyes = [];
-    phase2RushOrbs = [];
-    phase2RushEyeBurstPending = false;
+    resetPhaseTwoRushEntities();
     phase2RushDebugQueued = false;
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
@@ -5982,9 +6158,7 @@
     phase2PostGridCycles = 0;
     phase2ClawPatternStopped = false;
     phase2ClawRushMode = false;
-    phase2RushEyes = [];
-    phase2RushOrbs = [];
-    phase2RushEyeBurstPending = false;
+    resetPhaseTwoRushEntities();
     phase2RushDebugQueued = false;
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
@@ -7044,9 +7218,7 @@
     phase2PostGridCycles = 0;
     phase2ClawPatternStopped = false;
     phase2ClawRushMode = false;
-    phase2RushEyes = [];
-    phase2RushOrbs = [];
-    phase2RushEyeBurstPending = false;
+    resetPhaseTwoRushEntities();
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
     phase2SwordRingPattern = null;
@@ -7087,7 +7259,8 @@
 
   function phaseTwoClawReach(a) {
     if (a.state === 'armed' || a.state === 'fire' || a.state === 'done') return 1;
-    return Math.pow(clamp01(a.stretch), 1.8);
+    const exponent = a.rushMode ? PHASE2_CLAW_RUSH_REACH_EXPONENT : 1.8;
+    return Math.pow(clamp01(a.stretch), exponent);
   }
 
   function phaseTwoClawContains(a, vx, vy, progress) {
@@ -7112,16 +7285,25 @@
     const avatar = phase2Avatar && phase2Avatar.state && phase2Avatar.state.avatar;
     if (!avatar || !avatar.visible || !board || !board.width) return false;
     const heroV = worldPointToViewport(hero.x, hero.y, board);
-    const dx = heroV.x - avatar.x;
-    const dy = heroV.y - avatar.y;
+    const movementLength = Math.hypot(heroMove.x, heroMove.y);
+    const trailingAim = a.rushMode && movementLength > 0.05;
+    const movementX = trailingAim ? heroMove.x / movementLength : 0;
+    const movementY = trailingAim ? heroMove.y / movementLength : 0;
+    const lagDistance = trailingAim
+      ? (Number.isFinite(a.aimLagDistance) ? a.aimLagDistance : 50)
+      : 0;
+    const aimX = heroV.x - movementX * lagDistance;
+    const aimY = heroV.y - movementY * lagDistance;
+    const dx = aimX - avatar.x;
+    const dy = aimY - avatar.y;
     const distance = Math.hypot(dx, dy) || 1;
     const dirX = dx / distance;
     const dirY = dy / distance;
     const scaleX = board.width / (canvas && canvas.width ? canvas.width : BOARD);
     const pastHero = Math.max(105, HERO_W * scaleX * 4.8);
     if (!a.turnSign) a.turnSign = heroV.x >= avatar.x ? -1 : 1;
-    a.targetX = heroV.x + dirX * pastHero;
-    a.targetY = heroV.y + dirY * pastHero;
+    a.targetX = aimX + dirX * pastHero;
+    a.targetY = aimY + dirY * pastHero;
     if (!a.pathPoints.length) {
       const start = {
         x: avatar.x + a.turnSign * avatar.size * 0.045,
@@ -7187,16 +7369,62 @@
     };
   }
 
+  function resetPhaseTwoRushEntities() {
+    phase2RushEyes = [];
+    phase2RushOrbs = [];
+    phase2RushDyingEyes = [];
+    phase2RushEyesSpawned = 0;
+    phase2RushPhaseComplete = false;
+    phase2RushEyeBurstPending = false;
+  }
+
   function spawnPhaseTwoRushEye() {
-    if (!phase2ClawRushMode || phase2RushEyes.length >= PHASE2_RUSH_EYE_COUNT) return false;
-    const slot = phase2RushEyes.length;
+    if (!phase2ClawRushMode || phase2RushEyesSpawned >= PHASE2_RUSH_EYE_COUNT) return false;
+    const slot = PHASE2_RUSH_EYE_SPAWN_ORDER[phase2RushEyesSpawned++];
+    const seed = Math.random() * Math.PI * 2;
     phase2RushEyes.push({
       slot,
       ageBeats: 0,
       shotClockBeats: PHASE2_RUSH_EYE_FIRE_BEATS * 0.45 - slot * 0.08,
-      seed: Math.random() * Math.PI * 2,
+      seed,
+      tendrils: Array.from({ length: 4 }, (_, index) => ({
+        bend: Math.sin(seed + index * 1.9) * 0.18,
+        velocity: 0,
+      })),
     });
     playBossSfx('phase2Eye');
+    return true;
+  }
+
+  function finishPhaseTwoRushPhase() {
+    if (phase2RushPhaseComplete) return;
+    phase2RushPhaseComplete = true;
+    phase2ClawRushMode = false;
+    phase2ClawPatternStopped = true;
+    phase2Attacks = [];
+    phase2RushOrbs = [];
+    phase2RushEyeBurstPending = false;
+    phase2BurstActive = false;
+    nextPhase2AttackBeat = Infinity;
+    if (phase2Avatar && typeof phase2Avatar.dashHome === 'function') {
+      phase2Avatar.dashHome(getBoardRect(), PHASE2_BOSS_RETURN_DASH_MS);
+    }
+  }
+
+  function strikePhaseTwoRushEyes() {
+    if (!phase2ClawRushMode) return false;
+    const killed = phase2RushEyes.splice(0, 2);
+    if (killed.length) {
+      const killedSlots = new Set(killed.map((eye) => eye.slot));
+      phase2RushOrbs = phase2RushOrbs.filter((orb) => !killedSlots.has(orb.eyeSlot));
+      for (const eye of killed) {
+        eye.deathAge = 0;
+        phase2RushDyingEyes.push(eye);
+      }
+    }
+    if (phase2RushEyesSpawned >= PHASE2_RUSH_EYE_COUNT && phase2RushEyes.length === 0) {
+      finishPhaseTwoRushPhase();
+    }
     return true;
   }
 
@@ -7206,13 +7434,19 @@
     const dx = heroPosition.x - eyePosition.x;
     const dy = heroPosition.y - eyePosition.y;
     const distance = Math.hypot(dx, dy) || 1;
+    const baseDirectionX = dx / distance;
+    const baseDirectionY = dy / distance;
+    const angleJitter = (Math.random() * 2 - 1) * 0.14;
+    const jitterCos = Math.cos(angleJitter);
+    const jitterSin = Math.sin(angleJitter);
     phase2RushOrbs.push({
       x: eyePosition.x,
       y: eyePosition.y,
       previousX: eyePosition.x,
       previousY: eyePosition.y,
-      directionX: dx / distance,
-      directionY: dy / distance,
+      directionX: baseDirectionX * jitterCos - baseDirectionY * jitterSin,
+      directionY: baseDirectionX * jitterSin + baseDirectionY * jitterCos,
+      eyeSlot: eye.slot,
       ageBeats: 0,
       seed: Math.random() * Math.PI * 2,
       hit: false,
@@ -7221,22 +7455,35 @@
   }
 
   function updatePhaseTwoRushEyes(dt) {
-    if (!phase2ClawRushMode || !canvas) return;
+    if (!canvas) return;
     const beatStep = dt / beatMs;
+    for (const eye of phase2RushDyingEyes) {
+      eye.ageBeats += beatStep;
+      eye.deathAge += dt;
+    }
+    phase2RushDyingEyes = phase2RushDyingEyes.filter((eye) => eye.deathAge < 520);
+    if (!phase2ClawRushMode) return;
+    const springStep = Math.min(0.05, dt / 1000);
     const board = getBoardRect();
     for (const eye of phase2RushEyes) {
       eye.ageBeats += beatStep;
       eye.shotClockBeats += beatStep;
+      if (!eye.tendrils) {
+        eye.tendrils = Array.from({ length: 4 }, () => ({ bend: 0, velocity: 0 }));
+      }
+      for (let i = 0; i < eye.tendrils.length; i++) {
+        const motion = eye.tendrils[i];
+        const target = Math.sin(eye.ageBeats * 1.35 + eye.seed + i * 1.9);
+        motion.velocity += (target - motion.bend) * (20 + i * 1.4) * springStep;
+        motion.velocity *= Math.exp(-(4.7 + i * 0.15) * springStep);
+        motion.bend += motion.velocity * springStep;
+      }
       while (eye.shotClockBeats >= PHASE2_RUSH_EYE_FIRE_BEATS) {
         eye.shotClockBeats -= PHASE2_RUSH_EYE_FIRE_BEATS;
         spawnPhaseTwoRushOrb(eye, board);
       }
     }
-    const heroPosition = worldPointToViewport(hero.x, hero.y, board);
-    const heroRadius = Math.max(
-      HERO_W * board.width / Math.max(1, canvas.width),
-      HERO_H * board.height / Math.max(1, canvas.height)
-    ) * 0.46;
+    const hitboxes = heroViewportHitboxes(board);
     const travel = PHASE2_RUSH_ORB_SPEED_PER_BEAT * beatStep;
     let shadowOrbs = 0;
     for (const orb of phase2RushOrbs) {
@@ -7245,20 +7492,28 @@
       orb.previousY = orb.y;
       orb.x += orb.directionX * travel;
       orb.y += orb.directionY * travel;
-      const heroDistance = phaseTwoHexPointSegmentDistance(
-        heroPosition.x,
-        heroPosition.y,
+      const damageDistance = segmentRectDistance(
         orb.previousX,
         orb.previousY,
         orb.x,
-        orb.y
+        orb.y,
+        hitboxes.damageRect
       );
-      if (!orb.hit && heroDistance <= PHASE2_RUSH_ORB_SHADOW_RADIUS) {
+      const touchesRewardMask = hitboxes.rewardPoints.some((point) =>
+        phaseTwoHexPointSegmentDistance(
+          point.x,
+          point.y,
+          orb.previousX,
+          orb.previousY,
+          orb.x,
+          orb.y
+        ) <= PHASE2_RUSH_ORB_SHADOW_RADIUS);
+      if (!orb.hit && touchesRewardMask) {
         shadowOrbs++;
       }
       if (
         !orb.hit &&
-        heroDistance <= PHASE2_RUSH_ORB_RADIUS + heroRadius
+        damageDistance <= PHASE2_RUSH_ORB_RADIUS
       ) {
         orb.hit = true;
         hp = Math.max(0, hp - PHASE2_RUSH_ORB_DAMAGE * (bpm / PHASE2_BPM_MIN));
@@ -7297,9 +7552,12 @@
       targetX: 0,
       targetY: 0,
       baseStep: 16,
+      aimLagDistance: phase2ClawRushMode ? 34 + Math.random() * 34 : 0,
       stretch: 0,
-      stretchBeats: PHASE2_CLAW_TELEGRAPH_BEATS * timeScale,
-      holdBeats: PHASE2_CLAW_HOLD_BEATS * timeScale,
+      stretchBeats: PHASE2_CLAW_TELEGRAPH_BEATS * timeScale *
+        (phase2ClawRushMode ? PHASE2_CLAW_RUSH_TRAVEL_SCALE : 1),
+      holdBeats: PHASE2_CLAW_HOLD_BEATS * timeScale *
+        (phase2ClawRushMode ? PHASE2_CLAW_RUSH_HOLD_SCALE : 1),
       holdTime: 0,
       fire: 0,
       fireBeats: PHASE2_CLAW_FIRE_BEATS * timeScale,
@@ -7515,9 +7773,7 @@
     if (phase2CombatStarted) {
       phase2RushDebugQueued = false;
       phase2ClawRushMode = false;
-      phase2RushEyes = [];
-      phase2RushOrbs = [];
-      phase2RushEyeBurstPending = false;
+      resetPhaseTwoRushEntities();
       phase2GridDebugQueued = false;
       phase2ClawPatternStopped = false;
       phase2TileRuinPattern = null;
@@ -7556,9 +7812,7 @@
     phase2DashZone = 'top';
     phase2ClawPatternStopped = false;
     phase2ClawRushMode = true;
-    phase2RushEyes = [];
-    phase2RushOrbs = [];
-    phase2RushEyeBurstPending = false;
+    resetPhaseTwoRushEntities();
     restorePhaseTwoSquareArena(true);
     hero.x = canvas.width / 2;
     hero.y = canvas.height / 2;
@@ -7594,9 +7848,7 @@
     if (!phase2CombatStarted || !canvas) return false;
     phase2RushDebugQueued = false;
     phase2ClawRushMode = false;
-    phase2RushEyes = [];
-    phase2RushOrbs = [];
-    phase2RushEyeBurstPending = false;
+    resetPhaseTwoRushEntities();
     phase2SwordRingDebugQueued = false;
     phase2GridDebugQueued = false;
     phase2DebugClawQueued = false;
@@ -7764,11 +8016,12 @@
     const top = BORDER + PAD;
     const width = Math.max(1, canvas.width - (BORDER + PAD) * 2);
     const height = Math.max(1, canvas.height - (BORDER + PAD) * 2);
+    const center = heroBodyCenterWorld();
     return {
-      x: clamp01((hero.x - left) / width),
-      y: clamp01((hero.y - top) / height),
-      halfX: HERO_W * 0.36 / width,
-      halfY: HERO_H * 0.36 / height,
+      x: clamp01((center.x - left) / width),
+      y: clamp01((center.y - top) / height),
+      halfX: 2.5 / width,
+      halfY: 2.5 / height,
     };
   }
 
@@ -7789,6 +8042,7 @@
     if (platform.resolved || depth < 0.10 || depth > PHASE2_PITFALL_HIT_DEPTH) return false;
     const projection = phaseTwoPitfallProjection(platform);
     const threshold = Math.max(5, projection.scale * 9);
+    const rewardPoints = heroBodyWorldRewardPoints();
     for (const gap of platform.gaps) {
       for (let i = 0; i < gap.points.length; i++) {
         const a = gap.points[i];
@@ -7797,7 +8051,9 @@
         const ay = projection.top + a.y * projection.height;
         const bx = projection.left + b.x * projection.width;
         const by = projection.top + b.y * projection.height;
-        if (distToSeg(hero.x, hero.y, ax, ay, bx, by) <= threshold) return true;
+        if (rewardPoints.some((point) => distToSeg(point.x, point.y, ax, ay, bx, by) <= threshold)) {
+          return true;
+        }
       }
     }
     return false;
@@ -7835,8 +8091,7 @@
     if (!canvas || phase2PitfallPattern) return false;
     restorePhaseTwoSquareArena(true);
     phase2ClawRushMode = false;
-    phase2RushEyes = [];
-    phase2RushOrbs = [];
+    resetPhaseTwoRushEntities();
     phase2PitfallDebugQueued = false;
     phase2GridDebugQueued = false;
     phase2DebugClawQueued = false;
@@ -8071,38 +8326,42 @@
     return phaseTwoHexAngleDistance(angle, phaseTwoHexWallGapAngle(wall)) > gapWidth / 2;
   }
 
-  function phaseTwoHexHeroTouchesWallShadow(wall, shadowInnerEdge, shadowOuterEdge, gapWidth) {
+  function phaseTwoHexWallTouchesDamageHitbox(wall, gapWidth) {
     const center = phaseTwoHexCenter();
-    const halfWidth = HERO_W * PHASE2_HEX_VP_HITBOX_SCALE / 2;
-    const halfHeight = HERO_H * PHASE2_HEX_VP_HITBOX_SCALE / 2;
-    const samplePadding = PHASE2_HEX_VP_CONTACT_PADDING;
-    const heroCenterRadius = Math.hypot(hero.x - center.x, hero.y - center.y);
-    const hitboxRadius = Math.hypot(halfWidth, halfHeight);
-    if (
-      heroCenterRadius + hitboxRadius < shadowInnerEdge - samplePadding ||
-      heroCenterRadius - hitboxRadius > shadowOuterEdge + samplePadding
-    ) return false;
-    for (let sampleY = 0; sampleY <= PHASE2_HEX_VP_HITBOX_SAMPLES; sampleY++) {
-      const offsetY = -halfHeight + halfHeight * 2 * sampleY / PHASE2_HEX_VP_HITBOX_SAMPLES;
-      for (let sampleX = 0; sampleX <= PHASE2_HEX_VP_HITBOX_SAMPLES; sampleX++) {
-        const offsetX = -halfWidth + halfWidth * 2 * sampleX / PHASE2_HEX_VP_HITBOX_SAMPLES;
-        const dx = hero.x + offsetX - center.x;
-        const dy = hero.y + offsetY - center.y;
-        const sampleRadius = Math.hypot(dx, dy);
-        if (
-          sampleRadius < shadowInnerEdge - samplePadding ||
-          sampleRadius > shadowOuterEdge + samplePadding
-        ) continue;
-        const sampleAngle = Math.atan2(dy, dx);
-        const angularPadding = Math.atan2(samplePadding, Math.max(1, sampleRadius));
-        if (
-          phaseTwoHexAngleInsideWall(wall, sampleAngle, gapWidth) ||
-          phaseTwoHexAngleInsideWall(wall, sampleAngle - angularPadding, gapWidth) ||
-          phaseTwoHexAngleInsideWall(wall, sampleAngle + angularPadding, gapWidth)
-        ) return true;
+    const damageCenter = heroBodyCenterWorld();
+    const points = [];
+    for (let row = 0; row < 3; row++) {
+      for (let column = 0; column < 3; column++) {
+        points.push({
+          x: damageCenter.x - 2.5 + column * 2.5,
+          y: damageCenter.y - 2.5 + row * 2.5,
+        });
       }
     }
-    return false;
+    return points.some((point) => phaseTwoHexAngleInsideWall(
+      wall,
+      Math.atan2(point.y - center.y, point.x - center.x),
+      gapWidth
+    ));
+  }
+
+  function phaseTwoHexHeroTouchesWallShadow(wall, shadowInnerEdge, shadowOuterEdge, gapWidth) {
+    const center = phaseTwoHexCenter();
+    const samplePadding = PHASE2_HEX_VP_CONTACT_PADDING;
+    return heroBodyWorldRewardPoints().some((point) => {
+      const dx = point.x - center.x;
+      const dy = point.y - center.y;
+      const sampleRadius = Math.hypot(dx, dy);
+      if (
+        sampleRadius < shadowInnerEdge - samplePadding ||
+        sampleRadius > shadowOuterEdge + samplePadding
+      ) return false;
+      const sampleAngle = Math.atan2(dy, dx);
+      const angularPadding = Math.atan2(samplePadding, Math.max(1, sampleRadius));
+      return phaseTwoHexAngleInsideWall(wall, sampleAngle, gapWidth) ||
+        phaseTwoHexAngleInsideWall(wall, sampleAngle - angularPadding, gapWidth) ||
+        phaseTwoHexAngleInsideWall(wall, sampleAngle + angularPadding, gapWidth);
+    });
   }
 
   function phaseTwoHexOrbPosition(orb) {
@@ -8125,34 +8384,21 @@
   }
 
   function phaseTwoHexHeroTouchesOrbShadow(orb, position) {
-    const halfWidth = HERO_W * PHASE2_HEX_VP_HITBOX_SCALE / 2;
-    const halfHeight = HERO_H * PHASE2_HEX_VP_HITBOX_SCALE / 2;
     const contactPadding = PHASE2_HEX_VP_CONTACT_PADDING;
     const facing = orb.angle + Math.PI;
     const facingX = Math.cos(facing);
     const facingY = Math.sin(facing);
     const shadowStart = orb.radius;
     const shadowEnd = orb.radius * (1 + PHASE2_HEX_ORB_SHADOW_LENGTH);
-    if (
-      Math.hypot(hero.x - position.x, hero.y - position.y) >
-      shadowEnd + Math.hypot(halfWidth, halfHeight)
-    ) return false;
-    for (let sampleY = 0; sampleY <= PHASE2_HEX_VP_HITBOX_SAMPLES; sampleY++) {
-      const offsetY = -halfHeight + halfHeight * 2 * sampleY / PHASE2_HEX_VP_HITBOX_SAMPLES;
-      for (let sampleX = 0; sampleX <= PHASE2_HEX_VP_HITBOX_SAMPLES; sampleX++) {
-        const offsetX = -halfWidth + halfWidth * 2 * sampleX / PHASE2_HEX_VP_HITBOX_SAMPLES;
-        const dx = hero.x + offsetX - position.x;
-        const dy = hero.y + offsetY - position.y;
-        const forward = dx * facingX + dy * facingY;
-        const sideways = Math.abs(-dx * facingY + dy * facingX);
-        if (
-          forward >= shadowStart - contactPadding &&
-          forward <= shadowEnd + contactPadding &&
-          sideways <= orb.radius + contactPadding
-        ) return true;
-      }
-    }
-    return false;
+    return heroBodyWorldRewardPoints().some((point) => {
+      const dx = point.x - position.x;
+      const dy = point.y - position.y;
+      const forward = dx * facingX + dy * facingY;
+      const sideways = Math.abs(-dx * facingY + dy * facingX);
+      return forward >= shadowStart - contactPadding &&
+        forward <= shadowEnd + contactPadding &&
+        sideways <= orb.radius + contactPadding;
+    });
   }
 
   function makePhaseTwoHexWall(pattern) {
@@ -8432,9 +8678,7 @@
     phase2DashZone = 'top';
     phase2ClawPatternStopped = false;
     phase2ClawRushMode = true;
-    phase2RushEyes = [];
-    phase2RushOrbs = [];
-    phase2RushEyeBurstPending = false;
+    resetPhaseTwoRushEntities();
     phase2RushDebugQueued = false;
     nextPhase2AttackBeat = beatIndex + 1;
     keys.clear();
@@ -8584,13 +8828,19 @@
       const position = phaseTwoHexOrbPosition(orb);
       const active = orb.ageBeats >= 0 && orb.ageBeats <= orb.travelBeats;
       if (active && !orb.hit) {
-        const hitDistance = phaseTwoHexPointSegmentDistance(
-          hero.x,
-          hero.y,
+        const damageCenter = heroBodyCenterWorld();
+        const damageRect = {
+          left: damageCenter.x - 2.5,
+          top: damageCenter.y - 2.5,
+          right: damageCenter.x + 2.5,
+          bottom: damageCenter.y + 2.5,
+        };
+        const hitDistance = segmentRectDistance(
           orb.previousX,
           orb.previousY,
           position.x,
-          position.y
+          position.y,
+          damageRect
         );
         if (hitDistance <= orb.radius) {
           orb.hit = true;
@@ -8752,7 +9002,7 @@
       }
       if (!wall.resolved && previousInnerEdge > hex.orbitRadius && innerEdge <= hex.orbitRadius) {
         wall.resolved = true;
-        const safe = !phaseTwoHexAngleInsideWall(wall, hex.heroAngle, gapWidth);
+        const safe = !phaseTwoHexWallTouchesDamageHitbox(wall, gapWidth);
         if (safe) {
           pattern.safeAge = 0;
         } else {
@@ -10140,61 +10390,238 @@
     renderPhaseTwoBossSlamCue(pattern);
   }
 
-  function renderPhaseTwoRushEye(eye, board) {
-    const appear = smoothstep(Math.min(1, eye.ageBeats / 0.55));
+  function renderPhaseTwoRushEye(eye, board, deathProgress) {
+    const death = clamp01(deathProgress || 0);
+    const deathFade = 1 - smoothstep(death);
+    const appear = smoothstep(Math.min(1, eye.ageBeats / 0.55)) * deathFade;
     if (appear <= 0.001) return;
     const position = phaseTwoRushEyePosition(eye, board);
     const pulse = 0.5 + 0.5 * Math.sin(eye.ageBeats * Math.PI * 2 + eye.seed);
     actx.save();
     actx.translate(position.x, position.y);
     actx.rotate(position.angle);
-    actx.scale(appear, appear);
+    actx.globalAlpha *= deathFade;
+    actx.scale(appear * (1 + death * 0.42), appear * Math.max(0.08, 1 - death * 0.88));
     actx.lineCap = 'round';
-    for (let i = 0; i < 4; i++) {
-      const rootY = (i - 1.5) * 4.5;
-      const reach = 49 + i * 6 + pulse * 4;
-      const lift = position.upward * (25 + i * 9);
+    actx.lineJoin = 'round';
+    const tendrilCount = 4;
+    for (let i = 0; i < tendrilCount; i++) {
+      const fan = i / (tendrilCount - 1);
+      const rootY = position.upward * (-10 + i * 6.5);
+      const reach = 82 - fan * 29 + pulse * 2;
+      const lift = position.upward * (38 + fan * 52);
+      const motion = eye.tendrils && eye.tendrils[i];
+      const bend = motion ? motion.bend : 0;
+      const start = { x: -12 - fan * 2, y: rootY };
+      const controlA = {
+        x: -25 - fan * 3,
+        y: rootY + position.upward * (8 + fan * 10),
+      };
+      const controlB = {
+        x: -reach * (0.64 + fan * 0.08),
+        y: rootY + lift * (0.58 + fan * 0.12),
+      };
+      const end = {
+        x: -reach + bend * (4 + fan * 3),
+        y: rootY + lift + position.upward * bend * (5 + fan * 4),
+      };
+      const chordX = end.x - start.x;
+      const chordY = end.y - start.y;
+      const chordLength = Math.hypot(chordX, chordY) || 1;
+      const normalX = -chordY / chordLength;
+      const normalY = chordX / chordLength;
+      const points = [];
+      const segments = 11;
+      for (let segment = 0; segment <= segments; segment++) {
+        const t = segment / segments;
+        const inverse = 1 - t;
+        const curveX = inverse * inverse * inverse * start.x +
+          3 * inverse * inverse * t * controlA.x +
+          3 * inverse * t * t * controlB.x + t * t * t * end.x;
+        const curveY = inverse * inverse * inverse * start.y +
+          3 * inverse * inverse * t * controlA.y +
+          3 * inverse * t * t * controlB.y + t * t * t * end.y;
+        const flex = Math.sin(Math.PI * t);
+        const ripple = Math.sin(
+          eye.ageBeats * 0.72 + eye.seed * 1.3 + i * 1.7 + t * 6.2
+        ) * 1.35;
+        const offset = flex * (bend * (5 + fan * 4) * t + ripple);
+        const taper = Math.pow(Math.max(0, 1 - t), 0.34);
+        const roughness = 0.94 + Math.sin(eye.seed * 2.1 + i * 4.3 + t * 19) * 0.06;
+        points.push({
+          x: curveX + normalX * offset,
+          y: curveY + normalY * offset,
+          width: (0.5 + 10.2 * Math.pow(1 - t, 0.62)) * taper * roughness,
+        });
+      }
+
       actx.beginPath();
-      actx.moveTo(-13, rootY);
-      actx.bezierCurveTo(
-        -25,
-        rootY + position.upward * (7 + i * 2),
-        -reach * 0.72,
-        rootY + lift * 0.74 + Math.sin(eye.ageBeats * 2.2 + eye.seed + i) * 3,
-        -reach,
-        rootY + lift
-      );
-      actx.strokeStyle = 'rgba(2, 1, 3, 0.98)';
-      actx.lineWidth = 9;
-      actx.stroke();
+      for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
+        const point = points[pointIndex];
+        const before = points[Math.max(0, pointIndex - 1)];
+        const after = points[Math.min(points.length - 1, pointIndex + 1)];
+        const dx = after.x - before.x;
+        const dy = after.y - before.y;
+        const length = Math.hypot(dx, dy) || 1;
+        const x = point.x - dy / length * point.width;
+        const y = point.y + dx / length * point.width;
+        if (pointIndex === 0) actx.moveTo(x, y); else actx.lineTo(x, y);
+      }
+      for (let pointIndex = points.length - 1; pointIndex >= 0; pointIndex--) {
+        const point = points[pointIndex];
+        const before = points[Math.max(0, pointIndex - 1)];
+        const after = points[Math.min(points.length - 1, pointIndex + 1)];
+        const dx = after.x - before.x;
+        const dy = after.y - before.y;
+        const length = Math.hypot(dx, dy) || 1;
+        actx.lineTo(
+          point.x + dy / length * point.width,
+          point.y - dx / length * point.width
+        );
+      }
+      actx.closePath();
+      const flesh = actx.createLinearGradient(start.x, start.y, end.x, end.y);
+      flesh.addColorStop(0, '#160a0e');
+      flesh.addColorStop(0.38, '#080407');
+      flesh.addColorStop(1, '#010102');
+      actx.fillStyle = flesh;
+      actx.fill();
       actx.strokeStyle = 'rgba(184, 20, 28, 0.9)';
-      actx.lineWidth = 1.5;
+      actx.lineWidth = 1.35;
       actx.stroke();
+
+      actx.beginPath();
+      for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
+        const point = points[pointIndex];
+        const before = points[Math.max(0, pointIndex - 1)];
+        const after = points[Math.min(points.length - 1, pointIndex + 1)];
+        const dx = after.x - before.x;
+        const dy = after.y - before.y;
+        const length = Math.hypot(dx, dy) || 1;
+        const ridgeX = point.x - dy / length * point.width * 0.36;
+        const ridgeY = point.y + dx / length * point.width * 0.36;
+        if (pointIndex === 0) actx.moveTo(ridgeX, ridgeY); else actx.lineTo(ridgeX, ridgeY);
+      }
+      actx.strokeStyle = 'rgba(151, 83, 83, 0.18)';
+      actx.lineWidth = 1.1;
+      actx.stroke();
+
+      for (let wrinkle = 2; wrinkle < points.length - 2; wrinkle += 3) {
+        const point = points[wrinkle];
+        const before = points[wrinkle - 1];
+        const after = points[wrinkle + 1];
+        const dx = after.x - before.x;
+        const dy = after.y - before.y;
+        const length = Math.hypot(dx, dy) || 1;
+        const nx = -dy / length;
+        const ny = dx / length;
+        actx.beginPath();
+        actx.moveTo(point.x - nx * point.width * 0.58, point.y - ny * point.width * 0.58);
+        actx.quadraticCurveTo(
+          point.x + dx / length * 1.3,
+          point.y + dy / length * 1.3,
+          point.x + nx * point.width * 0.48,
+          point.y + ny * point.width * 0.48
+        );
+        actx.strokeStyle = 'rgba(210, 188, 180, 0.10)';
+        actx.lineWidth = 0.8;
+        actx.stroke();
+      }
     }
+
+    const eyeOpen = 0.94 + pulse * 0.06;
     actx.beginPath();
-    actx.ellipse(0, 0, 20, 13, 0, 0, Math.PI * 2);
-    actx.fillStyle = '#09070a';
+    actx.moveTo(-22, 0);
+    actx.bezierCurveTo(-12, -15 * eyeOpen, 11, -16 * eyeOpen, 23, 0);
+    actx.bezierCurveTo(11, 15 * eyeOpen, -12, 14 * eyeOpen, -22, 0);
+    actx.closePath();
+    actx.fillStyle = '#0a0508';
     actx.fill();
-    actx.strokeStyle = '#c51a23';
+    actx.strokeStyle = '#d01b25';
     actx.lineWidth = 2.5;
     actx.stroke();
+
+    actx.save();
     actx.beginPath();
-    actx.ellipse(1.5, 0, 13.5, 8.4, 0, 0, Math.PI * 2);
-    actx.fillStyle = 'rgba(205, 202, 190, 0.94)';
+    actx.moveTo(-17, 0);
+    actx.bezierCurveTo(-9, -10 * eyeOpen, 10, -11 * eyeOpen, 18, 0);
+    actx.bezierCurveTo(9, 10 * eyeOpen, -9, 9.5 * eyeOpen, -17, 0);
+    actx.closePath();
+    actx.clip();
+    actx.fillStyle = '#bdb9ae';
     actx.fill();
+    for (let vein = 0; vein < 6; vein++) {
+      const side = vein < 3 ? -1 : 1;
+      const row = vein % 3;
+      const startX = side * (16 - row * 0.7);
+      const startY = (row - 1) * 5.2;
+      const endX = side * (8.5 + row * 0.8);
+      const endY = (row - 1) * 2.6 + Math.sin(eye.seed + vein) * 1.2;
+      actx.beginPath();
+      actx.moveTo(startX, startY);
+      actx.bezierCurveTo(
+        side * 13,
+        startY * 0.9,
+        side * 11,
+        endY + Math.sin(eye.seed * 1.7 + vein) * 2,
+        endX,
+        endY
+      );
+      actx.strokeStyle = 'rgba(116, 19, 25, 0.34)';
+      actx.lineWidth = vein % 2 ? 0.65 : 0.9;
+      actx.stroke();
+    }
+    actx.restore();
+
     actx.beginPath();
-    actx.ellipse(4, 0, 4.2 + pulse * 0.45, 7, 0, 0, Math.PI * 2);
+    actx.ellipse(3.5, 0, 8.4, 9.3 * eyeOpen, 0, 0, Math.PI * 2);
+    actx.fillStyle = '#171014';
+    actx.fill();
+    actx.strokeStyle = 'rgba(214, 24, 34, 0.72)';
+    actx.lineWidth = 1.2;
+    actx.stroke();
+    actx.beginPath();
+    actx.ellipse(4.2, 0, 4.5 + pulse * 0.35, 7.3 * eyeOpen, 0, 0, Math.PI * 2);
     actx.fillStyle = '#ed1824';
     actx.fill();
+    actx.strokeStyle = 'rgba(100, 5, 12, 0.72)';
+    actx.lineWidth = 0.8;
+    actx.stroke();
+    actx.beginPath();
+    actx.moveTo(-19, -1);
+    actx.bezierCurveTo(-10, -12.5 * eyeOpen, 10, -14 * eyeOpen, 21, -1);
+    actx.strokeStyle = 'rgba(2, 1, 3, 0.92)';
+    actx.lineWidth = 3.2;
+    actx.stroke();
+    actx.strokeStyle = 'rgba(187, 23, 31, 0.68)';
+    actx.lineWidth = 0.9;
+    actx.stroke();
     actx.restore();
   }
 
   function renderPhaseTwoRushEyes() {
-    if (!phase2ClawRushMode || !phase2RushEyes.length) return;
+    if (!phase2ClawRushMode && !phase2RushDyingEyes.length) return;
     const board = getBoardRect();
+    for (const eye of phase2RushDyingEyes) {
+      const death = clamp01(eye.deathAge / 520);
+      renderPhaseTwoRushEye(eye, board, death);
+      const position = phaseTwoRushEyePosition(eye, board);
+      actx.save();
+      actx.globalAlpha = 1 - smoothstep(death);
+      actx.strokeStyle = 'rgba(238, 32, 40, 0.88)';
+      actx.lineWidth = Math.max(0.5, 2.4 * (1 - death));
+      actx.beginPath();
+      actx.arc(position.x, position.y, 12 + easeOutCubic(death) * 46, 0, Math.PI * 2);
+      actx.stroke();
+      actx.restore();
+    }
     for (const eye of phase2RushEyes) renderPhaseTwoRushEye(eye, board);
+  }
+
+  function renderPhaseTwoRushOrbs() {
+    if (!phase2ClawRushMode || !phase2RushOrbs.length) return;
     for (const orb of phase2RushOrbs) {
-      const tail = 12 + Math.sin(orb.ageBeats * 4 + orb.seed) * 2;
+      const tail = PHASE2_RUSH_ORB_RADIUS * 1.35 + Math.sin(orb.ageBeats * 4 + orb.seed) * 2;
       const auraAlpha = 0.31 + Math.sin(orb.ageBeats * 3.1 + orb.seed) * 0.03;
       actx.save();
       actx.lineCap = 'round';
@@ -10259,6 +10686,7 @@
       renderPhaseTwoTileRuinPattern();
       renderSecondPhaseRitual();
       renderPhaseTwoRushEyes();
+      renderPhaseTwoRushOrbs();
       for (const a of phase2Attacks) {
         if (a.type === 'shadowClaw') renderAttack(a, 'front');
       }
@@ -10288,6 +10716,22 @@
     const insetX = BORDER * b.width / worldW;
     const insetY = BORDER * b.height / worldH;
     actx.beginPath();
+    if (a.type === 'shadowClaw' && a.rushMode) {
+      const right = b.left + b.width;
+      const bottom = b.top + b.height;
+      actx.rect(0, 0, attackCanvas.width, Math.max(0, b.top));
+      actx.rect(0, bottom, attackCanvas.width, Math.max(0, attackCanvas.height - bottom));
+      actx.rect(0, b.top, Math.max(0, b.left), b.height);
+      actx.rect(right, b.top, Math.max(0, attackCanvas.width - right), b.height);
+      actx.rect(
+        b.left + insetX,
+        b.top + insetY,
+        Math.max(1, b.width - insetX * 2),
+        Math.max(1, b.height - insetY * 2)
+      );
+      actx.clip();
+      return true;
+    }
     if (a.type === 'shadowClaw') {
       // The intentional launch can climb through the sky behind Szago, but the
       // arena's top frame remains a hidden band before it re-enters the floor.
@@ -12425,9 +12869,7 @@
     phase2PostGridCycles = 0;
     phase2ClawPatternStopped = false;
     phase2ClawRushMode = false;
-    phase2RushEyes = [];
-    phase2RushOrbs = [];
-    phase2RushEyeBurstPending = false;
+    resetPhaseTwoRushEntities();
     phase2RushDebugQueued = false;
     phase2TileRuinPattern = null;
     phase2TileRuinDebugQueued = false;
