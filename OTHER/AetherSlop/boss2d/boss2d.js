@@ -107,6 +107,38 @@
       }
     }
   }
+  const HERO_BODY_OUTLINE_OFFSETS = (function buildHeroBodyOutlineOffsets() {
+    const gap = 7;
+    const thickness = 4;
+    const innerDistanceSq = gap * gap;
+    const outerDistance = gap + thickness;
+    const outerDistanceSq = outerDistance * outerDistance;
+    const bodyPixels = HERO_BODY_PIXEL_OFFSETS.map((point) => ({
+      x: Math.floor(point.x),
+      y: Math.floor(point.y),
+    }));
+    const minX = Math.min(...bodyPixels.map((point) => point.x)) - outerDistance;
+    const maxX = Math.max(...bodyPixels.map((point) => point.x)) + outerDistance;
+    const minY = Math.min(...bodyPixels.map((point) => point.y)) - outerDistance;
+    const maxY = Math.max(...bodyPixels.map((point) => point.y)) + outerDistance;
+    const outlinePixels = [];
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        let nearestSq = Infinity;
+        for (const bodyPoint of bodyPixels) {
+          const dx = x - bodyPoint.x;
+          const dy = y - bodyPoint.y;
+          const distanceSq = dx * dx + dy * dy;
+          if (distanceSq < nearestSq) nearestSq = distanceSq;
+          if (nearestSq <= innerDistanceSq) break;
+        }
+        if (nearestSq > innerDistanceSq && nearestSq <= outerDistanceSq) {
+          outlinePixels.push({ x, y });
+        }
+      }
+    }
+    return outlinePixels;
+  })();
   const MOVE_SPEED = 0.21; // base px per ms at BASE_BPM; scales with tempo
 
   // ---- Module state ------------------------------------------------------
@@ -414,6 +446,10 @@
   let phaseOneVpSfxStep = -1;
   let phaseOneDamageSfxStep = -1;
   let phaseOneDamageSfxCount = 0;
+  let heroDamageFlashAge = Infinity;
+  let heroVpFlashAge = Infinity;
+  let heroDamageFlashBeat = -1;
+  let heroVpFlashStep = -1;
   let soundDebugHold = null;
   let combatPaused = false;
   let combatPauseButton = null;
@@ -665,6 +701,11 @@
   const WRATH_MAX = 200;
   const HP_MAX = 1000;                // testing cap
   const VP_MAX = 1000;               // testing cap
+  // Global balance knobs. These scale all incoming damage, player healing,
+  // and damage represented by the boss's wrath/entropy gauges.
+  const PLAYER_DAMAGE_TAKEN_MULTIPLIER = 0.5;
+  const PLAYER_HEALING_MULTIPLIER = 0.5;
+  const PLAYER_DAMAGE_DEALT_MULTIPLIER = 0.5;
   const DAMAGE_PER_BEAT = 50;        // HP lost per beat per overlapping live skill
   const VP_PER_BEAT = 175;           // VP gained per beat per overlapping shadow
   const ATTACK_WRATH_GAIN = 10;      // wrath (BPM) the cultist gains when struck
@@ -789,6 +830,8 @@
   const STRIKE_IMPACT_AT = STRIKE_DURATION * 0.82;
   const STRIKE_SLOW = 0.05;          // gameplay speed at the deepest slow-mo
   const FINAL_STRIKE_DURATION = 1900; // extra hitstop before the phase-two fall
+  const HERO_DAMAGE_FLASH_MS = 170;
+  const HERO_VP_FLASH_MS = 55;
   let hp = HP_MAX;
   let vp = 0;
   let entropy = 0;
@@ -803,6 +846,64 @@
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
   const smoothstep = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
   const clamp01 = (t) => Math.max(0, Math.min(1, t));
+
+  function currentCombatBeat() {
+    return Math.floor(beatIndex + beatPhase / Math.max(1, beatMs));
+  }
+
+  function triggerHeroDamageFlash(beatLocked) {
+    const combatBeat = currentCombatBeat();
+    if (beatLocked && combatBeat === heroDamageFlashBeat) return;
+    heroDamageFlashBeat = combatBeat;
+    heroDamageFlashAge = 0;
+  }
+
+  function triggerHeroVpFlash() {
+    const absoluteBeat = beatIndex + beatPhase / Math.max(1, beatMs);
+    const vpStep = Math.floor(absoluteBeat * BOSS_SFX_VP_STEPS_PER_BEAT);
+    if (vpStep === heroVpFlashStep) return;
+    heroVpFlashStep = vpStep;
+    heroVpFlashAge = 0;
+  }
+
+  function damagePlayer(amount, beatLocked = false) {
+    const scaledAmount = Math.max(0, amount) * PLAYER_DAMAGE_TAKEN_MULTIPLIER;
+    if (scaledAmount <= 0 || hp <= 0) return 0;
+    const before = hp;
+    hp = Math.max(0, hp - scaledAmount);
+    if (hp < before) triggerHeroDamageFlash(Boolean(beatLocked));
+    return before - hp;
+  }
+
+  function healPlayer(amount) {
+    const before = hp;
+    hp = Math.min(HP_MAX, hp + Math.max(0, amount) * PLAYER_HEALING_MULTIPLIER);
+    return hp - before;
+  }
+
+  function damageEnemy(amount) {
+    return Math.max(0, amount) * PLAYER_DAMAGE_DEALT_MULTIPLIER;
+  }
+
+  function addVp(amount, fromShadow = false) {
+    const before = vp;
+    vp = Math.min(VP_MAX, vp + Math.max(0, amount));
+    if (fromShadow && vp > before) triggerHeroVpFlash();
+    if (before < VP_MAX && vp >= VP_MAX) playBossSfx('vpFull');
+    return vp - before;
+  }
+
+  function updateHeroCombatFeedback(dt) {
+    heroDamageFlashAge += dt;
+    heroVpFlashAge += dt;
+  }
+
+  function resetHeroCombatFeedback() {
+    heroDamageFlashAge = Infinity;
+    heroVpFlashAge = Infinity;
+    heroDamageFlashBeat = -1;
+    heroVpFlashStep = -1;
+  }
   const shockwaveArenaProgress = (t) => {
     t = clamp01(t);
     if (t < 0.16) return easeOutCubic(t / 0.16) * 0.58;
@@ -1628,6 +1729,34 @@
     ctx.fillRect(x + 2, y + 2, 1, 1);
   }
 
+  function drawHeroCombatFeedback(ox, oy) {
+    ctx.save();
+    const damageLife = 1 - clamp01(heroDamageFlashAge / HERO_DAMAGE_FLASH_MS);
+    if (damageLife > 0) {
+      ctx.fillStyle = 'rgba(255, 224, 224, ' + (0.62 * damageLife).toFixed(3) + ')';
+      for (let y = 0; y < HERO.rows.length; y++) {
+        for (let x = 0; x < HERO.rows[y].length; x++) {
+          const token = HERO.rows[y][x];
+          if (token === '.' || token === ' ' || !HERO.pal[token]) continue;
+          ctx.fillRect(ox + x * HERO_SCALE, oy + y * HERO_SCALE, HERO_SCALE, HERO_SCALE);
+        }
+      }
+    }
+
+    const vpLife = 1 - clamp01(heroVpFlashAge / HERO_VP_FLASH_MS);
+    if (vpLife > 0) {
+      ctx.globalAlpha = vpLife * vpLife;
+      for (const point of HERO_BODY_OUTLINE_OFFSETS) {
+        const blockX = Math.floor(point.x / 2);
+        const blockY = Math.floor(point.y / 2);
+        const texture = ((blockX * 37) ^ (blockY * 61)) >>> 0;
+        ctx.fillStyle = texture % 11 < 4 ? '#ffe45a' : '#66bfff';
+        ctx.fillRect(ox + point.x, oy + point.y, 1, 1);
+      }
+    }
+    ctx.restore();
+  }
+
   function drawHero() {
     const rows = HERO.rows;
     const squashed = heroSquash > 0.001;
@@ -1649,6 +1778,7 @@
           ctx.fillRect(ox + x * HERO_SCALE, oy + y * HERO_SCALE, HERO_SCALE, HERO_SCALE);
         }
       }
+      drawHeroCombatFeedback(ox, oy);
       ctx.restore();
       drawHeroDamageMarker();
       return;
@@ -1666,6 +1796,7 @@
         ctx.fillRect(ox + x * HERO_SCALE, oy + y * HERO_SCALE, HERO_SCALE, HERO_SCALE);
       }
     }
+    drawHeroCombatFeedback(ox, oy);
     drawHeroDamageMarker();
   }
 
@@ -3663,12 +3794,9 @@
     const { live, shadow } = countOverlaps(hitboxes);
     const vpBefore = vp;
     // Damage scales with overlaps (two attacks at once drain twice as fast).
-    if (live > 0) hp = Math.max(0, hp - DAMAGE_PER_BEAT * live * beats);
+    if (live > 0) damagePlayer(DAMAGE_PER_BEAT * live * beats, true);
     // VP is earned only in a shadow, never in the live skill itself.
-    if (shadow > 0) vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadow * beats);
-    if (vpBefore < VP_MAX && vp >= VP_MAX) {
-      playBossSfx('vpFull');
-    }
+    if (shadow > 0) addVp(VP_PER_BEAT * shadow * beats, true);
 
     // Feedback follows subdivisions of the same live beat clock as the fight.
     // The VP chirp is deliberately tiny and monophonic-feeling at 4x per beat;
@@ -3709,8 +3837,7 @@
     if (phase === PHASE.SECOND && !phase2CombatStarted) return;
     if (vp < VP_MAX) return;
     vp = 0;
-    hp = Math.min(HP_MAX, hp + HP_MAX * ATTACK_HEAL_FRAC);
-    // Wrath only flares once the blade actually lands (see updateStrike).
+    // Healing and boss damage resolve only if the blade lands (see updateStrike).
     // Capture the flight path: from the hero up to the cultist.
     const board = getBoardRect();
     const sprite = cultistStandImg ? cultistStandImg.getBoundingClientRect() : null;
@@ -3722,6 +3849,7 @@
       t: 0,
       duration: STRIKE_DURATION,
       impacted: false,
+      missed: false,
       finalHit: false,
       phaseTwo: phase === PHASE.SECOND,
       travelSoundStarted: false,
@@ -3734,7 +3862,72 @@
   }
 
   function wrathAfterStrike() {
-    return BASE_BPM + Math.floor(fightClock / BPM_RAMP_MS) + bpmBonus + ATTACK_WRATH_GAIN;
+    return BASE_BPM + Math.floor(fightClock / BPM_RAMP_MS) + bpmBonus + damageEnemy(ATTACK_WRATH_GAIN);
+  }
+
+  function strikePose(activeStrike) {
+    const p = Math.min(activeStrike.t, STRIKE_DURATION) / STRIKE_DURATION;
+    const angle = Math.atan2(
+      activeStrike.toY - activeStrike.fromY,
+      activeStrike.toX - activeStrike.fromX
+    );
+    const castStart = 0.55;
+    const castEnd = 0.82;
+    let travel = 0;
+    if (p >= castEnd) travel = 1;
+    else if (p > castStart) travel = easeInQuad((p - castStart) / (castEnd - castStart));
+    const appear = Math.min(1, p / 0.18);
+    return {
+      p,
+      angle,
+      travel,
+      appear,
+      x: activeStrike.fromX + (activeStrike.toX - activeStrike.fromX) * travel,
+      y: activeStrike.fromY + (activeStrike.toY - activeStrike.fromY) * travel,
+      scale: (0.7 + 0.6 * easeOutCubic(appear)) * (1 + travel * 0.25),
+    };
+  }
+
+  function swordSegmentTouchesEllipse(pose, cx, cy, radiusX, radiusY) {
+    const bladePadding = 7 * pose.scale;
+    const rx = Math.max(1, radiusX + bladePadding);
+    const ry = Math.max(1, radiusY + bladePadding);
+    const ux = Math.cos(pose.angle);
+    const uy = Math.sin(pose.angle);
+    const back = -22 * pose.scale;
+    const front = 116 * pose.scale;
+    const x1 = (pose.x + ux * back - cx) / rx;
+    const y1 = (pose.y + uy * back - cy) / ry;
+    const x2 = (pose.x + ux * front - cx) / rx;
+    const y2 = (pose.y + uy * front - cy) / ry;
+    return distToSeg(0, 0, x1, y1, x2, y2) <= 1;
+  }
+
+  function strikeCurrentBossImpact(activeStrike) {
+    const pose = strikePose(activeStrike);
+    if (activeStrike.phaseTwo) {
+      const avatar = phase2Avatar && phase2Avatar.state && phase2Avatar.state.avatar;
+      if (!avatar || !avatar.visible || avatar.alpha < 0.5) return null;
+      const radiusX = avatar.size * 0.24;
+      return swordSegmentTouchesEllipse(
+        pose,
+        avatar.x,
+        avatar.y,
+        radiusX,
+        radiusX / 0.88
+      ) ? { x: avatar.x, y: avatar.y } : null;
+    }
+    const sprite = cultistStandImg && cultistStandImg.getBoundingClientRect();
+    if (!sprite || sprite.width <= 0 || sprite.height <= 0) return null;
+    const centerX = sprite.left + sprite.width / 2;
+    const centerY = sprite.top + sprite.height * 0.45;
+    return swordSegmentTouchesEllipse(
+      pose,
+      centerX,
+      centerY,
+      sprite.width * 0.28,
+      sprite.height * 0.36
+    ) ? { x: centerX, y: centerY } : null;
   }
 
   // Advances the strike flourish in REAL time (so the cinematic plays at full
@@ -3748,29 +3941,37 @@
       playBossSfx('playerTravel');
     }
     if (!strike.impacted && strike.t >= STRIKE_IMPACT_AT) {
-      if (strike.phaseTwo) {
-        strike.impacted = true;
+      strike.impacted = true;
+      const impact = strikeCurrentBossImpact(strike);
+      if (!impact) {
+        strike.missed = true;
+      } else if (strike.phaseTwo) {
+        strike.impactX = impact.x;
+        strike.impactY = impact.y;
+        healPlayer(HP_MAX * ATTACK_HEAL_FRAC);
         playBossSfx('playerImpact', { phaseTwo: true });
-        entropy = Math.min(ENTROPY_MAX, entropy + ENTROPY_PER_STRIKE);
+        entropy = Math.min(ENTROPY_MAX, entropy + damageEnemy(ENTROPY_PER_STRIKE));
         bpm = phaseTwoBpm();
         beatMs = 60000 / bpm;
         if (!strikePhaseTwoRushEyes() && !phase2RushPhaseComplete) {
           phase2PlayerHits++;
           registerPhaseTwoHexPlayerHit();
-          if (phase2PlayerHits === 2 && !phase2GridSpecial) startPhaseTwoGridSpecial();
+          if (phase2PlayerHits >= 2 && !phase2GridSpecial) startPhaseTwoGridSpecial();
         }
         surgeWrath();
-        return 1 - Math.sin(Math.min(1, p) * Math.PI) * (1 - STRIKE_SLOW);
+      } else {
+        strike.impactX = impact.x;
+        strike.impactY = impact.y;
+        healPlayer(HP_MAX * ATTACK_HEAL_FRAC);
+        const finalHit = wrathAfterStrike() >= WRATH_MAX;
+        strike.finalHit = finalHit;
+        playBossSfx('playerImpact', { finalHit });
+        if (finalHit) strike.duration = FINAL_STRIKE_DURATION;
+        shakeCultist(finalHit);
+        bpmBonus += damageEnemy(ATTACK_WRATH_GAIN); // wrath surges only on a confirmed hit
+        if (finalHit) bpm = WRATH_MAX;
+        surgeWrath();
       }
-      const finalHit = wrathAfterStrike() >= WRATH_MAX;
-      strike.impacted = true;
-      strike.finalHit = finalHit;
-      playBossSfx('playerImpact', { finalHit });
-      if (finalHit) strike.duration = FINAL_STRIKE_DURATION;
-      shakeCultist(finalHit);
-      bpmBonus += ATTACK_WRATH_GAIN; // wrath surges on impact, not on keypress
-      if (finalHit) bpm = WRATH_MAX;
-      surgeWrath();
     }
     if (strike.t >= strike.duration) {
       const wasFinalHit = strike.finalHit;
@@ -3917,8 +4118,8 @@
     const holdP = Math.max(0, Math.min(1, impactAge / (FINAL_STRIKE_DURATION - STRIKE_IMPACT_AT)));
     const snap = 1 - smoothstep(impactAge / 120);
     const shock = 1 - smoothstep((impactAge - 120) / 620);
-    const x = s.toX;
-    const y = s.toY;
+    const x = Number.isFinite(s.impactX) ? s.impactX : s.toX;
+    const y = Number.isFinite(s.impactY) ? s.impactY : s.toY;
     actx.save();
     if (snap > 0) {
       actx.globalAlpha = 0.48 * snap;
@@ -3970,22 +4171,32 @@
     actx.restore();
   }
 
+  function renderStrikeMiss(pose, impactAge) {
+    if (impactAge < 0 || impactAge > 520) return;
+    const progress = clamp01(impactAge / 520);
+    const alpha = 1 - smoothstep(progress);
+    actx.save();
+    actx.globalAlpha = alpha;
+    actx.font = "12px 'Press Start 2P', monospace";
+    actx.textAlign = 'center';
+    actx.textBaseline = 'middle';
+    actx.lineJoin = 'miter';
+    actx.lineWidth = 4;
+    actx.strokeStyle = '#160005';
+    const y = pose.y - 34 - easeOutCubic(progress) * 20;
+    actx.strokeText('MISS', pose.x, y);
+    actx.fillStyle = '#ff6670';
+    actx.fillText('MISS', pose.x, y);
+    actx.restore();
+  }
+
   // The flourish itself, painted over the attack layer in viewport space.
   function renderStrike() {
     if (!strike || !actx) return;
-    const p = Math.min(strike.t, STRIKE_DURATION) / STRIKE_DURATION;
-    const angle = Math.atan2(strike.toY - strike.fromY, strike.toX - strike.fromX);
-    // The sword materialises, hovers, then is cast fast at the boss.
-    const castStart = 0.55;
-    const castEnd = 0.82;
-    let sp = 0;
-    if (p >= castEnd) sp = 1;
-    else if (p > castStart) sp = easeInQuad((p - castStart) / (castEnd - castStart));
-    const x = strike.fromX + (strike.toX - strike.fromX) * sp;
-    const y = strike.fromY + (strike.toY - strike.fromY) * sp;
-    const appear = Math.min(1, p / 0.18);
+    const pose = strikePose(strike);
+    const { p, angle, travel: sp, x, y, appear } = pose;
     let fade = p > 0.86 ? Math.max(0, 1 - (p - 0.86) / 0.14) : 1;
-    let scale = (0.7 + 0.6 * easeOutCubic(appear)) * (1 + sp * 0.25);
+    let scale = pose.scale;
     if (strike.finalHit && strike.impacted) {
       const impactAge = strike.t - STRIKE_IMPACT_AT;
       fade = Math.max(0, 1 - smoothstep((impactAge - 840) / 520));
@@ -4009,17 +4220,20 @@
       actx.restore();
     }
     // Holy flash where it lands on the cultist.
-    if (p >= 0.82) {
+    if (p >= 0.82 && !strike.missed) {
       const fp = Math.min(1, (p - 0.82) / 0.12);
       actx.save();
       actx.globalAlpha = (1 - fp) * 0.9;
       actx.shadowColor = 'rgba(255, 230, 180, 0.95)';
       actx.shadowBlur = 40;
       actx.fillStyle = 'rgba(255, 245, 220, 0.9)';
-      actx.beginPath(); actx.arc(strike.toX, strike.toY, 26 + fp * 46, 0, Math.PI * 2); actx.fill();
+      const impactX = Number.isFinite(strike.impactX) ? strike.impactX : strike.toX;
+      const impactY = Number.isFinite(strike.impactY) ? strike.impactY : strike.toY;
+      actx.beginPath(); actx.arc(impactX, impactY, 26 + fp * 46, 0, Math.PI * 2); actx.fill();
       actx.restore();
     }
     drawAngelicSword(x, y, angle, scale, alpha);
+    if (strike.missed) renderStrikeMiss(pose, strike.t - STRIKE_IMPACT_AT);
   }
 
   function partialPolyline(g, points, progress) {
@@ -6141,6 +6355,7 @@
     phaseOneVpSfxStep = -1;
     phaseOneDamageSfxStep = -1;
     phaseOneDamageSfxCount = 0;
+    resetHeroCombatFeedback();
     attacks = [];
     fadingAttacks = [];
     phase2Ritual = null;
@@ -6267,8 +6482,9 @@
   function primePhaseTwoCombat() {
     if (!active || phase !== PHASE.ACTIVE) return;
     fightClock = 0;
-    bpmBonus = WRATH_MAX - BASE_BPM - ATTACK_WRATH_GAIN;
-    bpm = WRATH_MAX - ATTACK_WRATH_GAIN;
+    const strikeDamage = damageEnemy(ATTACK_WRATH_GAIN);
+    bpmBonus = WRATH_MAX - BASE_BPM - strikeDamage;
+    bpm = WRATH_MAX - strikeDamage;
     beatMs = 60000 / bpm;
     beatPhase = 0;
     lastAnimBpm = -1;
@@ -6641,7 +6857,7 @@
         }
       }
       const damageScale = bpm / PHASE2_BPM_MIN;
-      hp = Math.max(0, hp - PHASE2_VOID_EJECT_DAMAGE * damageScale);
+      damagePlayer(PHASE2_VOID_EJECT_DAMAGE * damageScale);
       playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
       if (nearest) beginPhaseTwoGridHop(nearest, PHASE2_GRID_HOP_MS * 1.65);
       if (hp <= 0) die();
@@ -6884,9 +7100,9 @@
     pattern.bossSlamParried = parried;
     pattern.bossSlamImpactAge = 0;
     if (parried) {
-      vp = Math.min(VP_MAX, vp + PHASE2_SWORD_PARRY_VP);
+      addVp(PHASE2_SWORD_PARRY_VP, false);
     } else {
-      hp = Math.max(0, hp - PHASE2_BOSS_SLAM_DAMAGE * (bpm / PHASE2_BPM_MIN));
+      damagePlayer(PHASE2_BOSS_SLAM_DAMAGE * (bpm / PHASE2_BPM_MIN));
       playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
     }
     restorePhaseTwoSquareArena();
@@ -6977,18 +7193,15 @@
     if (type === 'parry') {
       playBossSfx('phase2Parry');
       pattern.successfulParries++;
-      hp = Math.min(
-        HP_MAX,
-        hp + PHASE2_SWORD_PARRY_HEAL * (bpm / PHASE2_BPM_MIN)
-      );
-      vp = Math.min(VP_MAX, vp + PHASE2_SWORD_PARRY_VP);
+      healPlayer(PHASE2_SWORD_PARRY_HEAL * (bpm / PHASE2_BPM_MIN));
+      addVp(PHASE2_SWORD_PARRY_VP, false);
       if (!pattern.finalClockwise && pattern.successfulParries >= PHASE2_SWORD_FINAL_PARRIES) {
         pattern.finalClockwisePending = true;
       }
     }
     if (type === 'hit') {
       playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
-      hp = Math.max(0, hp - PHASE2_SWORD_RING_DAMAGE * (bpm / PHASE2_BPM_MIN));
+      damagePlayer(PHASE2_SWORD_RING_DAMAGE * (bpm / PHASE2_BPM_MIN));
       if (hp <= 0) die();
     }
     pattern.state = 'impact';
@@ -7516,13 +7729,13 @@
         damageDistance <= PHASE2_RUSH_ORB_RADIUS
       ) {
         orb.hit = true;
-        hp = Math.max(0, hp - PHASE2_RUSH_ORB_DAMAGE * (bpm / PHASE2_BPM_MIN));
+        damagePlayer(PHASE2_RUSH_ORB_DAMAGE * (bpm / PHASE2_BPM_MIN));
         playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
         if (hp <= 0) die();
       }
     }
     if (shadowOrbs > 0) {
-      vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadowOrbs * beatStep);
+      addVp(VP_PER_BEAT * shadowOrbs * beatStep, true);
     }
     phase2RushOrbs = phase2RushOrbs.filter((orb) => (
       !orb.hit &&
@@ -8845,7 +9058,7 @@
         if (hitDistance <= orb.radius) {
           orb.hit = true;
           pattern.impactAge = 0;
-          hp = Math.max(0, hp - PHASE2_HEX_ORB_DAMAGE * (bpm / PHASE2_BPM_MIN));
+          damagePlayer(PHASE2_HEX_ORB_DAMAGE * (bpm / PHASE2_BPM_MIN));
           playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
           if (hp <= 0) die();
         }
@@ -9010,7 +9223,7 @@
           wall.impactAge = 0;
           pattern.impactAge = 0;
           const damageScale = Number.isFinite(wall.damageScale) ? wall.damageScale : 1;
-          hp = Math.max(0, hp - PHASE2_HEX_WALL_DAMAGE * damageScale * (bpm / PHASE2_BPM_MIN));
+          damagePlayer(PHASE2_HEX_WALL_DAMAGE * damageScale * (bpm / PHASE2_BPM_MIN));
           playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
           if (hp <= 0) die();
         }
@@ -9022,7 +9235,7 @@
     const shadowVpWeight = shadowWalls +
       shadowOrbs * PHASE2_HEX_ORB_VP_SCALE;
     if (shadowVpWeight > 0) {
-      vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadowVpWeight * dt / beatMs);
+      addVp(VP_PER_BEAT * shadowVpWeight * dt / beatMs, true);
     }
     hex.walls = hex.walls.filter((wall) => phaseTwoHexWallProgress(wall) < 1.06);
   }
@@ -9070,14 +9283,14 @@
           platform.hit = true;
           platform.hitAge = 0;
           pattern.impactAge = 0;
-          hp = Math.max(0, hp - PHASE2_PITFALL_DAMAGE * (bpm / PHASE2_BPM_MIN));
+          damagePlayer(PHASE2_PITFALL_DAMAGE * (bpm / PHASE2_BPM_MIN));
           playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
           if (hp <= 0) die();
         }
       }
     }
     if (shadowEdges > 0) {
-      vp = Math.min(VP_MAX, vp + VP_PER_BEAT * shadowEdges * dt / beatMs);
+      addVp(VP_PER_BEAT * shadowEdges * dt / beatMs, true);
     }
     pattern.platforms = pattern.platforms.filter((platform) => platform.age / platform.duration < 1.16);
   }
@@ -12693,6 +12906,7 @@
     updateSoundDebugHold();
     const dtRaw = Math.min(48, time - previousTime || 16);
     previousTime = time;
+    updateHeroCombatFeedback(dtRaw);
     if (combatPaused) {
       updateBars();
       animationFrame = requestAnimationFrame(frame);
@@ -12892,6 +13106,7 @@
     dead = false;
     deathSequence = null;
     strike = null;
+    resetHeroCombatFeedback();
     if (cultistElement) cultistElement.classList.remove('aether-hit', 'aether-final-hit');
     if (deathScreen) deathScreen.classList.add('hidden');
     if (deathScreen) deathScreen.classList.remove('is-ready');
