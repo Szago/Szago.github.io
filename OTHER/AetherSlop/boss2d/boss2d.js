@@ -762,15 +762,15 @@
   const PHASE2_TOWER_GOAL_METERS = 100;
   const PHASE2_DOOM_ENTRY_SLAM_MS = 1050;
   const PHASE2_DOOM_RESHAPE_MS = 720;
-  const PHASE2_DOOM_APPROACH_MS = 1500;
-  const PHASE2_DOOM_NOTE_BEATS = 4;
-  const PHASE2_DOOM_FIRST_NOTE_DELAY_MS = 600;
+  const PHASE2_DOOM_APPROACH_BEATS = 3;
+  const PHASE2_DOOM_NOTE_BEATS = 2;
   const PHASE2_DOOM_PERFECT_MS = 90;
   const PHASE2_DOOM_GREAT_MS = 180;
   const PHASE2_DOOM_OK_MS = 280;
   const PHASE2_DOOM_HOP_MS = 180;
   const PHASE2_DOOM_SLASH_MS = 300;
   const PHASE2_DOOM_PUNISH_DAMAGE = 100;
+  const PHASE2_DOOM_DEBRIS_DAMAGE = 20;
   const PHASE2_DOOM_PUNISH_VP = VP_MAX * 0.15;
   const PHASE2_DOOM_PERFECT_VP = VP_MAX * 0.10;
   const PHASE2_GRID_CHANNEL_BEATS = 3;
@@ -890,6 +890,17 @@
 
   function currentCombatBeat() {
     return Math.floor(beatIndex + beatPhase / Math.max(1, beatMs));
+  }
+
+  function setCombatBpm(nextBpm, preserveBeatPhase = true) {
+    const normalizedBpm = Math.max(1, Number(nextBpm) || 1);
+    if (Math.abs(normalizedBpm - bpm) < 0.000001) return false;
+    const previousBeatMs = Math.max(1, beatMs);
+    const phaseFraction = clamp01((beatPhase % previousBeatMs) / previousBeatMs);
+    bpm = normalizedBpm;
+    beatMs = 60000 / bpm;
+    if (preserveBeatPhase) beatPhase = phaseFraction * beatMs;
+    return true;
   }
 
   function triggerHeroDamageFlash(beatLocked) {
@@ -3561,14 +3572,20 @@
     const pattern = phase2DoomPattern;
     if (!pattern || pattern.mode !== 'active') return;
     const size = phaseTwoDoomNoteSize(pattern);
+    const currentBeat = phaseTwoDoomBeatNow();
     ctx.save();
     for (const slash of pattern.slashes) {
       if (slash.square && slash.age < 0) renderPhaseTwoDoomSquare(slash.square, size, 0.88);
     }
-    if (pattern.currentSquare) renderPhaseTwoDoomSquare(pattern.currentSquare, size, 1);
+    if (pattern.debrisSquare) renderPhaseTwoDoomDebris(pattern.debrisSquare, size);
+    if (pattern.currentSquare && (!pattern.debrisSquare ||
+        Math.hypot(pattern.currentSquare.x - pattern.debrisSquare.x, pattern.currentSquare.y - pattern.debrisSquare.y) > 1)) {
+      renderPhaseTwoDoomSquare(pattern.currentSquare, size, 1);
+    }
     for (const note of pattern.notes) {
       if (note.judged) continue;
-      const remaining = clamp01((note.hitAt - pattern.elapsed) / PHASE2_DOOM_APPROACH_MS);
+      const approachBeats = Math.max(0.001, note.hitBeat - note.spawnBeat);
+      const remaining = clamp01((note.hitBeat - currentBeat) / approachBeats);
       const ringScale = 1 + 1.35 * remaining;
       const shake = note.shakeAge > 0 ? Math.sin(note.shakeAge * 0.13) * 6 : 0;
       const x = note.x + shake;
@@ -3582,9 +3599,10 @@
       ctx.globalAlpha = 1;
     }
     const nextNote = pattern.notes.filter((note) => !note.judged)
-      .sort((a, b) => a.hitAt - b.hitAt)[0];
+      .sort((a, b) => a.hitBeat - b.hitBeat)[0];
     if (nextNote && pattern.currentSquare) {
-      const remaining = clamp01((nextNote.hitAt - pattern.elapsed) / PHASE2_DOOM_APPROACH_MS);
+      const approachBeats = Math.max(0.001, nextNote.hitBeat - nextNote.spawnBeat);
+      const remaining = clamp01((nextNote.hitBeat - currentBeat) / approachBeats);
       const growth = smoothstep(1 - remaining);
       const square = pattern.currentSquare;
       const half = size / 2 - 5;
@@ -3614,17 +3632,36 @@
     if (!square) return;
     const half = size / 2;
     const seed = square.seed || 0;
+    const wall = Math.max(8, Math.round(size * 0.13));
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = '#020204';
+    ctx.fillStyle = '#4b4a45';
     ctx.fillRect(square.x - half, square.y - half, size, size);
+    if (!cobbledFloorPattern) cobbledFloorPattern = ctx.createPattern(cobbledFloorCanvas, 'repeat');
+    if (cobbledFloorPattern) {
+      ctx.fillStyle = cobbledFloorPattern;
+      ctx.fillRect(square.x - half, square.y - half, size, size);
+    }
+    ctx.fillStyle = 'rgba(202, 199, 186, 0.16)';
+    ctx.fillRect(square.x - half + 2, square.y - half + 2, size - 4, 2);
+    ctx.fillRect(square.x - half + 2, square.y - half + 2, 2, size - 4);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.58)';
+    ctx.fillRect(square.x - half + wall - 1, square.y - half + wall - 1, size - wall * 2 + 2, size - wall * 2 + 2);
+    ctx.fillStyle = '#020204';
+    ctx.fillRect(square.x - half + wall + 2, square.y - half + wall + 2, size - wall * 2 - 4, size - wall * 2 - 4);
     ctx.beginPath();
-    ctx.rect(square.x - half + 2, square.y - half + 2, size - 4, size - 4);
+    ctx.rect(
+      square.x - half + wall + 3,
+      square.y - half + wall + 3,
+      size - wall * 2 - 6,
+      size - wall * 2 - 6
+    );
     ctx.clip();
-    for (let i = 0; i < 14; i++) {
-      const px = square.x - half + ((Math.sin(seed * 13.7 + i * 91.3) * 0.5 + 0.5) * size);
-      const py = square.y - half + ((Math.sin(seed * 31.9 + i * 47.1) * 0.5 + 0.5) * size);
-      const length = 5 + (i % 4) * 4;
+    for (let i = 0; i < 10; i++) {
+      const innerSize = size - wall * 2;
+      const px = square.x - innerSize / 2 + ((Math.sin(seed * 13.7 + i * 91.3) * 0.5 + 0.5) * innerSize);
+      const py = square.y - innerSize / 2 + ((Math.sin(seed * 31.9 + i * 47.1) * 0.5 + 0.5) * innerSize);
+      const length = 4 + (i % 3) * 3;
       ctx.strokeStyle = i % 3 === 0 ? 'rgba(105, 16, 27, 0.19)' : 'rgba(205, 202, 190, 0.10)';
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -3635,12 +3672,77 @@
     ctx.restore();
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.strokeStyle = '#b7b4aa';
+    ctx.strokeStyle = 'rgba(218, 216, 203, 0.92)';
     ctx.lineWidth = 2;
     ctx.strokeRect(square.x - half + 1, square.y - half + 1, size - 2, size - 2);
-    ctx.strokeStyle = 'rgba(148, 11, 23, 0.72)';
+    ctx.strokeStyle = 'rgba(20, 20, 19, 0.96)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(
+      square.x - half + wall + 0.5,
+      square.y - half + wall + 0.5,
+      size - wall * 2 - 1,
+      size - wall * 2 - 1
+    );
+    ctx.strokeStyle = 'rgba(185, 181, 168, 0.54)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(square.x - half + 3.5, square.y - half + 3.5, size - 7, size - 7);
+    ctx.strokeRect(
+      square.x - half + wall + 2.5,
+      square.y - half + wall + 2.5,
+      size - wall * 2 - 5,
+      size - wall * 2 - 5
+    );
+    ctx.restore();
+  }
+
+  function renderPhaseTwoDoomDebris(square, size) {
+    if (!square) return;
+    const half = size / 2;
+    const gap = Math.max(5, Math.round(size * 0.09));
+    const seed = square.seed || 0;
+    const pieces = [
+      [-half, -half, -gap, -gap, -2, -2],
+      [gap, -half, half, -gap, 3, -1],
+      [-half, gap, -gap, half, -3, 2],
+      [gap, gap, half, half, 2, 3],
+    ];
+    ctx.save();
+    ctx.lineJoin = 'bevel';
+    for (let i = 0; i < pieces.length; i++) {
+      const [left, top, right, bottom, shiftX, shiftY] = pieces[i];
+      const biteA = 2 + Math.abs(Math.sin(seed * 7.1 + i * 2.3)) * 5;
+      const biteB = 2 + Math.abs(Math.sin(seed * 11.7 + i * 4.9)) * 5;
+      ctx.beginPath();
+      ctx.moveTo(square.x + left + shiftX, square.y + top + shiftY);
+      ctx.lineTo(square.x + right - biteA + shiftX, square.y + top + shiftY);
+      ctx.lineTo(square.x + right + shiftX, square.y + bottom - biteB + shiftY);
+      ctx.lineTo(square.x + left + biteB + shiftX, square.y + bottom + shiftY);
+      ctx.lineTo(square.x + left + shiftX, square.y + top + biteA + shiftY);
+      ctx.closePath();
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = '#252626';
+      ctx.fillRect(square.x - half - 8, square.y - half - 8, size + 16, size + 16);
+      if (!cobbledFloorPattern) cobbledFloorPattern = ctx.createPattern(cobbledFloorCanvas, 'repeat');
+      if (cobbledFloorPattern) {
+        ctx.fillStyle = cobbledFloorPattern;
+        ctx.fillRect(square.x - half - 8, square.y - half - 8, size + 16, size + 16);
+      }
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(203, 201, 189, 0.72)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(115, 12, 22, 0.70)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+      const angle = seed + i * Math.PI / 3;
+      const inner = gap * 0.25;
+      const outer = half * (0.62 + (i % 2) * 0.18);
+      ctx.beginPath();
+      ctx.moveTo(square.x + Math.cos(angle) * inner, square.y + Math.sin(angle) * inner);
+      ctx.lineTo(square.x + Math.cos(angle + 0.12) * outer, square.y + Math.sin(angle + 0.12) * outer);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -3753,6 +3855,9 @@
         ctx.fillRect(0, 0, sceneW, sceneH);
       }
       renderPhaseTwoPitfall(sceneW, sceneH);
+    } else if (doomActive) {
+      // Leave the arena interior transparent so the animated soul ocean below
+      // reads through it, matching the void exposed by the Grid Cut fissures.
     } else if (settledGrid) {
       ctx.drawImage(phaseTwoGridFloorBuffer(phase2GridSpecial), 0, 0);
     } else {
@@ -4234,7 +4339,9 @@
     const { live, shadow } = countOverlaps(hitboxes);
     const vpBefore = vp;
     // Damage scales with overlaps (two attacks at once drain twice as fast).
-    if (live > 0) damagePlayer(DAMAGE_PER_BEAT * live * beats, true);
+    const doomPerfectSafe = phase2DoomPattern && phase2DoomPattern.mode === 'active' &&
+      phase2DoomPattern.elapsed < phase2DoomPattern.perfectSafeUntil;
+    if (live > 0 && !doomPerfectSafe) damagePlayer(DAMAGE_PER_BEAT * live * beats, true);
     // VP is earned only in a shadow, never in the live skill itself.
     if (shadow > 0) addVp(VP_PER_BEAT * shadow * beats, true);
 
@@ -4391,8 +4498,7 @@
         healPlayer(HP_MAX * ATTACK_HEAL_FRAC);
         playBossSfx('playerImpact', { phaseTwo: true });
         entropy = Math.min(ENTROPY_MAX, entropy + damageEnemy(ENTROPY_PER_STRIKE));
-        bpm = phaseTwoBpm();
-        beatMs = 60000 / bpm;
+        if (setCombatBpm(phaseTwoBpm())) updateBossMusicTempo(true);
         if (!strikePhaseTwoRushEyes() && !phase2RushPhaseComplete) {
           phase2PlayerHits++;
           registerPhaseTwoHexPlayerHit();
@@ -6858,11 +6964,7 @@
   function updateTempo(dt) {
     fightClock += dt;
     const targetBpm = Math.min(WRATH_MAX, BASE_BPM + Math.floor(fightClock / BPM_RAMP_MS) + bpmBonus);
-    if (targetBpm !== bpm) {
-      bpm = targetBpm;
-      beatMs = 60000 / bpm;
-      updateBossMusicTempo(true);
-    }
+    if (setCombatBpm(targetBpm)) updateBossMusicTempo(true);
     if (bossMusicPlaying && bossMusic && bossMusic.context.state === 'running') {
       if (fightMusicBeatCursor === null) alignFightBeatToBossMusic();
       const musicBeat = bossMusicBeatAt(bossMusic.context.currentTime);
@@ -6962,17 +7064,18 @@
 
   function debugAdjustBpm(delta) {
     if (!active) return;
+    let targetBpm;
     if (phase === PHASE.SECOND) {
       const target = Math.max(PHASE2_BPM_MIN, Math.min(PHASE2_BPM_MAX, phaseTwoBpm() + delta));
       entropy = (target - PHASE2_BPM_MIN) / (PHASE2_BPM_MAX - PHASE2_BPM_MIN) * ENTROPY_MAX;
-      bpm = phaseTwoBpm();
+      targetBpm = phaseTwoBpm();
     } else {
       const naturalBpm = BASE_BPM + Math.floor(fightClock / BPM_RAMP_MS);
       const target = Math.max(BASE_BPM, Math.min(WRATH_MAX, bpm + delta));
       bpmBonus = Math.max(0, target - naturalBpm);
-      bpm = Math.min(WRATH_MAX, naturalBpm + bpmBonus);
+      targetBpm = Math.min(WRATH_MAX, naturalBpm + bpmBonus);
     }
-    beatMs = 60000 / bpm;
+    if (setCombatBpm(targetBpm)) updateBossMusicTempo(true);
     lastAnimBpm = -1;
     applyTempoToAnimations();
     updateBars();
@@ -8618,6 +8721,10 @@
     return pattern && pattern.squareSize ? pattern.squareSize : 72;
   }
 
+  function phaseTwoDoomBeatNow() {
+    return beatIndex + beatPhase / Math.max(1, beatMs);
+  }
+
   function phaseTwoDoomBounds(pattern) {
     const inset = BORDER + PAD + phaseTwoDoomNoteSize(pattern) / 2 + 16;
     const left = inset;
@@ -8628,14 +8735,34 @@
   }
 
   function phaseTwoDoomStartRoute(pattern) {
-    const modes = ['orbit', 'figure8', 'zigzag', 'spiral', 'star']
+    const modes = [
+      'cornerReverse', 'invertedPentagram', 'leftRight',
+      'orbit', 'figure8', 'zigzag', 'spiral', 'star',
+    ]
       .filter((mode) => !pattern.route || mode !== pattern.route.mode);
+    const mode = modes[Math.floor(pattern.random() * modes.length)];
+    const authoredPoints = {
+      cornerReverse: [
+        [0.08, 0.09], [0.92, 0.09], [0.92, 0.91], [0.08, 0.91],
+        [0.08, 0.09], [0.08, 0.91], [0.92, 0.91], [0.92, 0.09],
+      ],
+      invertedPentagram: [
+        [0.50, 0.94], [0.08, 0.12], [0.92, 0.72],
+        [0.08, 0.72], [0.92, 0.12], [0.50, 0.94],
+      ],
+      leftRight: [
+        [0.08, 0.16], [0.92, 0.28], [0.08, 0.40], [0.92, 0.52],
+        [0.08, 0.64], [0.92, 0.76], [0.08, 0.88], [0.92, 0.70],
+      ],
+    };
+    const points = authoredPoints[mode] || null;
     pattern.route = {
-      mode: modes[Math.floor(pattern.random() * modes.length)],
+      mode,
       step: 0,
-      length: 5 + Math.floor(pattern.random() * 3),
+      length: points ? points.length : 5 + Math.floor(pattern.random() * 3),
       phase: pattern.random() * Math.PI * 2,
       direction: pattern.random() < 0.5 ? -1 : 1,
+      points,
     };
   }
 
@@ -8648,7 +8775,9 @@
     const t = route.phase + i * route.direction * Math.PI * 2 / span;
     let nx = 0.5;
     let ny = 0.5;
-    if (route.mode === 'orbit') {
+    if (route.points) {
+      [nx, ny] = route.points[i];
+    } else if (route.mode === 'orbit') {
       nx += Math.cos(t) * 0.43;
       ny += Math.sin(t) * 0.38;
     } else if (route.mode === 'figure8') {
@@ -8673,11 +8802,59 @@
     };
   }
 
-  function phaseTwoDoomSpawnNote(pattern) {
-    let point = phaseTwoDoomNextPoint(pattern);
+  function phaseTwoDoomAvoidSzago(pattern, point) {
+    const avatar = phase2Avatar && phase2Avatar.state && phase2Avatar.state.avatar;
+    const board = getBoardRect();
+    if (!avatar || !avatar.visible || avatar.alpha < 0.35 || !board || !board.width || !board.height) return point;
+    const radiusX = avatar.size * canvas.width / board.width * 0.52 + pattern.squareSize * 0.72;
+    const radiusY = avatar.size * canvas.height / board.height * 0.52 + pattern.squareSize * 0.72;
+    const bounds = pattern.bounds || phaseTwoDoomBounds(pattern);
+    const bosses = [
+      {
+        x: (avatar.x - board.left) * canvas.width / board.width,
+        y: (avatar.y - board.top) * canvas.height / board.height,
+      },
+      {
+        x: canvas.width / 2,
+        y: avatar.size * 0.34 * canvas.height / board.height,
+      },
+    ];
+    const clearance = (candidate, boss) => {
+      const dx = candidate.x - boss.x;
+      const dy = candidate.y - boss.y;
+      return (dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY);
+    };
+    let candidate = { ...point };
+    for (let pass = 0; pass < 2; pass++) {
+      for (const boss of bosses) {
+        if (clearance(candidate, boss) >= 1) continue;
+        const dx = candidate.x - boss.x;
+        const side = Math.abs(dx) > 0.001 ? Math.sign(dx) : (pattern.route && pattern.route.direction || 1);
+        candidate.x = Math.max(bounds.left, Math.min(bounds.right, boss.x + side * radiusX * 1.08));
+        if (clearance(candidate, boss) < 1) {
+          candidate.y = Math.max(bounds.top, Math.min(bounds.bottom, boss.y + radiusY * 1.08));
+        }
+      }
+    }
+    if (bosses.every((boss) => clearance(candidate, boss) >= 1)) return candidate;
+    const fallbacks = [
+      { x: bounds.left, y: bounds.top },
+      { x: bounds.right, y: bounds.top },
+      { x: bounds.left, y: bounds.bottom },
+      { x: bounds.right, y: bounds.bottom },
+      { x: bounds.left, y: bounds.top + bounds.height / 2 },
+      { x: bounds.right, y: bounds.top + bounds.height / 2 },
+    ];
+    return fallbacks.sort((a, b) =>
+      Math.min(...bosses.map((boss) => clearance(b, boss))) -
+      Math.min(...bosses.map((boss) => clearance(a, boss))))[0];
+  }
+
+  function phaseTwoDoomSpawnNote(pattern, hitBeat, spawnBeat) {
+    let point = phaseTwoDoomAvoidSzago(pattern, phaseTwoDoomNextPoint(pattern));
     for (let attempt = 0; attempt < 4; attempt++) {
       if (!pattern.lastTarget || Math.hypot(point.x - pattern.lastTarget.x, point.y - pattern.lastTarget.y) > pattern.squareSize * 1.25) break;
-      point = phaseTwoDoomNextPoint(pattern);
+      point = phaseTwoDoomAvoidSzago(pattern, phaseTwoDoomNextPoint(pattern));
     }
     pattern.lastTarget = point;
     pattern.notes.push({
@@ -8685,7 +8862,8 @@
       x: point.x,
       y: point.y,
       seed: pattern.random() * Math.PI * 2,
-      hitAt: pattern.nextHitAt,
+      hitBeat,
+      spawnBeat,
       judged: false,
       shakeAge: 0,
     });
@@ -8701,6 +8879,7 @@
       toY: note.y,
       elapsed: 0,
       duration: PHASE2_DOOM_HOP_MS,
+      clearsDebris: Boolean(pattern.debrisSquare),
     };
   }
 
@@ -8727,13 +8906,19 @@
     phaseTwoDoomAddSlash(pattern, hero.x, hero.y, true);
     phaseTwoDoomAddJudgment(pattern, note.x, note.y, label, 'miss');
     vp = Math.max(0, vp - PHASE2_DOOM_PUNISH_VP);
-    damagePlayer(PHASE2_DOOM_PUNISH_DAMAGE, true);
-    playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+    pattern.debrisSquare = pattern.currentSquare
+      ? { ...pattern.currentSquare, seed: pattern.random() * Math.PI * 2 }
+      : { x: hero.x, y: hero.y, seed: pattern.random() * Math.PI * 2 };
+    pattern.lastDebrisDamageBeat = beatIndex;
+    if (pattern.elapsed >= pattern.perfectSafeUntil) {
+      damagePlayer(PHASE2_DOOM_PUNISH_DAMAGE, true);
+      playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+    }
     if (hp <= 0) die();
   }
 
   function phaseTwoDoomJudge(pattern, note) {
-    const timing = pattern.elapsed - note.hitAt;
+    const timing = (phaseTwoDoomBeatNow() - note.hitBeat) * beatMs;
     if (timing < -PHASE2_DOOM_OK_MS) {
       phaseTwoDoomPunish(pattern, note, 'TOO EARLY');
       return;
@@ -8744,18 +8929,26 @@
       : absoluteTiming <= PHASE2_DOOM_GREAT_MS ? 'great' : 'ok';
     note.judged = true;
     const abandonedSquare = pattern.currentSquare ? { ...pattern.currentSquare } : null;
-    phaseTwoDoomAddSlash(
-      pattern,
-      abandonedSquare ? abandonedSquare.x : hero.x,
-      abandonedSquare ? abandonedSquare.y : hero.y,
-      false,
-      Math.max(45, -timing),
-      abandonedSquare
-    );
+    if (!pattern.debrisSquare) {
+      phaseTwoDoomAddSlash(
+        pattern,
+        abandonedSquare ? abandonedSquare.x : hero.x,
+        abandonedSquare ? abandonedSquare.y : hero.y,
+        false,
+        Math.max(PHASE2_DOOM_HOP_MS + 25, -timing),
+        abandonedSquare
+      );
+    }
     pattern.currentSquare = { x: note.x, y: note.y, seed: note.seed };
     phaseTwoDoomBeginHop(pattern, note);
     phaseTwoDoomAddJudgment(pattern, note.x, note.y, grade.toUpperCase(), grade);
-    if (grade === 'perfect') addVp(PHASE2_DOOM_PERFECT_VP, true);
+    if (grade === 'perfect') {
+      pattern.perfectSafeUntil = Math.max(
+        pattern.perfectSafeUntil,
+        pattern.elapsed + PHASE2_DOOM_HOP_MS + PHASE2_DOOM_SLASH_MS
+      );
+      addVp(PHASE2_DOOM_PERFECT_VP, true);
+    }
   }
 
   function phaseTwoDoomNoteViewportRect(pattern, note) {
@@ -8778,7 +8971,7 @@
     const pattern = phase2DoomPattern;
     if (!pattern || pattern.mode !== 'active' || dead) return false;
     const available = pattern.notes.filter((note) => !note.judged)
-      .sort((a, b) => a.hitAt - b.hitAt);
+      .sort((a, b) => a.hitBeat - b.hitBeat);
     const clicked = available.find((note) => {
       const rect = phaseTwoDoomNoteViewportRect(pattern, note);
       return rect && clientX >= rect.left && clientX <= rect.right &&
@@ -8805,7 +8998,13 @@
     };
     pattern.lastTarget = pattern.currentSquare;
     pattern.route = null;
-    pattern.nextHitAt = PHASE2_DOOM_APPROACH_MS + PHASE2_DOOM_FIRST_NOTE_DELAY_MS;
+    pattern.debrisSquare = null;
+    pattern.lastDebrisDamageBeat = -1;
+    pattern.perfectSafeUntil = -Infinity;
+    const currentBeat = phaseTwoDoomBeatNow();
+    pattern.nextHitBeat = Math.ceil(currentBeat) + PHASE2_DOOM_APPROACH_BEATS;
+    phaseTwoDoomSpawnNote(pattern, pattern.nextHitBeat, currentBeat);
+    pattern.nextHitBeat += PHASE2_DOOM_NOTE_BEATS;
     hero.x = pattern.currentSquare.x;
     hero.y = pattern.currentSquare.y;
     heroMove.x = 0;
@@ -8837,6 +9036,9 @@
       hop: null,
       nextId: 1,
       random: mulberry32(0xd0012026),
+      debrisSquare: null,
+      lastDebrisDamageBeat: -1,
+      perfectSafeUntil: -Infinity,
     };
     return true;
   }
@@ -8864,12 +9066,24 @@
         hero.x = hop.toX;
         hero.y = hop.toY;
         heroSquash = 0;
+        if (hop.clearsDebris) pattern.debrisSquare = null;
         pattern.hop = null;
+      }
+    }
+    if (pattern.debrisSquare && pattern.lastDebrisDamageBeat !== beatIndex) {
+      const half = phaseTwoDoomNoteSize(pattern) / 2;
+      const onDebris = Math.abs(hero.x - pattern.debrisSquare.x) <= half &&
+        Math.abs(hero.y - pattern.debrisSquare.y) <= half;
+      if (onDebris && pattern.elapsed >= pattern.perfectSafeUntil) {
+        pattern.lastDebrisDamageBeat = beatIndex;
+        damagePlayer(PHASE2_DOOM_DEBRIS_DAMAGE, true);
+        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+        if (hp <= 0) die();
       }
     }
     for (const note of pattern.notes) {
       note.shakeAge = Math.max(0, note.shakeAge - dt);
-      if (!note.judged && pattern.elapsed > note.hitAt + PHASE2_DOOM_OK_MS) {
+      if (!note.judged && (phaseTwoDoomBeatNow() - note.hitBeat) * beatMs > PHASE2_DOOM_OK_MS) {
         phaseTwoDoomPunish(pattern, note, 'MISS');
       }
     }
@@ -8885,9 +9099,14 @@
     pattern.slashes = pattern.slashes.filter((slash) => slash.age < slash.duration);
     pattern.judgments = pattern.judgments.filter((judgment) => judgment.age < judgment.duration);
 
-    while (pattern.elapsed >= pattern.nextHitAt - PHASE2_DOOM_APPROACH_MS) {
-      phaseTwoDoomSpawnNote(pattern);
-      pattern.nextHitAt += beatMs * PHASE2_DOOM_NOTE_BEATS;
+    const currentBeat = phaseTwoDoomBeatNow();
+    while (currentBeat >= pattern.nextHitBeat - PHASE2_DOOM_APPROACH_BEATS) {
+      phaseTwoDoomSpawnNote(
+        pattern,
+        pattern.nextHitBeat,
+        pattern.nextHitBeat - PHASE2_DOOM_APPROACH_BEATS
+      );
+      pattern.nextHitBeat += PHASE2_DOOM_NOTE_BEATS;
     }
   }
 
@@ -9252,8 +9471,7 @@
   }
 
   function updatePhaseTwoTempo(dt) {
-    bpm = phaseTwoBpm();
-    beatMs = 60000 / bpm;
+    if (setCombatBpm(phaseTwoBpm())) updateBossMusicTempo(true);
     beatPhase += dt;
     while (beatPhase >= beatMs) {
       beatPhase -= beatMs;
