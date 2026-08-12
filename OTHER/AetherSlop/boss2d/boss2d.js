@@ -453,7 +453,6 @@
   let phaseOneDamageSfxCount = 0;
   let heroDamageFlashAge = Infinity;
   let heroVpFlashAge = Infinity;
-  let heroDamageFlashBeat = -1;
   let heroVpFlashSerial = 0;
   let soundDebugHold = null;
   let combatPaused = false;
@@ -879,6 +878,7 @@
   const STRIKE_SLOW = 0.05;          // gameplay speed at the deepest slow-mo
   const FINAL_STRIKE_DURATION = 1900; // extra hitstop before the phase-two fall
   const HERO_DAMAGE_FLASH_MS = 170;
+  const HERO_DAMAGE_FLASH_INTERVAL_MS = 1000 / 10;
   const HERO_VP_FLASH_MS = 168;
   const HERO_VP_FLASH_INTERVAL_MS = 1000 / 10;
   let hp = HP_MAX;
@@ -896,10 +896,6 @@
   const smoothstep = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
   const clamp01 = (t) => Math.max(0, Math.min(1, t));
 
-  function currentCombatBeat() {
-    return Math.floor(beatIndex + beatPhase / Math.max(1, beatMs));
-  }
-
   function setCombatBpm(nextBpm, preserveBeatPhase = true) {
     const normalizedBpm = Math.max(1, Number(nextBpm) || 1);
     if (Math.abs(normalizedBpm - bpm) < 0.000001) return false;
@@ -911,10 +907,8 @@
     return true;
   }
 
-  function triggerHeroDamageFlash(beatLocked) {
-    const combatBeat = currentCombatBeat();
-    if (beatLocked && combatBeat === heroDamageFlashBeat) return;
-    heroDamageFlashBeat = combatBeat;
+  function triggerHeroDamageFlash() {
+    if (heroDamageFlashAge < HERO_DAMAGE_FLASH_INTERVAL_MS) return;
     heroDamageFlashAge = 0;
   }
 
@@ -927,12 +921,12 @@
     });
   }
 
-  function damagePlayer(amount, beatLocked = false) {
+  function damagePlayer(amount) {
     const scaledAmount = Math.max(0, amount) * PLAYER_DAMAGE_TAKEN_MULTIPLIER;
     if (scaledAmount <= 0 || hp <= 0) return 0;
     const before = hp;
     hp = Math.max(0, hp - scaledAmount);
-    if (hp < before) triggerHeroDamageFlash(Boolean(beatLocked));
+    if (hp < before) triggerHeroDamageFlash();
     return before - hp;
   }
 
@@ -962,7 +956,6 @@
   function resetHeroCombatFeedback() {
     heroDamageFlashAge = Infinity;
     heroVpFlashAge = Infinity;
-    heroDamageFlashBeat = -1;
     heroVpFlashSerial = 0;
   }
   const shockwaveArenaProgress = (t) => {
@@ -1825,7 +1818,7 @@
     ctx.save();
     const damageLife = 1 - clamp01(heroDamageFlashAge / HERO_DAMAGE_FLASH_MS);
     if (damageLife > 0) {
-      ctx.fillStyle = 'rgba(255, 224, 224, ' + (0.62 * damageLife).toFixed(3) + ')';
+      ctx.fillStyle = 'rgba(255, 26, 34, ' + (0.78 * damageLife).toFixed(3) + ')';
       for (let y = 0; y < HERO.rows.length; y++) {
         for (let x = 0; x < HERO.rows[y].length; x++) {
           const token = HERO.rows[y][x];
@@ -4354,13 +4347,13 @@
     // Damage scales with overlaps (two attacks at once drain twice as fast).
     const doomPerfectSafe = phase2DoomPattern && phase2DoomPattern.mode === 'active' &&
       phase2DoomPattern.elapsed < phase2DoomPattern.perfectSafeUntil;
-    if (live > 0 && !doomPerfectSafe) damagePlayer(DAMAGE_PER_BEAT * live * beats, true);
+    if (live > 0 && !doomPerfectSafe) damagePlayer(DAMAGE_PER_BEAT * live * beats);
     // VP is earned only in a shadow, never in the live skill itself.
     if (shadow > 0) addVp(VP_PER_BEAT * shadow * beats, true);
 
-    // Damage feedback follows subdivisions of the same live beat clock as the
-    // fight. Shadow VP feedback is triggered centrally by addVp(), including
-    // phase-two shadow sources that do not pass through this overlap counter.
+    // Damage audio follows subdivisions of the live beat clock. Damage and VP
+    // visuals are triggered centrally by their resource helpers, including
+    // phase-two hazards that do not pass through this overlap counter.
     if (phase === PHASE.ACTIVE || (phase === PHASE.SECOND && phase2CombatStarted)) {
       const absoluteBeat = beatIndex + beatPhase / Math.max(1, beatMs);
       const damageStep = Math.floor(absoluteBeat * BOSS_SFX_DAMAGE_STEPS_PER_BEAT);
@@ -8982,7 +8975,7 @@
       : { x: hero.x, y: hero.y, seed: pattern.random() * Math.PI * 2 };
     pattern.lastDebrisDamageBeat = beatIndex;
     if (pattern.elapsed >= pattern.perfectSafeUntil) {
-      damagePlayer(PHASE2_DOOM_PUNISH_DAMAGE, true);
+      damagePlayer(PHASE2_DOOM_PUNISH_DAMAGE);
       playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
     }
     if (hp <= 0) die();
@@ -9147,7 +9140,7 @@
         Math.abs(hero.y - pattern.debrisSquare.y) <= half;
       if (onDebris && pattern.elapsed >= pattern.perfectSafeUntil) {
         pattern.lastDebrisDamageBeat = beatIndex;
-        damagePlayer(PHASE2_DOOM_DEBRIS_DAMAGE, true);
+        damagePlayer(PHASE2_DOOM_DEBRIS_DAMAGE);
         playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
         if (hp <= 0) die();
       }
