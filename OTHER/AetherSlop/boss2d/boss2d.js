@@ -796,8 +796,16 @@
   const PHASE2_MAYHEM_SHADOW_HALF_WIDTH = 13;
   const PHASE2_MAYHEM_BLADE_OFFSETS = [0, Math.PI, Math.PI / 2, Math.PI * 1.5];
   const PHASE2_MAYHEM_ORBIT_RADIANS_PER_BEAT = 0.09;
+  const PHASE2_MAYHEM_FAN_ORBIT_MS = 10000;
+  const PHASE2_MAYHEM_FADE_MS = 760;
   const PHASE2_MAYHEM_HUB_RADIUS = 17;
-  const PHASE2_MAYHEM_UNDER_PATTERNS = ['quadrantFans'];
+  const PHASE2_MAYHEM_SPEAR_SPEED_PER_BEAT = 185;
+  const PHASE2_MAYHEM_SPEAR_SHOT_GAP_BEATS = 0.26;
+  const PHASE2_MAYHEM_SPEAR_BURST_REST_BEATS = 2.8;
+  const PHASE2_MAYHEM_SPEAR_TRAIL_LENGTH = 720;
+  const PHASE2_MAYHEM_SPEAR_MAX_BOUNCES = 4;
+  const PHASE2_MAYHEM_SPEAR_DAMAGE = 100;
+  const PHASE2_MAYHEM_UNDER_PATTERNS = ['quadrantFans', 'spearRain'];
   const PHASE2_GRID_CHANNEL_BEATS = 3;
   const PHASE2_GRID_RECALL_MS = 460;
   const PHASE2_GRID_IMPACT_MS = 220;
@@ -3827,10 +3835,75 @@
     ctx.restore();
   }
 
+  function renderPhaseTwoMayhemSpearRain(under) {
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const arrow of under.arrows) {
+      const fade = arrow.dead
+        ? 1 - smoothstep(arrow.fadeAge / 620)
+        : Math.min(1, arrow.age / 90);
+      if (fade <= 0.001 || arrow.trail.length < 2) continue;
+      ctx.globalAlpha = fade;
+      ctx.beginPath();
+      ctx.moveTo(arrow.trail[0].x, arrow.trail[0].y);
+      for (let index = 1; index < arrow.trail.length; index++) {
+        ctx.lineTo(arrow.trail[index].x, arrow.trail[index].y);
+      }
+      ctx.strokeStyle = 'rgba(174, 8, 22, 0.54)';
+      ctx.lineWidth = 7;
+      ctx.shadowColor = 'rgba(216, 15, 28, 0.48)';
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(3, 2, 5, 0.92)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      if (arrow.dead) continue;
+
+      const angle = Math.atan2(arrow.dy, arrow.dx);
+      ctx.save();
+      ctx.translate(arrow.x, arrow.y);
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.moveTo(14, 0);
+      ctx.lineTo(2, -6);
+      ctx.lineTo(2, -2.5);
+      ctx.lineTo(-21, -2.5);
+      ctx.lineTo(-27, -7);
+      ctx.lineTo(-24, 0);
+      ctx.lineTo(-27, 7);
+      ctx.lineTo(-21, 2.5);
+      ctx.lineTo(2, 2.5);
+      ctx.closePath();
+      ctx.fillStyle = '#030305';
+      ctx.shadowColor = 'rgba(225, 12, 25, 0.72)';
+      ctx.shadowBlur = 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#e11926';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-19, 0);
+      ctx.lineTo(9, 0);
+      ctx.strokeStyle = 'rgba(118, 10, 20, 0.76)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   function renderPhaseTwoMayhem() {
     const pattern = phase2MayhemPattern;
     const under = pattern && pattern.underPattern;
-    if (!under || under.type !== 'quadrantFans') return;
+    if (!under) return;
+    if (under.type === 'spearRain') {
+      renderPhaseTwoMayhemSpearRain(under);
+      return;
+    }
+    if (under.type !== 'quadrantFans') return;
     const hubGrowth = easeOutCubic(clamp01(under.elapsed / PHASE2_MAYHEM_HUB_FORM_MS));
     const firstGrowth = easeOutCubic(clamp01(
       (under.elapsed - PHASE2_MAYHEM_HUB_FORM_MS) / PHASE2_MAYHEM_BLADE_FORM_MS
@@ -3841,6 +3914,9 @@
     ));
     const centers = phaseTwoMayhemFanCenters(under);
     ctx.save();
+    if (under.fadeAge >= 0) {
+      ctx.globalAlpha = 1 - smoothstep(under.fadeAge / PHASE2_MAYHEM_FADE_MS);
+    }
     for (let index = 0; index < centers.length; index++) {
       const center = centers[index];
       const fan = under.fans[index];
@@ -9568,11 +9644,25 @@
     }
   }
 
-  function beginPhaseTwoMayhemUnderPattern(pattern) {
+  function beginPhaseTwoMayhemUnderPattern(pattern, forcedType) {
     const choices = PHASE2_MAYHEM_UNDER_PATTERNS.filter((type) =>
       PHASE2_MAYHEM_UNDER_PATTERNS.length === 1 || type !== pattern.lastType);
-    const type = choices[Math.floor(pattern.random() * choices.length)];
+    const type = forcedType || choices[Math.floor(pattern.random() * choices.length)];
     pattern.lastType = type;
+    if (type === 'spearRain') {
+      pattern.underPattern = {
+        type,
+        elapsed: 0,
+        elapsedBeats: 0,
+        nextBurstBeat: 0.6,
+        nextShotBeat: Infinity,
+        shotsRemaining: 0,
+        arrows: [],
+        nextArrowId: 1,
+      };
+      playBossSfx('phase2SwordRing');
+      return;
+    }
     pattern.underPattern = {
       type,
       elapsed: 0,
@@ -9581,12 +9671,170 @@
       secondSoundPlayed: false,
       orbitSoundPlayed: false,
       orbitAngle: 0,
+      fadeAge: -1,
       fans: Array.from({ length: 4 }, (_, index) => ({
         angle: pattern.random() * Math.PI * 2,
         radiansPerBeat: 0.34 + index * 0.0225 + pattern.random() * 0.010,
       })),
     };
     playBossSfx('phase2TileCharge');
+  }
+
+  function phaseTwoMayhemSpearBounds() {
+    const inset = BORDER + PAD;
+    return {
+      left: inset,
+      top: inset,
+      right: canvas.width - inset,
+      bottom: canvas.height - inset,
+    };
+  }
+
+  function phaseTwoMayhemSpearSource() {
+    const bounds = phaseTwoMayhemSpearBounds();
+    const board = getBoardRect();
+    const avatar = phase2Avatar && phase2Avatar.state && phase2Avatar.state.avatar;
+    if (!board || !board.width || !board.height || !avatar) {
+      return { x: canvas.width / 2, y: bounds.top };
+    }
+    return {
+      x: Math.max(bounds.left, Math.min(
+        bounds.right,
+        (avatar.x - board.left) * canvas.width / board.width
+      )),
+      y: Math.max(bounds.top, Math.min(
+        bounds.bottom,
+        (avatar.y + avatar.size * 0.08 - board.top) * canvas.height / board.height
+      )),
+    };
+  }
+
+  function phaseTwoMayhemAppendSpearTrail(arrow, x, y) {
+    const previous = arrow.trail[arrow.trail.length - 1];
+    if (previous) arrow.trailLength += Math.hypot(x - previous.x, y - previous.y);
+    arrow.trail.push({ x, y });
+    while (arrow.trailLength > PHASE2_MAYHEM_SPEAR_TRAIL_LENGTH && arrow.trail.length > 1) {
+      const first = arrow.trail[0];
+      const second = arrow.trail[1];
+      const segmentLength = Math.hypot(second.x - first.x, second.y - first.y);
+      const excess = arrow.trailLength - PHASE2_MAYHEM_SPEAR_TRAIL_LENGTH;
+      if (segmentLength <= excess + 0.001) {
+        arrow.trail.shift();
+        arrow.trailLength -= segmentLength;
+      } else {
+        const trim = excess / Math.max(0.001, segmentLength);
+        first.x += (second.x - first.x) * trim;
+        first.y += (second.y - first.y) * trim;
+        arrow.trailLength -= excess;
+      }
+    }
+  }
+
+  function spawnPhaseTwoMayhemSpear(under) {
+    const source = phaseTwoMayhemSpearSource();
+    const target = heroBodyCenterWorld();
+    const dx = target.x - source.x;
+    const dy = target.y - source.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    under.arrows.push({
+      id: under.nextArrowId++,
+      x: source.x,
+      y: source.y,
+      dx: dx / distance,
+      dy: dy / distance,
+      bounces: 0,
+      age: 0,
+      dead: false,
+      fadeAge: 0,
+      trail: [{ x: source.x, y: source.y }],
+      trailLength: 0,
+    });
+    playBossSfx('phase2SwordStrike');
+  }
+
+  function phaseTwoMayhemSpearHitsHero(x1, y1, x2, y2) {
+    const center = heroBodyCenterWorld();
+    const padding = 4.5;
+    return segmentIntersectsRect(x1, y1, x2, y2, {
+      left: center.x - 2.5 - padding,
+      right: center.x + 2.5 + padding,
+      top: center.y - 2.5 - padding,
+      bottom: center.y + 2.5 + padding,
+    });
+  }
+
+  function resolvePhaseTwoMayhemSpearHit(arrow) {
+    if (arrow.dead) return;
+    arrow.dead = true;
+    arrow.fadeAge = 0;
+    damagePlayer(PHASE2_MAYHEM_SPEAR_DAMAGE * (bpm / PHASE2_BPM_MIN));
+    playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+    if (hp <= 0) die();
+  }
+
+  function updatePhaseTwoMayhemSpear(arrow, dt) {
+    arrow.age += dt;
+    if (arrow.dead) {
+      arrow.fadeAge += dt;
+      return;
+    }
+    const bounds = phaseTwoMayhemSpearBounds();
+    let remaining = PHASE2_MAYHEM_SPEAR_SPEED_PER_BEAT * dt / Math.max(1, beatMs);
+    let safety = 0;
+    while (remaining > 0.001 && !arrow.dead && safety++ < 8) {
+      const tx = arrow.dx > 0.000001
+        ? (bounds.right - arrow.x) / arrow.dx
+        : arrow.dx < -0.000001 ? (bounds.left - arrow.x) / arrow.dx : Infinity;
+      const ty = arrow.dy > 0.000001
+        ? (bounds.bottom - arrow.y) / arrow.dy
+        : arrow.dy < -0.000001 ? (bounds.top - arrow.y) / arrow.dy : Infinity;
+      const wallDistance = Math.max(0, Math.min(tx, ty));
+      const travel = Math.min(remaining, wallDistance);
+      const fromX = arrow.x;
+      const fromY = arrow.y;
+      arrow.x += arrow.dx * travel;
+      arrow.y += arrow.dy * travel;
+      phaseTwoMayhemAppendSpearTrail(arrow, arrow.x, arrow.y);
+      if (phaseTwoMayhemSpearHitsHero(fromX, fromY, arrow.x, arrow.y)) {
+        resolvePhaseTwoMayhemSpearHit(arrow);
+        break;
+      }
+      remaining -= travel;
+      if (travel + 0.001 < wallDistance || remaining <= 0.001) break;
+      if (arrow.bounces >= PHASE2_MAYHEM_SPEAR_MAX_BOUNCES) {
+        arrow.dead = true;
+        arrow.fadeAge = 0;
+        break;
+      }
+      const hitX = Math.abs(tx - wallDistance) < 0.01;
+      const hitY = Math.abs(ty - wallDistance) < 0.01;
+      if (hitX) arrow.dx *= -1;
+      if (hitY) arrow.dy *= -1;
+      arrow.bounces++;
+      arrow.x = Math.max(bounds.left, Math.min(bounds.right, arrow.x + arrow.dx * 0.01));
+      arrow.y = Math.max(bounds.top, Math.min(bounds.bottom, arrow.y + arrow.dy * 0.01));
+      playBossSfx('phase2ClawCut');
+    }
+  }
+
+  function updatePhaseTwoMayhemSpearRain(under, dt, beatStep) {
+    under.elapsedBeats += beatStep;
+    if (under.shotsRemaining === 0 && under.elapsedBeats >= under.nextBurstBeat) {
+      under.shotsRemaining = 3;
+      under.nextShotBeat = under.elapsedBeats;
+    }
+    while (under.shotsRemaining > 0 && under.elapsedBeats >= under.nextShotBeat) {
+      spawnPhaseTwoMayhemSpear(under);
+      under.shotsRemaining--;
+      if (under.shotsRemaining > 0) {
+        under.nextShotBeat += PHASE2_MAYHEM_SPEAR_SHOT_GAP_BEATS;
+      } else {
+        under.nextBurstBeat = under.nextShotBeat + PHASE2_MAYHEM_SPEAR_BURST_REST_BEATS;
+        under.nextShotBeat = Infinity;
+      }
+    }
+    for (const arrow of under.arrows) updatePhaseTwoMayhemSpear(arrow, dt);
+    under.arrows = under.arrows.filter((arrow) => !arrow.dead || arrow.fadeAge < 620);
   }
 
   function phaseTwoMayhemBladeGrowth(under, secondPair) {
@@ -9650,6 +9898,11 @@
     const under = pattern.underPattern;
     under.elapsed += dt;
     const beatStep = dt / Math.max(1, beatMs);
+    if (under.type === 'spearRain') {
+      updatePhaseTwoMayhemSpearRain(under, dt, beatStep);
+      return;
+    }
+    if (under.type !== 'quadrantFans') return;
     for (const fan of under.fans) {
       fan.angle = (fan.angle + fan.radiansPerBeat * beatStep) % (Math.PI * 2);
     }
@@ -9672,10 +9925,18 @@
         playBossSfx('phase2Whirlpool');
       }
     }
+    const fadeStart = orbitStart + PHASE2_MAYHEM_FAN_ORBIT_MS;
+    if (under.elapsed >= fadeStart) {
+      under.fadeAge = under.elapsed - fadeStart;
+      if (under.fadeAge >= PHASE2_MAYHEM_FADE_MS) {
+        beginPhaseTwoMayhemUnderPattern(pattern, 'spearRain');
+        return;
+      }
+    }
     const contact = under.type === 'quadrantFans'
       ? phaseTwoMayhemHeroContact(under)
       : { blade: false, shadow: false };
-    if (contact.blade) {
+    if (under.fadeAge < 0 && contact.blade) {
       damagePlayer(DAMAGE_PER_BEAT * PHASE2_MAYHEM_BLADE_DAMAGE_SCALE * beatStep);
       const damageStep = Math.floor(
         (beatIndex + beatPhase / Math.max(1, beatMs)) * BOSS_SFX_DAMAGE_STEPS_PER_BEAT
@@ -9685,9 +9946,11 @@
         playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
       }
       if (hp <= 0) die();
-    } else {
+    } else if (under.fadeAge < 0) {
       pattern.lastDamageStep = -1;
       if (contact.shadow) addVp(VP_PER_BEAT * beatStep, true);
+    } else {
+      pattern.lastDamageStep = -1;
     }
   }
 
@@ -9713,7 +9976,7 @@
       underPattern: null,
       lastDamageStep: -1,
     };
-    beginPhaseTwoMayhemUnderPattern(phase2MayhemPattern);
+    beginPhaseTwoMayhemUnderPattern(phase2MayhemPattern, 'quadrantFans');
     keys.clear();
     const help = overlay && overlay.querySelector('.aether-boss2d-help');
     if (help && help.firstChild) help.firstChild.nodeValue = 'WASD / ARROWS MOVE';
