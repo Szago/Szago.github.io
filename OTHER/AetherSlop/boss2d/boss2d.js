@@ -698,6 +698,8 @@
   let phase2TowerDebugQueued = false;
   let phase2DoomPattern = null;
   let phase2DoomDebugQueued = false;
+  let phase2MayhemPattern = null;
+  let phase2MayhemDebugQueued = false;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
   let nextSlotId = 1;
@@ -768,6 +770,9 @@
   const PHASE2_TOWER_GOAL_METERS = 100;
   const PHASE2_DOOM_ENTRY_SLAM_MS = 1050;
   const PHASE2_DOOM_RESHAPE_MS = 720;
+  const PHASE2_DOOM_NOTE_LIMIT = 50;
+  const PHASE2_DOOM_END_CENTER_MS = 620;
+  const PHASE2_DOOM_END_EXPAND_MS = 760;
   const PHASE2_DOOM_APPROACH_BEATS = 3;
   const PHASE2_DOOM_NOTE_BEATS = 2;
   const PHASE2_DOOM_PERFECT_MS = 90;
@@ -779,6 +784,20 @@
   const PHASE2_DOOM_DEBRIS_DAMAGE = 20;
   const PHASE2_DOOM_PUNISH_VP = VP_MAX * 0.15;
   const PHASE2_DOOM_PERFECT_VP = VP_MAX * 0.10;
+  const PHASE2_MAYHEM_HUB_FORM_MS = 1000;
+  const PHASE2_MAYHEM_BLADE_FORM_MS = 480;
+  const PHASE2_MAYHEM_TWO_BLADE_MS = 5000;
+  const PHASE2_MAYHEM_FOUR_BLADE_MS = 5000;
+  const PHASE2_MAYHEM_BLADE_LENGTH = 134;
+  const PHASE2_MAYHEM_BLADE_DAMAGE_SCALE = 2;
+  const PHASE2_MAYHEM_BLADE_HALF_WIDTH = 7;
+  const PHASE2_MAYHEM_BLADE_SWEEP = 0.28;
+  const PHASE2_MAYHEM_SHADOW_LEAD = 0.17;
+  const PHASE2_MAYHEM_SHADOW_HALF_WIDTH = 13;
+  const PHASE2_MAYHEM_BLADE_OFFSETS = [0, Math.PI, Math.PI / 2, Math.PI * 1.5];
+  const PHASE2_MAYHEM_ORBIT_RADIANS_PER_BEAT = 0.09;
+  const PHASE2_MAYHEM_HUB_RADIUS = 17;
+  const PHASE2_MAYHEM_UNDER_PATTERNS = ['quadrantFans'];
   const PHASE2_GRID_CHANNEL_BEATS = 3;
   const PHASE2_GRID_RECALL_MS = 460;
   const PHASE2_GRID_IMPACT_MS = 220;
@@ -1068,6 +1087,7 @@
     phase2SquareArenaLocked = true;
     phase2TowerPattern = null;
     phase2DoomPattern = null;
+    phase2MayhemPattern = null;
     overlay.classList.remove('hex-arena-active');
     overlay.classList.remove('tower-climb-active');
     const help = overlay.querySelector('.aether-boss2d-help');
@@ -1722,6 +1742,16 @@
       doomGridBtn.blur();
     });
     debugPanel.appendChild(doomGridBtn);
+
+    const mayhemBtn = document.createElement('button');
+    mayhemBtn.type = 'button';
+    mayhemBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    mayhemBtn.textContent = 'MAYHEM';
+    mayhemBtn.addEventListener('click', () => {
+      debugPhaseTwoMayhem();
+      mayhemBtn.blur();
+    });
+    debugPanel.appendChild(mayhemBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -3577,10 +3607,15 @@
 
   function renderPhaseTwoDoomFloor() {
     const pattern = phase2DoomPattern;
-    if (!pattern || pattern.mode !== 'active') return;
+    if (!pattern || pattern.mode === 'reshape') return;
     const size = phaseTwoDoomNoteSize(pattern);
     const currentBeat = phaseTwoDoomBeatNow();
     ctx.save();
+    if (pattern.mode === 'ending-expand') {
+      renderPhaseTwoDoomEndSquare(pattern.currentSquare, size);
+      ctx.restore();
+      return;
+    }
     for (const slash of pattern.slashes) {
       if (slash.square && slash.age < 0) renderPhaseTwoDoomSquare(slash.square, size, 0.88);
     }
@@ -3630,6 +3665,233 @@
           ctx.lineWidth = 5;
           ctx.stroke();
         }
+      }
+    }
+    ctx.restore();
+  }
+
+  function renderPhaseTwoDoomEndSquare(square, size) {
+    if (!square) return;
+    const half = size / 2;
+    ctx.save();
+    ctx.fillStyle = '#4b4a45';
+    ctx.fillRect(square.x - half, square.y - half, size, size);
+    if (!cobbledFloorPattern) cobbledFloorPattern = ctx.createPattern(cobbledFloorCanvas, 'repeat');
+    if (cobbledFloorPattern) {
+      ctx.fillStyle = cobbledFloorPattern;
+      ctx.fillRect(square.x - half, square.y - half, size, size);
+    }
+    ctx.strokeStyle = 'rgba(226, 224, 211, 0.94)';
+    ctx.lineWidth = Math.max(2, Math.min(6, size * 0.018));
+    ctx.strokeRect(square.x - half + 1, square.y - half + 1, size - 2, size - 2);
+    ctx.restore();
+  }
+
+  function phaseTwoMayhemFanCenters(under) {
+    const inset = BORDER + PAD + 8;
+    const width = Math.max(1, canvas.width - inset * 2);
+    const height = Math.max(1, canvas.height - inset * 2);
+    const centers = [
+      { x: inset + width * 0.25, y: inset + height * 0.25 },
+      { x: inset + width * 0.75, y: inset + height * 0.25 },
+      { x: inset + width * 0.25, y: inset + height * 0.75 },
+      { x: inset + width * 0.75, y: inset + height * 0.75 },
+    ];
+    const orbitAngle = under && Number.isFinite(under.orbitAngle) ? under.orbitAngle : 0;
+    if (Math.abs(orbitAngle) < 0.000001) return centers;
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const cosine = Math.cos(orbitAngle);
+    const sine = Math.sin(orbitAngle);
+    return centers.map((center) => {
+      const dx = center.x - centerX;
+      const dy = center.y - centerY;
+      return {
+        x: centerX + dx * cosine - dy * sine,
+        y: centerY + dx * sine + dy * cosine,
+      };
+    });
+  }
+
+  function phaseTwoMayhemBladePolygon(cx, cy, angle, growth, shadow) {
+    const length = PHASE2_MAYHEM_BLADE_LENGTH * clamp01(growth);
+    const root = PHASE2_MAYHEM_HUB_RADIUS * 0.55;
+    const maxHalfWidth = (shadow
+      ? PHASE2_MAYHEM_SHADOW_HALF_WIDTH
+      : PHASE2_MAYHEM_BLADE_HALF_WIDTH) * smoothstep(growth);
+    const segments = 12;
+    const centerline = [];
+    for (let index = 0; index <= segments; index++) {
+      const t = index / segments;
+      const radius = root + (length - root) * t;
+      // Positive angles turn clockwise in canvas space, so subtracting the
+      // sweep makes the blade bow backward like a real fan blade.
+      const sweptAngle = angle - PHASE2_MAYHEM_BLADE_SWEEP * smoothstep(t);
+      centerline.push({
+        x: cx + Math.cos(sweptAngle) * radius,
+        y: cy + Math.sin(sweptAngle) * radius,
+        t,
+      });
+    }
+    const left = [];
+    const right = [];
+    for (let index = 0; index < centerline.length; index++) {
+      const point = centerline[index];
+      const previous = centerline[Math.max(0, index - 1)];
+      const next = centerline[Math.min(centerline.length - 1, index + 1)];
+      const dx = next.x - previous.x;
+      const dy = next.y - previous.y;
+      const magnitude = Math.hypot(dx, dy) || 1;
+      const rootGrowth = 0.38 + smoothstep(point.t / 0.24) * 0.62;
+      const tipTaper = point.t < 0.72
+        ? 1
+        : Math.pow(Math.max(0, (1 - point.t) / 0.28), 0.62);
+      const profile = rootGrowth * tipTaper;
+      const halfWidth = maxHalfWidth * Math.max(0, profile);
+      const nx = -dy / magnitude;
+      const ny = dx / magnitude;
+      left.push({ x: point.x + nx * halfWidth, y: point.y + ny * halfWidth });
+      right.push({ x: point.x - nx * halfWidth, y: point.y - ny * halfWidth });
+    }
+    return left.concat(right.reverse());
+  }
+
+  function tracePhaseTwoMayhemPolygon(g, polygon) {
+    g.beginPath();
+    for (let index = 0; index < polygon.length; index++) {
+      const point = polygon[index];
+      if (index === 0) g.moveTo(point.x, point.y);
+      else g.lineTo(point.x, point.y);
+    }
+    g.closePath();
+  }
+
+  function renderPhaseTwoMayhemBlade(cx, cy, angle, growth, seed) {
+    if (growth <= 0.01) return;
+    const polygon = phaseTwoMayhemBladePolygon(cx, cy, angle, growth);
+    ctx.save();
+    ctx.lineJoin = 'round';
+    tracePhaseTwoMayhemPolygon(ctx, polygon);
+    ctx.fillStyle = '#030305';
+    ctx.shadowColor = 'rgba(222, 12, 24, 0.38)';
+    ctx.shadowBlur = 7;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#d31420';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.clip();
+    const length = PHASE2_MAYHEM_BLADE_LENGTH * growth;
+    for (let index = 0; index < 3; index++) {
+      const angularOffset = (index - 1) * 0.012 + Math.sin(seed + index * 2.7) * 0.003;
+      const startAngle = angle + angularOffset;
+      const controlAngle = angle - PHASE2_MAYHEM_BLADE_SWEEP * 0.24 + angularOffset;
+      const endAngle = angle - PHASE2_MAYHEM_BLADE_SWEEP * 0.78 + angularOffset;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(startAngle) * 18, cy + Math.sin(startAngle) * 18);
+      ctx.quadraticCurveTo(
+        cx + Math.cos(controlAngle) * length * 0.48,
+        cy + Math.sin(controlAngle) * length * 0.48,
+        cx + Math.cos(endAngle) * length * (0.76 + index * 0.045),
+        cy + Math.sin(endAngle) * length * (0.76 + index * 0.045)
+      );
+      ctx.strokeStyle = index % 2
+        ? 'rgba(118, 8, 18, 0.30)'
+        : 'rgba(215, 210, 198, 0.07)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function renderPhaseTwoMayhemShadow(cx, cy, angle, growth) {
+    if (growth <= 0.01) return;
+    const polygon = phaseTwoMayhemBladePolygon(
+      cx,
+      cy,
+      angle + PHASE2_MAYHEM_SHADOW_LEAD,
+      growth,
+      true
+    );
+    ctx.save();
+    ctx.lineJoin = 'round';
+    tracePhaseTwoMayhemPolygon(ctx, polygon);
+    ctx.fillStyle = 'rgba(34, 5, 48, 0.52)';
+    ctx.shadowColor = 'rgba(74, 20, 96, 0.42)';
+    ctx.shadowBlur = 8;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(94, 42, 118, 0.34)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function renderPhaseTwoMayhem() {
+    const pattern = phase2MayhemPattern;
+    const under = pattern && pattern.underPattern;
+    if (!under || under.type !== 'quadrantFans') return;
+    const hubGrowth = easeOutCubic(clamp01(under.elapsed / PHASE2_MAYHEM_HUB_FORM_MS));
+    const firstGrowth = easeOutCubic(clamp01(
+      (under.elapsed - PHASE2_MAYHEM_HUB_FORM_MS) / PHASE2_MAYHEM_BLADE_FORM_MS
+    ));
+    const secondStart = PHASE2_MAYHEM_HUB_FORM_MS + PHASE2_MAYHEM_TWO_BLADE_MS;
+    const secondGrowth = easeOutCubic(clamp01(
+      (under.elapsed - secondStart) / PHASE2_MAYHEM_BLADE_FORM_MS
+    ));
+    const centers = phaseTwoMayhemFanCenters(under);
+    ctx.save();
+    for (let index = 0; index < centers.length; index++) {
+      const center = centers[index];
+      const fan = under.fans[index];
+      for (let bladeIndex = 0; bladeIndex < PHASE2_MAYHEM_BLADE_OFFSETS.length; bladeIndex++) {
+        renderPhaseTwoMayhemShadow(
+          center.x,
+          center.y,
+          fan.angle + PHASE2_MAYHEM_BLADE_OFFSETS[bladeIndex],
+          bladeIndex < 2 ? firstGrowth : secondGrowth
+        );
+      }
+    }
+    for (let index = 0; index < centers.length; index++) {
+      const center = centers[index];
+      const fan = under.fans[index];
+      for (let bladeIndex = 0; bladeIndex < PHASE2_MAYHEM_BLADE_OFFSETS.length; bladeIndex++) {
+        renderPhaseTwoMayhemBlade(
+          center.x,
+          center.y,
+          fan.angle + PHASE2_MAYHEM_BLADE_OFFSETS[bladeIndex],
+          bladeIndex < 2 ? firstGrowth : secondGrowth,
+          under.seed + index * 4 + bladeIndex
+        );
+      }
+
+      const radius = PHASE2_MAYHEM_HUB_RADIUS * hubGrowth;
+      if (radius <= 0.01) continue;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#570611';
+      ctx.shadowColor = 'rgba(220, 10, 24, 0.48)';
+      ctx.shadowBlur = 10;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#df1724';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius * 0.46, 0, Math.PI * 2);
+      ctx.fillStyle = '#030305';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(116, 7, 16, 0.88)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (under.elapsed < PHASE2_MAYHEM_HUB_FORM_MS) {
+        const pulse = 1 - clamp01(under.elapsed / PHASE2_MAYHEM_HUB_FORM_MS);
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, radius + pulse * 22, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(220, 16, 28, ${(pulse * 0.68).toFixed(3)})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
       }
     }
     ctx.restore();
@@ -3931,6 +4193,7 @@
     if (!towerActive && !pitfallActive && !doomActive && phase === PHASE.SECOND && phase2Cracks.length) renderPhaseTwoGroundCracks();
     if (!towerActive && !pitfallActive && !doomActive && phase === PHASE.SECOND) renderPhaseTwoFinalTile();
     if (doomActive) renderPhaseTwoDoomFloor();
+    if (phase2MayhemPattern) renderPhaseTwoMayhem();
     drawHero();
     if (towerActive) renderPhaseTwoTowerAim();
     if (pitfallActive) renderPhaseTwoPitfallImpact();
@@ -5257,6 +5520,8 @@
     phase2TowerDebugQueued = false;
     phase2DoomPattern = null;
     phase2DoomDebugQueued = false;
+    phase2MayhemPattern = null;
+    phase2MayhemDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -6992,6 +7257,8 @@
     phase2TowerDebugQueued = false;
     phase2DoomPattern = null;
     phase2DoomDebugQueued = false;
+    phase2MayhemPattern = null;
+    phase2MayhemDebugQueued = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
     entropy = 0;
@@ -8056,6 +8323,7 @@
     phase2PitfallPattern = null;
     phase2TowerPattern = null;
     phase2DoomPattern = null;
+    phase2MayhemPattern = null;
     nextPhase2AttackBeat = phase2DebugClawQueued ? 0 : 2;
     if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
     if (phase2TowerDebugQueued) {
@@ -8064,6 +8332,9 @@
     } else if (phase2DoomDebugQueued) {
       phase2DoomDebugQueued = false;
       beginDebugPhaseTwoDoomPattern();
+    } else if (phase2MayhemDebugQueued) {
+      phase2MayhemDebugQueued = false;
+      beginDebugPhaseTwoMayhem();
     } else if (phase2RushDebugQueued) beginDebugPhaseTwoRush();
     else if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
     else if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
@@ -8915,6 +9186,7 @@
   }
 
   function phaseTwoDoomSpawnNote(pattern, hitBeat, spawnBeat) {
+    if (pattern.spawnedNotes >= PHASE2_DOOM_NOTE_LIMIT) return false;
     let point = phaseTwoDoomAvoidSzago(pattern, phaseTwoDoomNextPoint(pattern));
     for (let attempt = 0; attempt < 4; attempt++) {
       if (!pattern.lastTarget || Math.hypot(point.x - pattern.lastTarget.x, point.y - pattern.lastTarget.y) > pattern.squareSize * 1.25) break;
@@ -8931,7 +9203,10 @@
       judged: false,
       shakeAge: 0,
     });
+    pattern.spawnedNotes++;
+    if (pattern.spawnedNotes >= PHASE2_DOOM_NOTE_LIMIT) pattern.nextHitBeat = Infinity;
     playBossSfx('phase2TileCharge');
+    return true;
   }
 
   function phaseTwoDoomBeginHop(pattern, note) {
@@ -8964,9 +9239,18 @@
     });
   }
 
+  function phaseTwoDoomCompleteNote(pattern) {
+    pattern.resolvedNotes++;
+    if (pattern.resolvedNotes >= PHASE2_DOOM_NOTE_LIMIT) {
+      pattern.endingRequested = true;
+      pattern.nextHitBeat = Infinity;
+    }
+  }
+
   function phaseTwoDoomPunish(pattern, note, label) {
     if (!note || note.judged) return;
     note.judged = true;
+    phaseTwoDoomCompleteNote(pattern);
     phaseTwoDoomAddSlash(pattern, hero.x, hero.y, true);
     phaseTwoDoomAddJudgment(pattern, note.x, note.y, label, 'miss');
     vp = Math.max(0, vp - PHASE2_DOOM_PUNISH_VP);
@@ -8992,6 +9276,7 @@
       ? 'perfect'
       : absoluteTiming <= PHASE2_DOOM_GREAT_MS ? 'great' : 'ok';
     note.judged = true;
+    phaseTwoDoomCompleteNote(pattern);
     const abandonedSquare = pattern.currentSquare ? { ...pattern.currentSquare } : null;
     if (!pattern.debrisSquare) {
       phaseTwoDoomAddSlash(
@@ -9050,6 +9335,74 @@
     return true;
   }
 
+  function beginPhaseTwoDoomEnding(pattern) {
+    if (!pattern || pattern.mode !== 'active') return false;
+    const square = pattern.currentSquare || { x: hero.x, y: hero.y, seed: pattern.random() * Math.PI * 2 };
+    pattern.mode = 'ending-center';
+    pattern.elapsed = 0;
+    pattern.notes = [];
+    pattern.slashes = [];
+    pattern.judgments = [];
+    pattern.debrisSquare = null;
+    pattern.currentSquare = { ...square };
+    pattern.centerFromX = square.x;
+    pattern.centerFromY = square.y;
+    pattern.heroCenterFromX = hero.x;
+    pattern.heroCenterFromY = hero.y;
+    pattern.centerTargetX = canvas.width / 2;
+    pattern.centerTargetY = canvas.height / 2;
+    keys.clear();
+    return true;
+  }
+
+  function beginPhaseTwoDoomEndSlam(pattern) {
+    if (!pattern || pattern.mode !== 'ending-center') return false;
+    pattern.mode = 'ending-slam';
+    pattern.elapsed = 0;
+    const board = getBoardRect();
+    const target = worldPointToViewport(pattern.centerTargetX, pattern.centerTargetY, board);
+    const started = phase2Avatar && typeof phase2Avatar.slamTo === 'function' &&
+      phase2Avatar.slamTo(target.x, target.y, PHASE2_DOOM_ENTRY_SLAM_MS);
+    if (!started) resolvePhaseTwoDoomEndSlam();
+    return true;
+  }
+
+  function resolvePhaseTwoDoomEndSlam() {
+    const pattern = phase2DoomPattern;
+    if (!pattern || pattern.mode !== 'ending-slam') return;
+    const startSize = phaseTwoDoomNoteSize(pattern);
+    restorePhaseTwoSquareArena(true);
+    phase2DoomPattern = pattern;
+    pattern.mode = 'ending-expand';
+    pattern.elapsed = 0;
+    pattern.squareSize = startSize;
+    pattern.endSquareStartSize = startSize;
+    pattern.endSquareTargetSize = BOARD + BORDER * 2;
+    pattern.currentSquare = {
+      x: BOARD / 2,
+      y: BOARD / 2,
+      seed: pattern.currentSquare ? pattern.currentSquare.seed : pattern.random() * Math.PI * 2,
+    };
+    hero.x = BOARD / 2;
+    hero.y = BOARD / 2;
+    heroMove.x = 0;
+    heroMove.y = 0;
+  }
+
+  function finishPhaseTwoDoomEnding(pattern) {
+    if (!pattern || phase2DoomPattern !== pattern) return;
+    phase2DoomPattern = null;
+    phase2ClawPatternStopped = true;
+    phase2BurstActive = false;
+    nextPhase2AttackBeat = Infinity;
+    keys.clear();
+    const help = overlay && overlay.querySelector('.aether-boss2d-help');
+    if (help && help.firstChild) help.firstChild.nodeValue = 'WASD / ARROWS MOVE';
+    if (!startPhaseTwoMayhemPattern() && phase2Avatar && typeof phase2Avatar.dashHome === 'function') {
+      phase2Avatar.dashHome(getBoardRect(), PHASE2_BOSS_RETURN_DASH_MS);
+    }
+  }
+
   function activatePhaseTwoDoomPattern(pattern) {
     pattern.mode = 'active';
     pattern.elapsed = 0;
@@ -9099,6 +9452,9 @@
       judgments: [],
       hop: null,
       nextId: 1,
+      spawnedNotes: 0,
+      resolvedNotes: 0,
+      endingRequested: false,
       random: mulberry32(0xd0012026),
       debrisSquare: null,
       lastDebrisDamageBeat: -1,
@@ -9117,6 +9473,38 @@
       if (progress >= 1) activatePhaseTwoDoomPattern(pattern);
       return;
     }
+
+    if (pattern.mode === 'ending-center') {
+      const progress = clamp01(pattern.elapsed / PHASE2_DOOM_END_CENTER_MS);
+      const travel = smoothstep(progress);
+      pattern.currentSquare.x = pattern.centerFromX +
+        (pattern.centerTargetX - pattern.centerFromX) * travel;
+      pattern.currentSquare.y = pattern.centerFromY +
+        (pattern.centerTargetY - pattern.centerFromY) * travel;
+      hero.x = pattern.heroCenterFromX + (pattern.centerTargetX - pattern.heroCenterFromX) * travel;
+      hero.y = pattern.heroCenterFromY + (pattern.centerTargetY - pattern.heroCenterFromY) * travel -
+        Math.sin(progress * Math.PI) * 10;
+      heroSquash = Math.sin(progress * Math.PI) * 0.08;
+      if (progress >= 1) {
+        hero.x = pattern.centerTargetX;
+        hero.y = pattern.centerTargetY;
+        heroSquash = 0;
+        beginPhaseTwoDoomEndSlam(pattern);
+      }
+      return;
+    }
+    if (pattern.mode === 'ending-slam') return;
+    if (pattern.mode === 'ending-expand') {
+      const progress = clamp01(pattern.elapsed / PHASE2_DOOM_END_EXPAND_MS);
+      const growth = shockwaveArenaProgress(progress);
+      pattern.squareSize = pattern.endSquareStartSize +
+        (pattern.endSquareTargetSize - pattern.endSquareStartSize) * growth;
+      hero.x = BOARD / 2;
+      hero.y = BOARD / 2;
+      if (progress >= 1) finishPhaseTwoDoomEnding(pattern);
+      return;
+    }
+    if (pattern.mode !== 'active') return;
 
     if (pattern.hop) {
       const hop = pattern.hop;
@@ -9163,8 +9551,14 @@
     pattern.slashes = pattern.slashes.filter((slash) => slash.age < slash.duration);
     pattern.judgments = pattern.judgments.filter((judgment) => judgment.age < judgment.duration);
 
+    if (pattern.endingRequested && !pattern.hop && pattern.slashes.length === 0) {
+      beginPhaseTwoDoomEnding(pattern);
+      return;
+    }
+
     const currentBeat = phaseTwoDoomBeatNow();
-    while (currentBeat >= pattern.nextHitBeat - PHASE2_DOOM_APPROACH_BEATS) {
+    while (pattern.spawnedNotes < PHASE2_DOOM_NOTE_LIMIT &&
+           currentBeat >= pattern.nextHitBeat - PHASE2_DOOM_APPROACH_BEATS) {
       phaseTwoDoomSpawnNote(
         pattern,
         pattern.nextHitBeat,
@@ -9172,6 +9566,178 @@
       );
       pattern.nextHitBeat += PHASE2_DOOM_NOTE_BEATS;
     }
+  }
+
+  function beginPhaseTwoMayhemUnderPattern(pattern) {
+    const choices = PHASE2_MAYHEM_UNDER_PATTERNS.filter((type) =>
+      PHASE2_MAYHEM_UNDER_PATTERNS.length === 1 || type !== pattern.lastType);
+    const type = choices[Math.floor(pattern.random() * choices.length)];
+    pattern.lastType = type;
+    pattern.underPattern = {
+      type,
+      elapsed: 0,
+      seed: pattern.random() * Math.PI * 2,
+      firstSoundPlayed: false,
+      secondSoundPlayed: false,
+      orbitSoundPlayed: false,
+      orbitAngle: 0,
+      fans: Array.from({ length: 4 }, (_, index) => ({
+        angle: pattern.random() * Math.PI * 2,
+        radiansPerBeat: 0.34 + index * 0.0225 + pattern.random() * 0.010,
+      })),
+    };
+    playBossSfx('phase2TileCharge');
+  }
+
+  function phaseTwoMayhemBladeGrowth(under, secondPair) {
+    const start = PHASE2_MAYHEM_HUB_FORM_MS +
+      (secondPair ? PHASE2_MAYHEM_TWO_BLADE_MS : 0);
+    return easeOutCubic(clamp01((under.elapsed - start) / PHASE2_MAYHEM_BLADE_FORM_MS));
+  }
+
+  function phaseTwoMayhemHeroContact(under) {
+    const bodyCenter = heroBodyCenterWorld();
+    const damagePoints = [];
+    for (let row = 0; row < 3; row++) {
+      for (let column = 0; column < 3; column++) {
+        damagePoints.push({
+          x: bodyCenter.x - 2.5 + column * 2.5,
+          y: bodyCenter.y - 2.5 + row * 2.5,
+        });
+      }
+    }
+    const rewardPoints = heroBodyWorldRewardPoints();
+    const firstGrowth = phaseTwoMayhemBladeGrowth(under, false);
+    const secondGrowth = phaseTwoMayhemBladeGrowth(under, true);
+    const centers = phaseTwoMayhemFanCenters(under);
+    let touchesShadow = false;
+    for (let index = 0; index < centers.length; index++) {
+      const center = centers[index];
+      const fan = under.fans[index];
+      for (let bladeIndex = 0; bladeIndex < PHASE2_MAYHEM_BLADE_OFFSETS.length; bladeIndex++) {
+        const growth = bladeIndex < 2 ? firstGrowth : secondGrowth;
+        if (growth < 0.72) continue;
+        const bladeAngle = fan.angle + PHASE2_MAYHEM_BLADE_OFFSETS[bladeIndex];
+        const polygon = phaseTwoMayhemBladePolygon(
+          center.x,
+          center.y,
+          bladeAngle,
+          growth
+        );
+        if (damagePoints.some((point) => pointInPoly(point.x, point.y, polygon))) {
+          return { blade: true, shadow: false };
+        }
+        const shadowPolygon = phaseTwoMayhemBladePolygon(
+          center.x,
+          center.y,
+          bladeAngle + PHASE2_MAYHEM_SHADOW_LEAD,
+          growth,
+          true
+        );
+        if (!touchesShadow && rewardPoints.some((point) =>
+          pointInPoly(point.x, point.y, shadowPolygon))) {
+          touchesShadow = true;
+        }
+      }
+    }
+    return { blade: false, shadow: touchesShadow };
+  }
+
+  function updatePhaseTwoMayhemPattern(dt) {
+    const pattern = phase2MayhemPattern;
+    if (!pattern) return;
+    if (!pattern.underPattern) beginPhaseTwoMayhemUnderPattern(pattern);
+    const under = pattern.underPattern;
+    under.elapsed += dt;
+    const beatStep = dt / Math.max(1, beatMs);
+    for (const fan of under.fans) {
+      fan.angle = (fan.angle + fan.radiansPerBeat * beatStep) % (Math.PI * 2);
+    }
+    if (!under.firstSoundPlayed && under.elapsed >= PHASE2_MAYHEM_HUB_FORM_MS) {
+      under.firstSoundPlayed = true;
+      playBossSfx('phase2SwordRing');
+    }
+    const secondStart = PHASE2_MAYHEM_HUB_FORM_MS + PHASE2_MAYHEM_TWO_BLADE_MS;
+    if (!under.secondSoundPlayed && under.elapsed >= secondStart) {
+      under.secondSoundPlayed = true;
+      playBossSfx('phase2SwordRing');
+    }
+    const orbitStart = secondStart + PHASE2_MAYHEM_FOUR_BLADE_MS;
+    if (under.elapsed >= orbitStart) {
+      const orbitDt = Math.min(dt, under.elapsed - orbitStart);
+      under.orbitAngle -= PHASE2_MAYHEM_ORBIT_RADIANS_PER_BEAT *
+        orbitDt / Math.max(1, beatMs);
+      if (!under.orbitSoundPlayed) {
+        under.orbitSoundPlayed = true;
+        playBossSfx('phase2Whirlpool');
+      }
+    }
+    const contact = under.type === 'quadrantFans'
+      ? phaseTwoMayhemHeroContact(under)
+      : { blade: false, shadow: false };
+    if (contact.blade) {
+      damagePlayer(DAMAGE_PER_BEAT * PHASE2_MAYHEM_BLADE_DAMAGE_SCALE * beatStep);
+      const damageStep = Math.floor(
+        (beatIndex + beatPhase / Math.max(1, beatMs)) * BOSS_SFX_DAMAGE_STEPS_PER_BEAT
+      );
+      if (damageStep !== pattern.lastDamageStep) {
+        pattern.lastDamageStep = damageStep;
+        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+      }
+      if (hp <= 0) die();
+    } else {
+      pattern.lastDamageStep = -1;
+      if (contact.shadow) addVp(VP_PER_BEAT * beatStep, true);
+    }
+  }
+
+  function startPhaseTwoMayhemPattern() {
+    if (!phase2CombatStarted || !canvas) return false;
+    restorePhaseTwoSquareArena(true);
+    phase2PitfallPattern = null;
+    phase2TowerPattern = null;
+    phase2DoomPattern = null;
+    phase2GridSpecial = null;
+    phase2TileRuinPattern = null;
+    phase2SwordRingPattern = null;
+    phase2Attacks = [];
+    phase2Cracks = [];
+    phase2ClawRushMode = false;
+    phase2ClawPatternStopped = true;
+    phase2RushPhaseComplete = true;
+    phase2BurstActive = false;
+    nextPhase2AttackBeat = Infinity;
+    phase2MayhemPattern = {
+      random: mulberry32(0x6d617968),
+      lastType: null,
+      underPattern: null,
+      lastDamageStep: -1,
+    };
+    beginPhaseTwoMayhemUnderPattern(phase2MayhemPattern);
+    keys.clear();
+    const help = overlay && overlay.querySelector('.aether-boss2d-help');
+    if (help && help.firstChild) help.firstChild.nodeValue = 'WASD / ARROWS MOVE';
+    if (phase2Avatar && typeof phase2Avatar.dashHome === 'function') {
+      phase2Avatar.dashHome(getBoardRect(), PHASE2_BOSS_RETURN_DASH_MS);
+    }
+    return true;
+  }
+
+  function beginDebugPhaseTwoMayhem() {
+    phase2MayhemDebugQueued = false;
+    phase2MayhemPattern = null;
+    return startPhaseTwoMayhemPattern();
+  }
+
+  function debugPhaseTwoMayhem() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    phase2MayhemDebugQueued = true;
+    if (!phase2AvatarStarted) skipPhaseTwoTransition();
+    if (phase2CombatStarted && phase2MayhemDebugQueued) beginDebugPhaseTwoMayhem();
   }
 
   function spawnPhaseTwoRushEye() {
@@ -10943,6 +11509,9 @@
             if (phase2TowerPattern && phase2TowerPattern.mode === 'doom-slam') {
               resolvePhaseTwoDoomSlam();
             }
+            if (phase2DoomPattern && phase2DoomPattern.mode === 'ending-slam') {
+              resolvePhaseTwoDoomEndSlam();
+            }
             if (phase2PitfallPattern && phase2PitfallPattern.mode === 'ram') {
               resolvePhaseTwoHexRamImpact(phase2PitfallPattern);
             }
@@ -10971,6 +11540,11 @@
         }
         if (phase2PitfallPattern) {
           updatePhaseTwoPitfallPattern(dt);
+          updateCombat(dt);
+          return;
+        }
+        if (phase2MayhemPattern) {
+          updatePhaseTwoMayhemPattern(dt);
           updateCombat(dt);
           return;
         }
@@ -14721,6 +15295,8 @@
     phase2TowerDebugQueued = false;
     phase2DoomPattern = null;
     phase2DoomDebugQueued = false;
+    phase2MayhemPattern = null;
+    phase2MayhemDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
