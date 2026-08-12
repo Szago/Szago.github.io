@@ -2539,9 +2539,10 @@
   }
 
   function phaseTwoGridTimeline(special) {
-    const impactAt = PHASE2_GRID_RECALL_MS + special.channelMs;
-    const activeAt = impactAt + PHASE2_GRID_IMPACT_MS;
-    return { impactAt, activeAt };
+    return {
+      channelP: clamp01(special.channelAgeBeats / PHASE2_GRID_CHANNEL_BEATS),
+      impactAge: special.struck ? special.impactAge : -1,
+    };
   }
 
   function buildPhaseTwoGridCutBuffers(special) {
@@ -2702,7 +2703,7 @@
     const special = phase2GridSpecial;
     if (!special || !special.struck) return;
     const timeline = phaseTwoGridTimeline(special);
-    const opening = smoothstep((special.elapsed - timeline.impactAt) / 130);
+    const opening = smoothstep(timeline.impactAge / 130);
     const cut = opening;
     if (cut <= 0.001) return;
     if (!special.cutMask || special.cutMask.width !== canvas.width || special.cutMask.height !== canvas.height) {
@@ -2770,7 +2771,7 @@
   }
 
   function phaseTwoPitfallProjection(platform) {
-    const depth = platform.age / platform.duration;
+    const depth = platform.ageBeats / platform.travelBeats;
     const hitT = clamp01(depth / PHASE2_PITFALL_HIT_DEPTH);
     const approach = easeInQuad(hitT);
     const passed = clamp01((depth - PHASE2_PITFALL_HIT_DEPTH) / (1.16 - PHASE2_PITFALL_HIT_DEPTH));
@@ -2817,7 +2818,7 @@
       ? 1 - smoothstep(platform.hitAge / 220)
       : 0;
     const safeFlash = platform.resolved && !platform.hit
-      ? 1 - smoothstep((platform.age / platform.duration - PHASE2_PITFALL_HIT_DEPTH) / 0.10)
+      ? 1 - smoothstep((platform.ageBeats / platform.travelBeats - PHASE2_PITFALL_HIT_DEPTH) / 0.10)
       : 0;
     const thickness = Math.max(2, projection.scale * 9);
     ctx.save();
@@ -4292,7 +4293,7 @@
   function phaseTwoTileRuinContains(vx, vy) {
     const pattern = phase2TileRuinPattern;
     if (!pattern || pattern.state !== 'fire') return false;
-    const fireP = Math.min(1, pattern.elapsed / (beatMs * PHASE2_TILE_RUIN_FIRE_BEATS));
+    const fireP = Math.min(1, pattern.elapsedBeats / PHASE2_TILE_RUIN_FIRE_BEATS);
     const reach = easeInQuad(Math.min(1, fireP / 0.72));
     for (const index of pattern.targets) {
       const rect = phaseTwoTileViewportRect(index);
@@ -7189,7 +7190,8 @@
     dashPhaseTwoAvatarToBase();
     phase2GridSpecial = {
       elapsed: 0,
-      channelMs: beatMs * PHASE2_GRID_CHANNEL_BEATS,
+      channelAgeBeats: 0,
+      impactAge: -1,
       layout: makePhaseTwoGridLayout(),
       struck: false,
       settled: false,
@@ -7257,17 +7259,20 @@
     const special = phase2GridSpecial;
     if (!special) return;
     special.elapsed += dt;
-    const impactAt = PHASE2_GRID_RECALL_MS + special.channelMs;
-    const activeAt = impactAt + PHASE2_GRID_IMPACT_MS;
-    if (!special.struck && special.elapsed >= impactAt) {
+    if (!special.struck && special.elapsed >= PHASE2_GRID_RECALL_MS) {
+      special.channelAgeBeats += dt / beatMs;
+    }
+    if (!special.struck && special.channelAgeBeats >= PHASE2_GRID_CHANNEL_BEATS) {
       special.struck = true;
+      special.impactAge = 0;
       playBossSfx('phase2GridImpact');
       special.tileMode = true;
       keys.clear();
       const tile = nearestPhaseTwoGridTile(special.layout, hero.x, hero.y);
       beginPhaseTwoGridHop(tile, PHASE2_GRID_IMPACT_MS);
     }
-    if (!special.settled && special.elapsed >= activeAt) {
+    if (special.struck) special.impactAge += dt;
+    if (!special.settled && special.struck && special.impactAge >= PHASE2_GRID_IMPACT_MS) {
       special.settled = true;
       nextPhase2AttackBeat = beatIndex + 1;
     }
@@ -7370,6 +7375,7 @@
       waveSize: 1,
       wavesAtSize: 0,
       elapsed: 0,
+      elapsedBeats: 0,
       targets,
       impacted: false,
       seed: Math.random() * 1000,
@@ -7444,6 +7450,7 @@
     invalidatePhaseTwoGridFloor(special);
     pattern.state = 'finalMove';
     pattern.elapsed = 0;
+    pattern.elapsedBeats = 0;
     keys.clear();
   }
 
@@ -7531,8 +7538,7 @@
     const swordScale = Math.max(0.48, Math.min(0.66, ringRadius / 390));
     let distance = ringRadius;
     if (index === pattern.activeIndex && pattern.state === 'strike') {
-      const strikeMs = phaseTwoSwordDuration(PHASE2_SWORD_STRIKE_MS, pattern, true);
-      const strikeP = easeInQuad(Math.min(1, pattern.elapsed / strikeMs));
+      const strikeP = easeInQuad(Math.min(1, pattern.elapsed / PHASE2_SWORD_STRIKE_MS));
       distance *= 1 - strikeP;
     }
     const swordX = center.x + direction.x * distance;
@@ -7688,6 +7694,11 @@
     pattern.bossPrevContactX = pattern.bossContactX;
     pattern.bossPrevContactY = pattern.bossContactY;
     const duration = phaseTwoSwordDuration(PHASE2_BOSS_SLAM_MS, pattern, false);
+    pattern.bossSlamFlashDuration = phaseTwoSwordDuration(
+      PHASE2_SWORD_PARRY_FLASH_MS,
+      pattern,
+      false
+    );
     return phase2Avatar.slamTo(center.x, center.y, duration);
   }
 
@@ -7811,31 +7822,26 @@
     if (!pattern) return;
     for (const slot of pattern.slots) {
       if (slot.status !== 'respawning') continue;
-      slot.respawnAge += dt;
-      const respawnMs = phaseTwoSwordDuration(
-        PHASE2_SWORD_RESPAWN_DELAY_MS + PHASE2_SWORD_RESPAWN_FORM_MS,
-        pattern,
-        false
-      );
-      if (slot.respawnAge >= respawnMs) {
+      slot.respawnAge += dt / phaseTwoSwordDuration(1, pattern, false);
+      if (slot.respawnAge >= PHASE2_SWORD_RESPAWN_DELAY_MS + PHASE2_SWORD_RESPAWN_FORM_MS) {
         slot.status = 'ready';
         slot.respawnAge = 0;
       }
     }
     pattern.guardSwapAge += dt;
-    if (pattern.parryFlashAge >= 0) pattern.parryFlashAge += dt;
-    pattern.elapsed += dt;
+    if (pattern.parryFlashAge >= 0) {
+      pattern.parryFlashAge += dt / phaseTwoSwordDuration(1, pattern, true);
+    }
+    const acceleratedState = pattern.state === 'flash' || pattern.state === 'strike' ||
+      pattern.state === 'impact' || pattern.state === 'waiting';
+    pattern.elapsed += dt / phaseTwoSwordDuration(1, pattern, acceleratedState);
     if (pattern.state === 'bossSlam') {
       updatePhaseTwoBossSlam(pattern, dt);
       return;
     }
-    const formMs = phaseTwoSwordDuration(PHASE2_SWORD_RING_FORM_MS, pattern, false);
-    const flashMs = phaseTwoSwordDuration(PHASE2_SWORD_FLASH_MS, pattern, true);
-    const strikeMs = phaseTwoSwordDuration(PHASE2_SWORD_STRIKE_MS, pattern, true);
-    const impactMs = phaseTwoSwordDuration(PHASE2_SWORD_IMPACT_MS, pattern, true);
-    if (pattern.state === 'forming' && pattern.elapsed >= formMs) {
+    if (pattern.state === 'forming' && pattern.elapsed >= PHASE2_SWORD_RING_FORM_MS) {
       beginPhaseTwoSwordAttack(pattern, 0);
-    } else if (pattern.state === 'flash' && pattern.elapsed >= flashMs) {
+    } else if (pattern.state === 'flash' && pattern.elapsed >= PHASE2_SWORD_FLASH_MS) {
       pattern.state = 'strike';
       pattern.elapsed = 0;
     } else if (pattern.state === 'strike') {
@@ -7847,10 +7853,10 @@
       if (geometry && phaseTwoSwordTouchesGuard(geometry)) {
         resolvePhaseTwoSwordStrike(pattern, 'parry', geometry);
       } else if (geometry && (phaseTwoSwordTouchesPlayer(geometry) ||
-                 pattern.elapsed >= strikeMs)) {
+                 pattern.elapsed >= PHASE2_SWORD_STRIKE_MS)) {
         resolvePhaseTwoSwordStrike(pattern, 'hit', geometry);
       }
-    } else if (pattern.state === 'impact' && pattern.elapsed >= impactMs) {
+    } else if (pattern.state === 'impact' && pattern.elapsed >= PHASE2_SWORD_IMPACT_MS) {
       const slot = pattern.slots[pattern.activeIndex];
       if (pattern.finalClockwise) {
         if (slot) slot.status = 'spent';
@@ -7891,8 +7897,7 @@
         ? PHASE2_SWORD_DOUBLE_GAP_MS
         : PHASE2_SWORD_NEXT_MS;
       pattern.elapsed = 0;
-    } else if (pattern.state === 'waiting' && pattern.elapsed >=
-               phaseTwoSwordDuration(pattern.nextDelayMs, pattern, true)) {
+    } else if (pattern.state === 'waiting' && pattern.elapsed >= pattern.nextDelayMs) {
       if (!pattern.finalClockwise && pattern.successfulParries >= 8 && pattern.burstRemaining === 0) {
         pattern.burstRemaining = 2;
       }
@@ -7910,6 +7915,7 @@
     const pattern = phase2TileRuinPattern;
     if (!pattern || pattern.state === 'done') return;
     pattern.elapsed += dt;
+    pattern.elapsedBeats += dt / beatMs;
     if (pattern.state === 'finalMove') {
       const finalTile = phase2GridSpecial && phase2GridSpecial.finalTile;
       if (!finalTile) { pattern.state = 'done'; return; }
@@ -7931,24 +7937,26 @@
       return;
     }
     if (pattern.state === 'telegraph') {
-      if (pattern.elapsed >= beatMs * PHASE2_TILE_RUIN_TELEGRAPH_BEATS) {
+      if (pattern.elapsedBeats >= PHASE2_TILE_RUIN_TELEGRAPH_BEATS) {
         pattern.state = 'fire';
         pattern.elapsed = 0;
+        pattern.elapsedBeats = 0;
         pattern.impacted = false;
       }
     } else if (pattern.state === 'fire') {
-      const fireP = pattern.elapsed / (beatMs * PHASE2_TILE_RUIN_FIRE_BEATS);
+      const fireP = pattern.elapsedBeats / PHASE2_TILE_RUIN_FIRE_BEATS;
       if (!pattern.impacted && fireP >= 0.72) {
         pattern.impacted = true;
         playBossSfx('phase2TileBreak');
         removePhaseTwoGridTiles(pattern.targets);
       }
-      if (pattern.elapsed >= beatMs * PHASE2_TILE_RUIN_FIRE_BEATS) {
+      if (pattern.elapsedBeats >= PHASE2_TILE_RUIN_FIRE_BEATS) {
         pattern.state = 'rest';
         pattern.elapsed = 0;
+        pattern.elapsedBeats = 0;
       }
     } else if (pattern.state === 'rest' &&
-               pattern.elapsed >= beatMs * PHASE2_TILE_RUIN_REST_BEATS) {
+               pattern.elapsedBeats >= PHASE2_TILE_RUIN_REST_BEATS) {
       const intact = intactPhaseTwoGridTiles();
       if (intact.length <= 1) {
         startPhaseTwoFinalTileMove(intact[0]);
@@ -7961,6 +7969,7 @@
         pattern.targets = choosePhaseTwoTileRuinTargets(pattern.waveSize);
         pattern.state = 'telegraph';
         pattern.elapsed = 0;
+        pattern.elapsedBeats = 0;
         pattern.impacted = false;
         playBossSfx('phase2TileCharge');
       }
@@ -9268,7 +9277,7 @@
     const makeClaw = (turnSign, waitBeats) => ({
       type: 'shadowClaw',
       state: waitBeats > 0 ? 'waiting' : 'telegraph',
-      waitTime: 0,
+      waitAgeBeats: 0,
       waitBeats,
       x0: 0, y0: 0, c1x: 0, c1y: 0, c2x: 0, c2y: 0, x1: 0, y1: 0,
       width: Math.max(52, Math.min(78, Math.min(board.width, board.height) * 0.10)) * widthScale,
@@ -9288,7 +9297,7 @@
         (phase2ClawRushMode ? PHASE2_CLAW_RUSH_TRAVEL_SCALE : 1),
       holdBeats: PHASE2_CLAW_HOLD_BEATS * timeScale *
         (phase2ClawRushMode ? PHASE2_CLAW_RUSH_HOLD_SCALE : 1),
-      holdTime: 0,
+      holdAgeBeats: 0,
       fire: 0,
       fireBeats: PHASE2_CLAW_FIRE_BEATS * timeScale,
       restBeats: PHASE2_CLAW_REST_BEATS * timeScale,
@@ -9385,8 +9394,8 @@
   function updatePhaseTwoAttacks(dt) {
     for (const a of phase2Attacks) {
       if (a.state === 'waiting') {
-        a.waitTime += dt;
-        if (a.waitTime >= beatMs * a.waitBeats) {
+        a.waitAgeBeats += dt / beatMs;
+        if (a.waitAgeBeats >= a.waitBeats) {
           a.state = 'telegraph';
           retargetPhaseTwoShadowClaw(a, getBoardRect());
         }
@@ -9398,11 +9407,11 @@
           a.stretch = 1;
           extendPhaseTwoClawPath(a, 1);
           a.state = 'armed';
-          a.holdTime = 0;
+          a.holdAgeBeats = 0;
         }
       } else if (a.state === 'armed') {
-        a.holdTime += dt;
-        if (a.holdTime >= beatMs * a.holdBeats) {
+        a.holdAgeBeats += dt / beatMs;
+        if (a.holdAgeBeats >= a.holdBeats) {
           a.state = 'fire';
           a.fire = 0;
           playBossSfx('phase2ClawCut');
@@ -9767,7 +9776,7 @@
   }
 
   function phaseTwoPitfallHeroOnShadowEdge(platform) {
-    const depth = platform.age / platform.duration;
+    const depth = platform.ageBeats / platform.travelBeats;
     if (platform.resolved || depth < 0.10 || depth > PHASE2_PITFALL_HIT_DEPTH) return false;
     const projection = phaseTwoPitfallProjection(platform);
     const threshold = Math.max(5, projection.scale * 9);
@@ -9806,8 +9815,8 @@
     playBossSfx('phase2Plane');
     return {
       id: pattern.nextId++,
-      age: 0,
-      duration: beatMs * PHASE2_PITFALL_TRAVEL_BEATS,
+      ageBeats: 0,
+      travelBeats: PHASE2_PITFALL_TRAVEL_BEATS,
       gaps: [gap],
       seed: random() * 1000,
       resolved: false,
@@ -9844,7 +9853,7 @@
     phase2PitfallPattern = {
       mode: 'dropper',
       elapsed: 0,
-      spawnClock: beatMs * PHASE2_PITFALL_SPAWN_BEATS,
+      spawnBeats: PHASE2_PITFALL_SPAWN_BEATS,
       platforms: [],
       dodgedPlanes: 0,
       ram: null,
@@ -10132,7 +10141,7 @@
 
   function makePhaseTwoHexWall(pattern) {
     const hex = pattern.hex;
-    const interval = beatMs * PHASE2_HEX_WALL_SPAWN_BEATS;
+    const interval = 60000 / PHASE2_BPM_MIN * PHASE2_HEX_WALL_SPAWN_BEATS;
     const reachable = Math.min(
       Math.PI * 0.85,
       PHASE2_HEX_ANGULAR_SPEED * (bpm / PHASE2_BPM_MIN) * interval * 0.92
@@ -10503,8 +10512,10 @@
     const ram = pattern.ram;
     if (!ram) return;
     ram.elapsed += dt;
-    pattern.platforms.forEach((platform) => { platform.age += fallDt * PHASE2_PITFALL_APPROACH_SCALE; });
-    pattern.platforms = pattern.platforms.filter((platform) => platform.age / platform.duration < 1.16);
+    pattern.platforms.forEach((platform) => {
+      platform.ageBeats += fallDt / beatMs * PHASE2_PITFALL_APPROACH_SCALE;
+    });
+    pattern.platforms = pattern.platforms.filter((platform) => platform.ageBeats / platform.travelBeats < 1.16);
     if (!ram.impacted && ram.elapsed >= PHASE2_HEX_RAM_MS * 0.74) {
       resolvePhaseTwoHexRamImpact(pattern);
     }
@@ -10773,20 +10784,22 @@
       return;
     }
     if (pattern.elapsed >= PHASE2_PITFALL_ENTRY_MS * 0.58) {
-      const interval = beatMs * PHASE2_PITFALL_SPAWN_BEATS;
-      pattern.spawnClock = Math.min(interval, pattern.spawnClock + fallDt);
+      pattern.spawnBeats = Math.min(
+        PHASE2_PITFALL_SPAWN_BEATS,
+        pattern.spawnBeats + fallDt / beatMs
+      );
       const incoming = pattern.platforms.some((platform) => !platform.resolved);
-      if (!incoming && pattern.spawnClock >= interval && pattern.platforms.length < 5) {
-        pattern.spawnClock -= interval;
+      if (!incoming && pattern.spawnBeats >= PHASE2_PITFALL_SPAWN_BEATS && pattern.platforms.length < 5) {
+        pattern.spawnBeats -= PHASE2_PITFALL_SPAWN_BEATS;
         pattern.platforms.push(makePhaseTwoPitfallPlatform(pattern));
       }
     }
     let shadowEdges = 0;
     for (const platform of pattern.platforms) {
-      platform.age += fallDt * PHASE2_PITFALL_APPROACH_SCALE;
+      platform.ageBeats += fallDt / beatMs * PHASE2_PITFALL_APPROACH_SCALE;
       if (platform.hitAge >= 0) platform.hitAge += dt;
       if (phaseTwoPitfallHeroOnShadowEdge(platform)) shadowEdges++;
-      const depth = platform.age / platform.duration;
+      const depth = platform.ageBeats / platform.travelBeats;
       if (!platform.resolved && depth >= PHASE2_PITFALL_HIT_DEPTH) {
         platform.resolved = true;
         if (phaseTwoPitfallHeroInGap(platform)) {
@@ -10808,7 +10821,7 @@
     if (shadowEdges > 0) {
       addVp(VP_PER_BEAT * shadowEdges * dt / beatMs, true);
     }
-    pattern.platforms = pattern.platforms.filter((platform) => platform.age / platform.duration < 1.16);
+    pattern.platforms = pattern.platforms.filter((platform) => platform.ageBeats / platform.travelBeats < 1.16);
   }
 
   function beginDebugPhaseTwoPitfall() {
@@ -11278,7 +11291,7 @@
       stretch: 0,
       stretchBeats: TENTACLE_STRETCH_BEATS,
       holdBeats: TENTACLE_HOLD_BEATS,
-      holdTime: 0,
+      holdAgeBeats: 0,
       fire: 0,
       fireBeats: TENTACLE_FIRE_BEATS,
       restBeats: TENTACLE_REST_BEATS,
@@ -11308,7 +11321,7 @@
       stretch: 0,
       stretchBeats: X_ARM_BEATS,
       holdBeats: X_HOLD_BEATS,
-      holdTime: 0,
+      holdAgeBeats: 0,
       fire: 0,
       fireBeats: X_FIRE_BEATS,
       restBeats: X_REST_BEATS,
@@ -11339,7 +11352,7 @@
       beamWidth: BLOOD_BEAM_WIDTH * ((sx + sy) / 2),
       stretch: 0,
       holdBeats: BLOOD_HOLD_BEATS,
-      holdTime: 0,
+      holdAgeBeats: 0,
       fire: 0,
       restBeats: BLOOD_REST_BEATS,
       ...clip,
@@ -11401,7 +11414,7 @@
       stretch: 0,
       stretchBeats: CHECKER_GROW_BEATS,
       holdBeats: CHECKER_HOLD_BEATS,
-      holdTime: 0,
+      holdAgeBeats: 0,
       fire: 0,
       fireBeats: CHECKER_FIRE_BEATS,
       restBeats: CHECKER_REST_BEATS,
@@ -11437,7 +11450,7 @@
       attacks.push({
         type: 'portalCurve',
         state: i === 0 ? 'telegraph' : 'waiting',
-        waitTime: 0,
+        waitAgeBeats: 0,
         waitBeats: i * PORTAL_CURVE_DELAY_BEATS,
         x0: origin.x, y0: origin.y,
         cx: midX + (-dy / len) * bend,
@@ -11450,7 +11463,7 @@
         stretch: 0,
         stretchBeats: PORTAL_CURVE_TELE_BEATS,
         holdBeats: PORTAL_CURVE_HOLD_BEATS,
-        holdTime: 0,
+        holdAgeBeats: 0,
         fire: 0,
         fireBeats: PORTAL_CURVE_FIRE_BEATS,
         restBeats: PORTAL_CURVE_REST_BEATS,
@@ -11499,7 +11512,7 @@
       stretch: 0,
       stretchBeats: SIDE_PORTAL_TELE_BEATS,
       holdBeats: SIDE_PORTAL_HOLD_BEATS,
-      holdTime: 0,
+      holdAgeBeats: 0,
       fire: 0,
       fireBeats: SIDE_PORTAL_FIRE_BEATS,
       restBeats: SIDE_PORTAL_REST_BEATS,
@@ -11530,7 +11543,7 @@
       stretch: 0,            // 0..1 telegraph growth
       stretchBeats: 0.75,    // shorter telegraph: less time to dodge
       holdBeats: ATTACK_HOLD_BEATS,
-      holdTime: 0,
+      holdAgeBeats: 0,
       fire: 0,               // 0..1 beam life
       fireBeats: 1,
       restBeats: ATTACK_REST_BEATS,
@@ -11540,8 +11553,8 @@
   function updateAttacks(dt) {
     for (const a of attacks) {
       if (a.state === 'waiting') {
-        a.waitTime += dt;
-        if (a.waitTime >= beatMs * a.waitBeats) {
+        a.waitAgeBeats += dt / beatMs;
+        if (a.waitAgeBeats >= a.waitBeats) {
           a.state = 'telegraph';
           a.stretch = 0;
           playBossSfx('shadowCharge', {
@@ -11556,15 +11569,15 @@
         if (a.stretch >= 1) {
           a.stretch = 1;
           a.state = 'armed';
-          a.holdTime = 0;
+          a.holdAgeBeats = 0;
         }
       } else if (a.state === 'armed') {
         // Hold fully telegraphed for a fixed, tempo-relative beat fraction, then
         // strike. This decouples the strike from beat boundaries, so the lead
         // time (telegraph + hold) is identical every wave instead of swinging by
         // up to a beat depending on where the telegraph happened to finish.
-        a.holdTime += dt;
-        if (a.holdTime >= beatMs * a.holdBeats) {
+        a.holdAgeBeats += dt / beatMs;
+        if (a.holdAgeBeats >= a.holdBeats) {
           a.state = 'fire';
           a.fire = 0;
           playBossSfx('cultistAttack', { attack: a.type, movement: a.movement });
@@ -11615,10 +11628,8 @@
     const board = getBoardRect();
     if (!board.width || !board.height) return;
     const timeline = phaseTwoGridTimeline(special);
-    const channelP = smoothstep(
-      (special.elapsed - PHASE2_GRID_RECALL_MS) / Math.max(1, special.channelMs)
-    );
-    const impactAge = special.elapsed - timeline.impactAt;
+    const channelP = smoothstep(timeline.channelP);
+    const impactAge = timeline.impactAge;
     if (channelP <= 0 && impactAge < 0) return;
     const layout = special.layout;
     const sx = board.width / canvas.width;
@@ -11788,9 +11799,9 @@
     const fire = pattern.state === 'fire';
     if (!telegraph && !fire) return;
     const progress = telegraph
-      ? Math.min(1, pattern.elapsed / (beatMs * PHASE2_TILE_RUIN_TELEGRAPH_BEATS))
+      ? Math.min(1, pattern.elapsedBeats / PHASE2_TILE_RUIN_TELEGRAPH_BEATS)
       : 1;
-    const fireP = fire ? Math.min(1, pattern.elapsed / (beatMs * PHASE2_TILE_RUIN_FIRE_BEATS)) : 0;
+    const fireP = fire ? Math.min(1, pattern.elapsedBeats / PHASE2_TILE_RUIN_FIRE_BEATS) : 0;
     actx.save();
     for (let i = 0; i < pattern.targets.length; i++) {
       const rect = phaseTwoTileViewportRect(pattern.targets[i]);
@@ -11946,8 +11957,7 @@
 
   function renderPhaseTwoSwordImpactFrame(pattern) {
     if (pattern.state !== 'impact' || !pattern.impactType) return;
-    const impactMs = phaseTwoSwordDuration(PHASE2_SWORD_IMPACT_MS, pattern, true);
-    const p = Math.min(1, pattern.elapsed / impactMs);
+    const p = Math.min(1, pattern.elapsed / PHASE2_SWORD_IMPACT_MS);
     const snap = 1 - smoothstep(p);
     const parry = pattern.impactType === 'parry';
     const x = pattern.impactX;
@@ -12026,7 +12036,8 @@
 
   function renderPhaseTwoBossSlamCue(pattern) {
     if (pattern.state !== 'bossSlam') return;
-    const flashMs = phaseTwoSwordDuration(PHASE2_SWORD_PARRY_FLASH_MS, pattern, false);
+    const flashMs = pattern.bossSlamFlashDuration ||
+      phaseTwoSwordDuration(PHASE2_SWORD_PARRY_FLASH_MS, pattern, false);
     if (pattern.bossSlamFlashAge >= 0 && pattern.bossSlamFlashAge <= flashMs) {
       renderPhaseTwoSwordFlash(
         pattern.bossContactX,
@@ -12076,19 +12087,18 @@
     const ringRadius = geometry.ringRadius;
     const swordScale = geometry.swordScale;
     const forming = pattern.state === 'forming';
-    const formMs = phaseTwoSwordDuration(PHASE2_SWORD_RING_FORM_MS, pattern, false);
-    const formP = forming ? smoothstep(Math.min(1, pattern.elapsed / formMs)) : 1;
+    const formP = forming
+      ? smoothstep(Math.min(1, pattern.elapsed / PHASE2_SWORD_RING_FORM_MS))
+      : 1;
     for (let i = 0; i < PHASE2_SWORD_DIRECTIONS.length; i++) {
       const slot = pattern.slots[i];
       if (!slot || slot.status === 'spent' ||
           (slot.status === 'active' && pattern.state === 'impact')) continue;
       let slotP = 1;
       if (slot.status === 'respawning') {
-        const respawnDelayMs = phaseTwoSwordDuration(PHASE2_SWORD_RESPAWN_DELAY_MS, pattern, false);
-        const respawnFormMs = phaseTwoSwordDuration(PHASE2_SWORD_RESPAWN_FORM_MS, pattern, false);
-        if (slot.respawnAge < respawnDelayMs) continue;
+        if (slot.respawnAge < PHASE2_SWORD_RESPAWN_DELAY_MS) continue;
         slotP = smoothstep(
-          (slot.respawnAge - respawnDelayMs) / respawnFormMs
+          (slot.respawnAge - PHASE2_SWORD_RESPAWN_DELAY_MS) / PHASE2_SWORD_RESPAWN_FORM_MS
         );
       }
       const swordGeometry = phaseTwoSwordRingGeometry(pattern, i);
@@ -12104,13 +12114,12 @@
       const aim = Math.atan2(center.y - y, center.x - x);
       const alpha = formP * slotP;
       if (i === pattern.activeIndex && pattern.state === 'flash') {
-        const flashMs = phaseTwoSwordDuration(PHASE2_SWORD_FLASH_MS, pattern, true);
         renderPhaseTwoSwordEcho(
           x,
           y,
           aim,
           swordScale,
-          Math.min(1, pattern.elapsed / flashMs),
+          Math.min(1, pattern.elapsed / PHASE2_SWORD_FLASH_MS),
           direction,
           pattern.seed + i * 2.1
         );
@@ -12125,11 +12134,14 @@
 
       if (i === pattern.activeIndex && pattern.state === 'strike' &&
           pattern.parryFlashAge >= 0) {
-        const parryFlashMs = phaseTwoSwordDuration(PHASE2_SWORD_PARRY_FLASH_MS, pattern, true);
-        if (pattern.parryFlashAge > parryFlashMs) continue;
+        if (pattern.parryFlashAge > PHASE2_SWORD_PARRY_FLASH_MS) continue;
         const bladeX = swordGeometry.bladeTipX;
         const bladeY = swordGeometry.bladeTipY;
-        renderPhaseTwoSwordFlash(bladeX, bladeY, pattern.parryFlashAge / parryFlashMs);
+        renderPhaseTwoSwordFlash(
+          bladeX,
+          bladeY,
+          pattern.parryFlashAge / PHASE2_SWORD_PARRY_FLASH_MS
+        );
       }
     }
 
@@ -13833,7 +13845,7 @@
   function renderPortalCurve(a) {
     const firing = a.state === 'fire' || a.state === 'done';
     if (a.state === 'waiting') {
-      const beatsWaited = a.waitTime / beatMs;
+      const beatsWaited = a.waitAgeBeats;
       const appear = smoothstep((beatsWaited - a.waitBeats + 0.24) / 0.24);
       if (appear > 0) drawAttackPentagram(a.x0, a.y0, a.radius * (0.45 + appear * 0.55), a.angle, appear, appear);
       return;
