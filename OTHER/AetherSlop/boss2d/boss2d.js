@@ -125,15 +125,21 @@
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         let nearestSq = Infinity;
+        let nearestX = x;
+        let nearestY = y;
         for (const bodyPoint of bodyPixels) {
           const dx = x - bodyPoint.x;
           const dy = y - bodyPoint.y;
           const distanceSq = dx * dx + dy * dy;
-          if (distanceSq < nearestSq) nearestSq = distanceSq;
+          if (distanceSq < nearestSq) {
+            nearestSq = distanceSq;
+            nearestX = bodyPoint.x;
+            nearestY = bodyPoint.y;
+          }
           if (nearestSq <= innerDistanceSq) break;
         }
         if (nearestSq > innerDistanceSq && nearestSq <= outerDistanceSq) {
-          outlinePixels.push({ x, y });
+          outlinePixels.push({ x, y, bodyX: nearestX, bodyY: nearestY });
         }
       }
     }
@@ -443,13 +449,12 @@
   let bossMusicClockBeats = 0;
   let bossMusicClockBpm = BASE_BPM;
   let fightMusicBeatCursor = null;
-  let phaseOneVpSfxStep = -1;
   let phaseOneDamageSfxStep = -1;
   let phaseOneDamageSfxCount = 0;
   let heroDamageFlashAge = Infinity;
   let heroVpFlashAge = Infinity;
   let heroDamageFlashBeat = -1;
-  let heroVpFlashStep = -1;
+  let heroVpFlashSerial = 0;
   let soundDebugHold = null;
   let combatPaused = false;
   let combatPauseButton = null;
@@ -704,14 +709,16 @@
   // Damage and VP both accrue per beat spent inside the relevant hitbox.
   const WRATH_MAX = 200;
   const HP_MAX = 1000;                // testing cap
-  const VP_MAX = 1000;               // testing cap
+  const VP_MAX = 50;
   // Global balance knobs. These scale all incoming damage, player healing,
   // and damage represented by the boss's wrath/entropy gauges.
   const PLAYER_DAMAGE_TAKEN_MULTIPLIER = 0.5;
   const PLAYER_HEALING_MULTIPLIER = 0.5;
   const PLAYER_DAMAGE_DEALT_MULTIPLIER = 0.5;
+  const VP_GAIN_MULTIPLIER = 0.5;
+  const PLAYER_ATTACK_VP_COST = VP_MAX;
   const DAMAGE_PER_BEAT = 50;        // HP lost per beat per overlapping live skill
-  const VP_PER_BEAT = 175;           // VP gained per beat per overlapping shadow
+  const VP_PER_BEAT = VP_MAX * 0.175; // VP gained per beat per overlapping shadow
   const ATTACK_WRATH_GAIN = 10;      // wrath (BPM) the cultist gains when struck
   const ATTACK_HEAL_FRAC = 0.05;     // fraction of max HP the hero recovers on a strike
   const ENTROPY_MAX = 1000;
@@ -872,7 +879,8 @@
   const STRIKE_SLOW = 0.05;          // gameplay speed at the deepest slow-mo
   const FINAL_STRIKE_DURATION = 1900; // extra hitstop before the phase-two fall
   const HERO_DAMAGE_FLASH_MS = 170;
-  const HERO_VP_FLASH_MS = 55;
+  const HERO_VP_FLASH_MS = 168;
+  const HERO_VP_FLASH_INTERVAL_MS = 1000 / 10;
   let hp = HP_MAX;
   let vp = 0;
   let entropy = 0;
@@ -911,11 +919,12 @@
   }
 
   function triggerHeroVpFlash() {
-    const absoluteBeat = beatIndex + beatPhase / Math.max(1, beatMs);
-    const vpStep = Math.floor(absoluteBeat * BOSS_SFX_VP_STEPS_PER_BEAT);
-    if (vpStep === heroVpFlashStep) return;
-    heroVpFlashStep = vpStep;
+    if (heroVpFlashAge < HERO_VP_FLASH_INTERVAL_MS) return;
+    heroVpFlashSerial++;
     heroVpFlashAge = 0;
+    playBossSfx('vp', {
+      progress: vp / VP_MAX,
+    });
   }
 
   function damagePlayer(amount, beatLocked = false) {
@@ -939,9 +948,9 @@
 
   function addVp(amount, fromShadow = false) {
     const before = vp;
-    vp = Math.min(VP_MAX, vp + Math.max(0, amount));
+    vp = Math.min(VP_MAX, vp + Math.max(0, amount) * VP_GAIN_MULTIPLIER);
     if (fromShadow && vp > before) triggerHeroVpFlash();
-    if (before < VP_MAX && vp >= VP_MAX) playBossSfx('vpFull');
+    if (before < PLAYER_ATTACK_VP_COST && vp >= PLAYER_ATTACK_VP_COST) playBossSfx('vpFull');
     return vp - before;
   }
 
@@ -954,7 +963,7 @@
     heroDamageFlashAge = Infinity;
     heroVpFlashAge = Infinity;
     heroDamageFlashBeat = -1;
-    heroVpFlashStep = -1;
+    heroVpFlashSerial = 0;
   }
   const shockwaveArenaProgress = (t) => {
     t = clamp01(t);
@@ -1826,15 +1835,19 @@
       }
     }
 
-    const vpLife = 1 - clamp01(heroVpFlashAge / HERO_VP_FLASH_MS);
+    const vpProgress = clamp01(heroVpFlashAge / HERO_VP_FLASH_MS);
+    const vpLife = 1 - vpProgress;
     if (vpLife > 0) {
-      ctx.globalAlpha = vpLife * vpLife;
+      const retract = easeOutCubic(vpProgress);
+      ctx.globalAlpha = vpLife * vpLife * vpLife;
       for (const point of HERO_BODY_OUTLINE_OFFSETS) {
         const blockX = Math.floor(point.x / 2);
         const blockY = Math.floor(point.y / 2);
-        const texture = ((blockX * 37) ^ (blockY * 61)) >>> 0;
+        const texture = ((blockX * 37) ^ (blockY * 61) ^ (heroVpFlashSerial * 43)) >>> 0;
         ctx.fillStyle = texture % 11 < 4 ? '#ffe45a' : '#66bfff';
-        ctx.fillRect(ox + point.x, oy + point.y, 1, 1);
+        const x = Math.round(point.x + (point.bodyX - point.x) * retract);
+        const y = Math.round(point.y + (point.bodyY - point.y) * retract);
+        ctx.fillRect(ox + x, oy + y, 1, 1);
       }
     }
     ctx.restore();
@@ -4338,7 +4351,6 @@
     const hitboxes = heroViewportHitboxes(board);
     const beats = dt / beatMs;
     const { live, shadow } = countOverlaps(hitboxes);
-    const vpBefore = vp;
     // Damage scales with overlaps (two attacks at once drain twice as fast).
     const doomPerfectSafe = phase2DoomPattern && phase2DoomPattern.mode === 'active' &&
       phase2DoomPattern.elapsed < phase2DoomPattern.perfectSafeUntil;
@@ -4346,22 +4358,11 @@
     // VP is earned only in a shadow, never in the live skill itself.
     if (shadow > 0) addVp(VP_PER_BEAT * shadow * beats, true);
 
-    // Feedback follows subdivisions of the same live beat clock as the fight.
-    // The VP chirp is deliberately tiny and monophonic-feeling at 4x per beat;
-    // damage gets a heavier pulse at 2x per beat instead of buzzing every frame.
+    // Damage feedback follows subdivisions of the same live beat clock as the
+    // fight. Shadow VP feedback is triggered centrally by addVp(), including
+    // phase-two shadow sources that do not pass through this overlap counter.
     if (phase === PHASE.ACTIVE || (phase === PHASE.SECOND && phase2CombatStarted)) {
       const absoluteBeat = beatIndex + beatPhase / Math.max(1, beatMs);
-      const vpStep = Math.floor(absoluteBeat * BOSS_SFX_VP_STEPS_PER_BEAT);
-      if (shadow > 0 && vp > vpBefore && vpStep !== phaseOneVpSfxStep) {
-        phaseOneVpSfxStep = vpStep;
-        playBossSfx('vp', {
-          step: vpStep,
-          overlaps: shadow,
-          progress: vp / VP_MAX,
-        });
-      } else if (shadow === 0 || vp >= VP_MAX) {
-        phaseOneVpSfxStep = -1;
-      }
       const damageStep = Math.floor(absoluteBeat * BOSS_SFX_DAMAGE_STEPS_PER_BEAT);
       if (live > 0 && hp > 0 && damageStep !== phaseOneDamageSfxStep) {
         phaseOneDamageSfxStep = damageStep;
@@ -4383,8 +4384,8 @@
   function playerAttack() {
     if (!active || dead || (phase !== PHASE.ACTIVE && phase !== PHASE.SECOND) || strike) return;
     if (phase === PHASE.SECOND && !phase2CombatStarted) return;
-    if (vp < VP_MAX) return;
-    vp = 0;
+    if (vp < PLAYER_ATTACK_VP_COST) return;
+    vp = Math.max(0, vp - PLAYER_ATTACK_VP_COST);
     // Healing and boss damage resolve only if the blade lands (see updateStrike).
     // Capture the flight path: from the hero up to the cultist.
     const board = getBoardRect();
@@ -5199,8 +5200,11 @@
       ? 'ENTROPY ' + Math.round(entropy) + ' / ' + ENTROPY_MAX
       : 'WRATH ' + wrath;
     if (hpFill) hpFill.style.height = (Math.max(0, hp) / HP_MAX * 100) + '%';
-    if (vpFill) vpFill.style.height = (Math.max(0, vp) / VP_MAX * 100) + '%';
-    if (vpBar) vpBar.classList.toggle('is-full', vp >= VP_MAX);
+    if (vpFill) {
+      const attackCharge = clamp01(Math.max(0, vp) / PLAYER_ATTACK_VP_COST);
+      vpFill.style.height = (attackCharge * 100) + '%';
+    }
+    if (vpBar) vpBar.classList.toggle('is-full', vp >= PLAYER_ATTACK_VP_COST);
   }
 
   // ---- Phase machine -----------------------------------------------------
@@ -5769,6 +5773,7 @@
       sfxSamples: makeBossSfxSampleBank(context),
       sfxLastAt: Object.create(null),
       sfxEventTimes: [],
+      vpSfx: null,
       spiralSfx: null,
       phase2MassSfx: null,
       waves: {
@@ -5781,7 +5786,7 @@
   }
 
   function scheduleBossSfxTone(destination, voice, frequency, endFrequency, time, duration, amount, options) {
-    if (!bossMusic || amount <= 0 || duration <= 0) return;
+    if (!bossMusic || amount <= 0 || duration <= 0) return null;
     const context = bossMusic.context;
     const oscillator = context.createOscillator();
     const envelope = context.createGain();
@@ -5807,6 +5812,67 @@
     oscillator.connect(envelope).connect(destination);
     oscillator.start(time);
     oscillator.stop(time + duration + 0.02);
+    return { oscillator, envelope };
+  }
+
+  function restartVpSfxPhrase(destination, time, weight) {
+    if (!bossMusic) return;
+    const context = bossMusic.context;
+    const now = context.currentTime;
+    const previous = bossMusic.vpSfx;
+    if (previous) {
+      clearTimeout(previous.tailTimer);
+      clearTimeout(previous.cleanupTimer);
+      previous.gain.gain.cancelScheduledValues(now);
+      previous.gain.gain.setTargetAtTime(0.0001, now, 0.003);
+      for (const voice of previous.voices) {
+        try { voice.oscillator.stop(now + 0.015); } catch (_) {}
+      }
+      setTimeout(() => {
+        try { previous.gain.disconnect(); } catch (_) {}
+      }, 24);
+    }
+
+    const phraseGain = context.createGain();
+    phraseGain.gain.setValueAtTime(1, now);
+    phraseGain.connect(destination);
+    const pitches = [659.25, 783.99, 987.77, 1174.66];
+    const subdivisionSeconds = beatMs / 1000 / BOSS_SFX_VP_STEPS_PER_BEAT;
+    const noteGap = Math.max(0.065, subdivisionSeconds * 0.72);
+    const voices = [];
+    const scheduleNote = (i, at) => {
+      const pitch = pitches[i];
+      const voice = scheduleBossSfxTone(
+        phraseGain,
+        'pulse25',
+        pitch,
+        pitch * 1.035,
+        at,
+        0.032,
+        0.064 * weight * (1 - i * 0.08),
+        { attack: 0.001 }
+      );
+      if (voice) voices.push(voice);
+    };
+    scheduleNote(0, time);
+    const phrase = {
+      gain: phraseGain,
+      voices,
+      tailTimer: null,
+      cleanupTimer: null,
+    };
+    bossMusic.vpSfx = phrase;
+    phrase.tailTimer = setTimeout(() => {
+      if (!bossMusic || bossMusic.vpSfx !== phrase) return;
+      const tailAt = context.currentTime + 0.003;
+      for (let i = 1; i < pitches.length; i++) {
+        scheduleNote(i, tailAt + noteGap * (i - 1));
+      }
+      phrase.cleanupTimer = setTimeout(() => {
+        if (bossMusic && bossMusic.vpSfx === phrase) bossMusic.vpSfx = null;
+        try { phraseGain.disconnect(); } catch (_) {}
+      }, Math.ceil((noteGap * (pitches.length - 2) + 0.10) * 1000));
+    }, Math.ceil(noteGap * 1000));
   }
 
   function scheduleBossSfxNoise(destination, time, duration, amount, type, frequency, q, endFrequency, build) {
@@ -6126,7 +6192,6 @@
     const throttle = {
       shadowCharge: 0.12,
       cultistAttack: 0.07,
-      vp: 0.012,
       damage: 0.055,
       phase2Feed: 0.075,
       phase2Orb: 0.06,
@@ -6145,9 +6210,11 @@
         now - (music.sfxLastAt[throttleKey] == null ? -Infinity : music.sfxLastAt[throttleKey]) < throttle) {
       return false;
     }
-    if (!data.debug) {
+    // VP owns a monophonic interruptible voice, so it neither waits on nor
+    // pollutes the shared SFX concurrency limiter.
+    if (!data.debug && name !== 'vp') {
       music.sfxEventTimes = music.sfxEventTimes.filter((eventTime) => now - eventTime < 0.10);
-      const expendable = name === 'vp' || name === 'damage' || name === 'shadowCharge';
+      const expendable = name === 'damage' || name === 'shadowCharge';
       const critical = name === 'vpFull' || name === 'death' || name === 'deathCrack' ||
         name === 'persist' || name === 'playerImpact';
       if ((expendable && music.sfxEventTimes.length >= 3) ||
@@ -6166,12 +6233,8 @@
     } else if (name === 'cultistAttack') {
       scheduleMovementImpact(out, movement, data, time);
     } else if (name === 'vp') {
-      const pitches = [659.25, 783.99, 987.77, 1174.66];
-      const pitch = pitches[Math.abs(data.step || 0) % pitches.length];
       const weight = Math.min(1.3, 1 + Math.max(0, (data.overlaps || 1) - 1) * 0.12);
-      scheduleBossSfxTone(out, 'pulse25', pitch, pitch * 1.035, time, 0.026, 0.068 * weight, {
-        attack: 0.001,
-      });
+      restartVpSfxPhrase(out, time, weight);
     } else if (name === 'vpFull') {
       scheduleBossSfxTone(out, 'pulse25', 523.25, 523.25, time, 0.10, 0.10, {
         attack: 0.001,
@@ -6903,7 +6966,6 @@
     beatIndex = 0;
     lastAnimBpm = -1;
     fightMusicBeatCursor = null;
-    phaseOneVpSfxStep = -1;
     phaseOneDamageSfxStep = -1;
     phaseOneDamageSfxCount = 0;
     resetHeroCombatFeedback();
