@@ -702,6 +702,7 @@
   let phase2MayhemDebugQueued = false;
   let phase2SpearRainDebugQueued = false;
   let phase2ChevronDebugQueued = false;
+  let phase2TrianglesDebugQueued = false;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
   let nextSlotId = 1;
@@ -828,7 +829,21 @@
   const PHASE2_MAYHEM_COLUMN_BRAKE_BEATS = 1.5;
   const PHASE2_MAYHEM_COLUMN_ROTATE_BEATS = 0.8;
   const PHASE2_MAYHEM_COLUMN_RESTART_BEATS = 0.8;
-  const PHASE2_MAYHEM_UNDER_PATTERNS = ['quadrantFans', 'spearRain', 'columnSurge'];
+  const PHASE2_MAYHEM_TRIANGLE_TELEGRAPH_BEATS = 2;
+  const PHASE2_MAYHEM_TRIANGLE_GAP_BEATS = 0.15;
+  const PHASE2_MAYHEM_TRIANGLE_MEMORY_GAP_BEATS = 0.5;
+  const PHASE2_MAYHEM_TRIANGLE_IMPACT_GRACE_BEATS = 1;
+  const PHASE2_MAYHEM_TRIANGLE_STRIKE_BEATS = 0.9;
+  const PHASE2_MAYHEM_TRIANGLE_FADE_BEATS = 0.45;
+  const PHASE2_MAYHEM_TRIANGLE_SINGLE_COUNT = 10;
+  const PHASE2_MAYHEM_TRIANGLE_MAX_SEQUENCE = 6;
+  const PHASE2_MAYHEM_TRIANGLE_VP_EDGE_WIDTH = 6;
+  const PHASE2_MAYHEM_UNDER_PATTERNS = [
+    'quadrantFans',
+    'spearRain',
+    'columnSurge',
+    'giantTriangles',
+  ];
   const PHASE2_GRID_CHANNEL_BEATS = 3;
   const PHASE2_GRID_RECALL_MS = 460;
   const PHASE2_GRID_IMPACT_MS = 220;
@@ -1803,6 +1818,16 @@
       chevronBtn.blur();
     });
     debugPanel.appendChild(chevronBtn);
+
+    const trianglesBtn = document.createElement('button');
+    trianglesBtn.type = 'button';
+    trianglesBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    trianglesBtn.textContent = 'TRIANGLES';
+    trianglesBtn.addEventListener('click', () => {
+      debugPhaseTwoTriangles();
+      trianglesBtn.blur();
+    });
+    debugPanel.appendChild(trianglesBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -4072,6 +4097,170 @@
     ctx.restore();
   }
 
+  function phaseTwoMayhemTrianglePolygon(attack) {
+    const bounds = phaseTwoMayhemSpearBounds();
+    const width = bounds.right - bounds.left;
+    const height = bounds.bottom - bounds.top;
+    let corners;
+    if (attack.side === 'top') {
+      corners = [
+        { x: bounds.left, y: bounds.top },
+        { x: bounds.right, y: bounds.top },
+        { x: bounds.left + width * 0.75, y: bounds.bottom },
+        { x: bounds.left + width * 0.25, y: bounds.bottom },
+      ];
+    } else if (attack.side === 'bottom') {
+      corners = [
+        { x: bounds.left, y: bounds.bottom },
+        { x: bounds.right, y: bounds.bottom },
+        { x: bounds.left + width * 0.75, y: bounds.top },
+        { x: bounds.left + width * 0.25, y: bounds.top },
+      ];
+    } else if (attack.side === 'left') {
+      corners = [
+        { x: bounds.left, y: bounds.top },
+        { x: bounds.right, y: bounds.top + height * 0.25 },
+        { x: bounds.right, y: bounds.top + height * 0.75 },
+        { x: bounds.left, y: bounds.bottom },
+      ];
+    } else {
+      corners = [
+        { x: bounds.right, y: bounds.top },
+        { x: bounds.left, y: bounds.top + height * 0.25 },
+        { x: bounds.left, y: bounds.top + height * 0.75 },
+        { x: bounds.right, y: bounds.bottom },
+      ];
+    }
+
+    const polygon = [];
+    const segments = 7;
+    for (let edge = 0; edge < corners.length; edge++) {
+      const from = corners[edge];
+      const to = corners[(edge + 1) % corners.length];
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const magnitude = Math.hypot(dx, dy) || 1;
+      const nx = -dy / magnitude;
+      const ny = dx / magnitude;
+      for (let index = 0; index < segments; index++) {
+        const t = index / segments;
+        const taper = Math.sin(t * Math.PI);
+        const noise = (
+          Math.sin(attack.seed + edge * 7.17 + index * 2.31) * 3.8 +
+          Math.sin(attack.seed * 0.37 + edge * 3.9 + index * 5.43) * 1.9
+        ) * taper;
+        polygon.push({
+          x: from.x + dx * t + nx * noise,
+          y: from.y + dy * t + ny * noise,
+        });
+      }
+    }
+    return polygon;
+  }
+
+  function phaseTwoMayhemTriangleGradient(attack, bounds) {
+    if (attack.side === 'top') {
+      return ctx.createLinearGradient(0, bounds.top, 0, bounds.bottom);
+    }
+    if (attack.side === 'bottom') {
+      return ctx.createLinearGradient(0, bounds.bottom, 0, bounds.top);
+    }
+    if (attack.side === 'left') {
+      return ctx.createLinearGradient(bounds.left, 0, bounds.right, 0);
+    }
+    return ctx.createLinearGradient(bounds.right, 0, bounds.left, 0);
+  }
+
+  function renderPhaseTwoMayhemGiantTriangles(under) {
+    const bounds = phaseTwoMayhemSpearBounds();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
+    ctx.clip();
+    ctx.lineJoin = 'miter';
+
+    for (const attack of under.attacks) {
+      const polygon = phaseTwoMayhemTrianglePolygon(attack);
+      if (attack.phase === 'telegraph') {
+        const buildup = clamp01(
+          attack.phaseAge / PHASE2_MAYHEM_TRIANGLE_TELEGRAPH_BEATS
+        );
+        const pulse = 0.5 + 0.5 * Math.sin(attack.phaseAge * Math.PI * 2);
+        tracePhaseTwoMayhemPolygon(ctx, polygon);
+        ctx.shadowColor = `rgba(128, 54, 176, ${(0.20 + pulse * 0.30).toFixed(3)})`;
+        ctx.shadowBlur = 3 + pulse * 4;
+        ctx.strokeStyle = `rgba(153, 78, 202, ${(0.48 + buildup * 0.26 + pulse * 0.20).toFixed(3)})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        continue;
+      }
+
+      const strikeAge = attack.phaseAge;
+      const strikeProgress = smoothstep(clamp01(strikeAge / 0.18));
+      const fadeStart = PHASE2_MAYHEM_TRIANGLE_STRIKE_BEATS;
+      const fade = strikeAge <= fadeStart
+        ? 1
+        : 1 - smoothstep(clamp01(
+          (strikeAge - fadeStart) / PHASE2_MAYHEM_TRIANGLE_FADE_BEATS
+        ));
+      if (fade <= 0.001) continue;
+
+      ctx.save();
+      ctx.globalAlpha = fade * strikeProgress;
+      tracePhaseTwoMayhemPolygon(ctx, polygon);
+      const gradient = phaseTwoMayhemTriangleGradient(attack, bounds);
+      gradient.addColorStop(0, '#ff3a22');
+      gradient.addColorStop(0.18, '#d80b16');
+      gradient.addColorStop(0.66, '#80030d');
+      gradient.addColorStop(1, '#360006');
+      ctx.fillStyle = gradient;
+      ctx.shadowColor = 'rgba(255, 25, 20, 0.9)';
+      ctx.shadowBlur = 24;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#ff5a36';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      tracePhaseTwoMayhemPolygon(ctx, polygon);
+      ctx.clip();
+      const horizontal = attack.side === 'left' || attack.side === 'right';
+      const sign = attack.side === 'top' || attack.side === 'left' ? 1 : -1;
+      const span = horizontal ? bounds.right - bounds.left : bounds.bottom - bounds.top;
+      const across = horizontal ? bounds.bottom - bounds.top : bounds.right - bounds.left;
+      for (let flame = 0; flame < 18; flame++) {
+        const lane = (flame + 0.5) / 18;
+        const flicker = Math.sin(attack.seed + flame * 4.13 + strikeAge * 11) * 12;
+        const sourceAlong = horizontal ? bounds.left : bounds.top;
+        const start = sign > 0 ? sourceAlong : sourceAlong + span;
+        const end = start + sign * span * (0.46 + (flame % 5) * 0.08);
+        const cross = (horizontal ? bounds.top : bounds.left) + across * lane + flicker;
+        ctx.beginPath();
+        if (horizontal) {
+          ctx.moveTo(start, cross);
+          ctx.quadraticCurveTo((start + end) / 2, cross + flicker * 0.8, end, cross - flicker * 0.3);
+        } else {
+          ctx.moveTo(cross, start);
+          ctx.quadraticCurveTo(cross + flicker * 0.8, (start + end) / 2, cross - flicker * 0.3, end);
+        }
+        ctx.strokeStyle = flame % 3
+          ? 'rgba(255, 105, 42, 0.34)'
+          : 'rgba(255, 226, 165, 0.48)';
+        ctx.lineWidth = 2 + (flame % 4);
+        ctx.stroke();
+      }
+      if (strikeAge < 0.12) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = (1 - strikeAge / 0.12) * 0.7;
+        ctx.fillStyle = '#ffe0c2';
+        ctx.fillRect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   function renderPhaseTwoMayhem() {
     const pattern = phase2MayhemPattern;
     const under = pattern && pattern.underPattern;
@@ -4082,6 +4271,10 @@
     }
     if (under.type === 'columnSurge') {
       renderPhaseTwoMayhemColumnSurge(under);
+      return;
+    }
+    if (under.type === 'giantTriangles') {
+      renderPhaseTwoMayhemGiantTriangles(under);
       return;
     }
     if (under.type !== 'quadrantFans') return;
@@ -5781,6 +5974,7 @@
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
     phase2ChevronDebugQueued = false;
+    phase2TrianglesDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -7520,6 +7714,7 @@
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
     phase2ChevronDebugQueued = false;
+    phase2TrianglesDebugQueued = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
     entropy = 0;
@@ -8602,6 +8797,9 @@
     } else if (phase2ChevronDebugQueued) {
       phase2ChevronDebugQueued = false;
       beginDebugPhaseTwoChevron();
+    } else if (phase2TrianglesDebugQueued) {
+      phase2TrianglesDebugQueued = false;
+      beginDebugPhaseTwoTriangles();
     } else if (phase2RushDebugQueued) beginDebugPhaseTwoRush();
     else if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
     else if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
@@ -9877,6 +10075,25 @@
       playBossSfx('phase2TileCharge');
       return;
     }
+    if (type === 'giantTriangles') {
+      pattern.underPattern = {
+        type,
+        elapsed: 0,
+        elapsedBeats: 0,
+        mode: 'single',
+        singlesCompleted: 0,
+        sequenceSize: 2,
+        sequence: [],
+        sequenceIndex: 0,
+        waitBeats: 0.65,
+        lastTriangleSide: null,
+        repeatStreak: 0,
+        nextAttackId: 1,
+        attacks: [],
+      };
+      playBossSfx('phase2TileCharge');
+      return;
+    }
     pattern.underPattern = {
       type,
       elapsed: 0,
@@ -10270,7 +10487,7 @@
 
     if (under.reverseWavesSpawned >= PHASE2_MAYHEM_COLUMN_HALF_WAVES &&
         under.attacks.length === 0) {
-      beginPhaseTwoMayhemUnderPattern(pattern);
+      beginPhaseTwoMayhemUnderPattern(pattern, 'giantTriangles');
       return;
     }
 
@@ -10290,6 +10507,178 @@
         pointInPoly(point.x, point.y, shadowPolygon) &&
         !pointInPoly(point.x, point.y, livePolygon));
     }
+    if (hit) {
+      damagePlayer(DAMAGE_PER_BEAT * beatStep);
+      const damageStep = Math.floor(
+        (beatIndex + beatPhase / Math.max(1, beatMs)) * BOSS_SFX_DAMAGE_STEPS_PER_BEAT
+      );
+      if (damageStep !== pattern.lastDamageStep) {
+        pattern.lastDamageStep = damageStep;
+        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+      }
+      if (hp <= 0) die();
+    } else {
+      pattern.lastDamageStep = -1;
+      if (shadow) addVp(VP_PER_BEAT * beatStep, true);
+    }
+  }
+
+  function phaseTwoMayhemRandomTriangleSide(pattern, under) {
+    const sides = ['top', 'right', 'bottom', 'left'];
+    if (!under.lastTriangleSide) {
+      const first = sides[Math.floor(pattern.random() * sides.length)];
+      under.lastTriangleSide = first;
+      under.repeatStreak = 1;
+      return first;
+    }
+
+    const previousIndex = sides.indexOf(under.lastTriangleSide);
+    const roll = pattern.random();
+    let next;
+    if (under.repeatStreak < 2 && roll < 0.25) {
+      next = under.lastTriangleSide;
+    } else {
+      const neighborThreshold = under.repeatStreak < 2 ? 0.75 : 2 / 3;
+      if (roll < neighborThreshold) {
+        const offset = pattern.random() < 0.5 ? -1 : 1;
+        next = sides[(previousIndex + offset + sides.length) % sides.length];
+      } else {
+        next = sides[(previousIndex + 2) % sides.length];
+      }
+    }
+    if (next === under.lastTriangleSide) under.repeatStreak++;
+    else under.repeatStreak = 1;
+    under.lastTriangleSide = next;
+    return next;
+  }
+
+  function beginPhaseTwoMayhemTriangleAttack(pattern, under, side, phase, seed) {
+    under.attacks = [{
+      id: under.nextAttackId++,
+      side,
+      phase,
+      phaseAge: 0,
+      seed: Number.isFinite(seed) ? seed : pattern.random() * 1000,
+    }];
+    playBossSfx(phase === 'telegraph' ? 'phase2TileCharge' : 'phase2ClawCut');
+  }
+
+  function preparePhaseTwoMayhemTriangleSequence(pattern, under) {
+    under.sequence = Array.from({ length: under.sequenceSize }, () => ({
+      side: phaseTwoMayhemRandomTriangleSide(pattern, under),
+      seed: pattern.random() * 1000,
+    }));
+    under.sequenceIndex = 0;
+    under.mode = 'memoryTelegraphs';
+    under.waitBeats = PHASE2_MAYHEM_TRIANGLE_MEMORY_GAP_BEATS;
+  }
+
+  function phaseTwoMayhemTriangleOutlineTouchesHero(polygon) {
+    const rewardPoints = heroBodyWorldRewardPoints();
+    return rewardPoints.some((point) => {
+      for (let index = 0; index < polygon.length; index++) {
+        const next = polygon[(index + 1) % polygon.length];
+        if (distToSeg(
+          point.x,
+          point.y,
+          polygon[index].x,
+          polygon[index].y,
+          next.x,
+          next.y
+        ) <= PHASE2_MAYHEM_TRIANGLE_VP_EDGE_WIDTH) return true;
+      }
+      return false;
+    });
+  }
+
+  function updatePhaseTwoMayhemGiantTriangles(pattern, under, beatStep) {
+    under.elapsedBeats += beatStep;
+    under.waitBeats = Math.max(0, under.waitBeats - beatStep);
+    const attack = under.attacks[0];
+    if (attack) {
+      attack.phaseAge += beatStep;
+      if (attack.phase === 'telegraph' &&
+          attack.phaseAge >= PHASE2_MAYHEM_TRIANGLE_TELEGRAPH_BEATS) {
+        if (under.mode === 'single') {
+          attack.phase = 'strike';
+          attack.phaseAge = 0;
+          playBossSfx('phase2ClawCut');
+        } else {
+          under.attacks = [];
+          under.sequenceIndex++;
+          if (under.sequenceIndex >= under.sequence.length) {
+            under.mode = 'memoryImpacts';
+            under.sequenceIndex = 0;
+            under.waitBeats = PHASE2_MAYHEM_TRIANGLE_MEMORY_GAP_BEATS;
+          } else {
+            under.waitBeats = PHASE2_MAYHEM_TRIANGLE_GAP_BEATS;
+          }
+        }
+      } else if (attack.phase === 'strike' &&
+                 attack.phaseAge >= PHASE2_MAYHEM_TRIANGLE_STRIKE_BEATS +
+                   PHASE2_MAYHEM_TRIANGLE_FADE_BEATS) {
+        under.attacks = [];
+        if (under.mode === 'single') {
+          under.singlesCompleted++;
+          if (under.singlesCompleted >= PHASE2_MAYHEM_TRIANGLE_SINGLE_COUNT) {
+            preparePhaseTwoMayhemTriangleSequence(pattern, under);
+          } else {
+            under.waitBeats = PHASE2_MAYHEM_TRIANGLE_GAP_BEATS;
+          }
+        } else if (under.mode === 'memoryImpacts') {
+          under.sequenceIndex++;
+          if (under.sequenceIndex >= under.sequence.length) {
+            if (under.sequenceSize >= PHASE2_MAYHEM_TRIANGLE_MAX_SEQUENCE) {
+              under.mode = 'complete';
+              under.waitBeats = PHASE2_MAYHEM_TRIANGLE_MEMORY_GAP_BEATS;
+            } else {
+              under.sequenceSize++;
+              preparePhaseTwoMayhemTriangleSequence(pattern, under);
+            }
+          } else {
+            under.waitBeats = PHASE2_MAYHEM_TRIANGLE_IMPACT_GRACE_BEATS;
+          }
+        }
+      }
+    }
+
+    if (under.attacks.length === 0 && under.waitBeats <= 0) {
+      if (under.mode === 'single') {
+        beginPhaseTwoMayhemTriangleAttack(
+          pattern,
+          under,
+          phaseTwoMayhemRandomTriangleSide(pattern, under),
+          'telegraph'
+        );
+      } else if (under.mode === 'memoryTelegraphs') {
+        beginPhaseTwoMayhemTriangleAttack(
+          pattern,
+          under,
+          under.sequence[under.sequenceIndex].side,
+          'telegraph',
+          under.sequence[under.sequenceIndex].seed
+        );
+      } else if (under.mode === 'memoryImpacts') {
+        beginPhaseTwoMayhemTriangleAttack(
+          pattern,
+          under,
+          under.sequence[under.sequenceIndex].side,
+          'strike',
+          under.sequence[under.sequenceIndex].seed
+        );
+      } else if (under.mode === 'complete') {
+        beginPhaseTwoMayhemUnderPattern(pattern);
+        return;
+      }
+    }
+
+    const current = under.attacks[0];
+    const polygon = current ? phaseTwoMayhemTrianglePolygon(current) : null;
+    const hit = current && current.phase === 'strike' &&
+      current.phaseAge < PHASE2_MAYHEM_TRIANGLE_STRIKE_BEATS &&
+      phaseTwoMayhemPolygonHitsHero(polygon);
+    const shadow = current && current.phase === 'telegraph' &&
+      phaseTwoMayhemTriangleOutlineTouchesHero(polygon);
     if (hit) {
       damagePlayer(DAMAGE_PER_BEAT * beatStep);
       const damageStep = Math.floor(
@@ -10373,6 +10762,10 @@
     }
     if (under.type === 'columnSurge') {
       updatePhaseTwoMayhemColumnSurge(pattern, under, beatStep);
+      return;
+    }
+    if (under.type === 'giantTriangles') {
+      updatePhaseTwoMayhemGiantTriangles(pattern, under, beatStep);
       return;
     }
     if (under.type !== 'quadrantFans') return;
@@ -10463,6 +10856,7 @@
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
     phase2ChevronDebugQueued = false;
+    phase2TrianglesDebugQueued = false;
     phase2MayhemPattern = null;
     return startPhaseTwoMayhemPattern('quadrantFans');
   }
@@ -10482,6 +10876,7 @@
     phase2SpearRainDebugQueued = false;
     phase2MayhemDebugQueued = false;
     phase2ChevronDebugQueued = false;
+    phase2TrianglesDebugQueued = false;
     phase2MayhemPattern = null;
     return startPhaseTwoMayhemPattern('spearRain');
   }
@@ -10501,6 +10896,7 @@
     phase2ChevronDebugQueued = false;
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
+    phase2TrianglesDebugQueued = false;
     phase2MayhemPattern = null;
     return startPhaseTwoMayhemPattern('columnSurge');
   }
@@ -10514,6 +10910,26 @@
     phase2ChevronDebugQueued = true;
     if (!phase2AvatarStarted) skipPhaseTwoTransition();
     if (phase2CombatStarted && phase2ChevronDebugQueued) beginDebugPhaseTwoChevron();
+  }
+
+  function beginDebugPhaseTwoTriangles() {
+    phase2TrianglesDebugQueued = false;
+    phase2MayhemDebugQueued = false;
+    phase2SpearRainDebugQueued = false;
+    phase2ChevronDebugQueued = false;
+    phase2MayhemPattern = null;
+    return startPhaseTwoMayhemPattern('giantTriangles');
+  }
+
+  function debugPhaseTwoTriangles() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    phase2TrianglesDebugQueued = true;
+    if (!phase2AvatarStarted) skipPhaseTwoTransition();
+    if (phase2CombatStarted && phase2TrianglesDebugQueued) beginDebugPhaseTwoTriangles();
   }
 
   function spawnPhaseTwoRushEye() {
@@ -16075,6 +16491,7 @@
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
     phase2ChevronDebugQueued = false;
+    phase2TrianglesDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
