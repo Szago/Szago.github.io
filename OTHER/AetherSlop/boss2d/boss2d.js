@@ -839,16 +839,14 @@
   const PHASE2_MAYHEM_TRIANGLE_SINGLE_COUNT = 10;
   const PHASE2_MAYHEM_TRIANGLE_MAX_SEQUENCE = 6;
   const PHASE2_MAYHEM_TRIANGLE_VP_EDGE_WIDTH = 6;
-  const PHASE2_MAYHEM_WAVEFORM_TELEGRAPH_BEATS = 2;
-  const PHASE2_MAYHEM_WAVEFORM_TRAVEL_BEATS = 1.5;
-  const PHASE2_MAYHEM_WAVEFORM_HOLD_BEATS = 0.65;
-  const PHASE2_MAYHEM_WAVEFORM_FADE_BEATS = 0.4;
-  const PHASE2_MAYHEM_WAVEFORM_GAP_BEATS = 0.55;
-  const PHASE2_MAYHEM_WAVEFORM_COUNT = 6;
-  const PHASE2_MAYHEM_WAVEFORM_POINTS = 64;
-  const PHASE2_MAYHEM_WAVEFORM_AMPLITUDE = 102;
-  const PHASE2_MAYHEM_WAVEFORM_HALF_WIDTH = 8;
-  const PHASE2_MAYHEM_WAVEFORM_SHADOW_HALF_WIDTH = 18;
+  const PHASE2_MAYHEM_WAVEFORM_PREVIEW_MS = 2000;
+  const PHASE2_MAYHEM_WAVEFORM_DURATION_BEATS = 32;
+  const PHASE2_MAYHEM_WAVEFORM_POINTS = 96;
+  const PHASE2_MAYHEM_WAVEFORM_EDGE_INSET = 7;
+  const PHASE2_MAYHEM_WAVEFORM_FLOW_BEATS = 7;
+  const PHASE2_MAYHEM_WAVEFORM_PULSE_WIDTH = 0.085;
+  const PHASE2_MAYHEM_WAVEFORM_LIVE_HALF_WIDTH = 5;
+  const PHASE2_MAYHEM_WAVEFORM_SHADOW_HALF_WIDTH = 11;
   const PHASE2_MAYHEM_UNDER_PATTERNS = [
     'quadrantFans',
     'spearRain',
@@ -4283,37 +4281,28 @@
     ctx.restore();
   }
 
-  function phaseTwoMayhemWaveformVisiblePoints(under, progress) {
+  function phaseTwoMayhemWaveformPoints(samples) {
     const bounds = phaseTwoMayhemSpearBounds();
-    const samples = under.samples;
     if (!samples || samples.length < 2) return [];
-    const visible = clamp01(progress) * (samples.length - 1);
-    const whole = Math.floor(visible);
-    const points = [];
     const centerY = (bounds.top + bounds.bottom) / 2;
-    for (let index = 0; index <= whole; index++) {
-      points.push({
-        x: bounds.left + (bounds.right - bounds.left) * index / (samples.length - 1),
-        y: centerY + samples[index] * PHASE2_MAYHEM_WAVEFORM_AMPLITUDE,
-      });
-    }
-    if (whole < samples.length - 1 && visible > whole) {
-      const fraction = visible - whole;
-      const sample = samples[whole] + (samples[whole + 1] - samples[whole]) * fraction;
-      points.push({
-        x: bounds.left + (bounds.right - bounds.left) * visible / (samples.length - 1),
-        y: centerY + sample * PHASE2_MAYHEM_WAVEFORM_AMPLITUDE,
-      });
-    }
-    return points;
+    const amplitude = Math.max(
+      1,
+      (bounds.bottom - bounds.top) / 2 - PHASE2_MAYHEM_WAVEFORM_EDGE_INSET
+    );
+    const horizontalInset = 3;
+    const left = bounds.left + horizontalInset;
+    const width = bounds.right - bounds.left - horizontalInset * 2;
+    return samples.map((sample, index) => {
+      return {
+        x: left + width * index / (samples.length - 1),
+        y: centerY - Math.max(-1, Math.min(1, sample)) * amplitude,
+      };
+    });
   }
 
-  function phaseTwoMayhemWaveformPolygon(under, progress, shadow) {
-    const points = phaseTwoMayhemWaveformVisiblePoints(under, progress);
+  function phaseTwoMayhemWaveformPolygon(samples, halfWidth) {
+    const points = phaseTwoMayhemWaveformPoints(samples);
     if (points.length < 2) return [];
-    const halfWidth = shadow
-      ? PHASE2_MAYHEM_WAVEFORM_SHADOW_HALF_WIDTH
-      : PHASE2_MAYHEM_WAVEFORM_HALF_WIDTH;
     const upper = [];
     const lower = [];
     for (let index = 0; index < points.length; index++) {
@@ -4324,77 +4313,69 @@
       const magnitude = Math.hypot(dx, dy) || 1;
       const nx = -dy / magnitude;
       const ny = dx / magnitude;
-      const texture = 0.86 + Math.abs(Math.sin(under.seed + index * 4.17)) * 0.24;
       upper.push({
-        x: points[index].x + nx * halfWidth * texture,
-        y: points[index].y + ny * halfWidth * texture,
+        x: points[index].x + nx * halfWidth,
+        y: points[index].y + ny * halfWidth,
       });
       lower.push({
-        x: points[index].x - nx * halfWidth * texture,
-        y: points[index].y - ny * halfWidth * texture,
+        x: points[index].x - nx * halfWidth,
+        y: points[index].y - ny * halfWidth,
       });
     }
     return upper.concat(lower.reverse());
   }
 
-  function renderPhaseTwoMayhemAudioWaveform(under) {
-    const attack = under.attack;
-    if (!attack) return;
-    const bounds = phaseTwoMayhemSpearBounds();
-    const telegraph = attack.phase === 'telegraph';
-    const progress = telegraph
-      ? easeOutCubic(clamp01(attack.phaseAge / PHASE2_MAYHEM_WAVEFORM_TELEGRAPH_BEATS))
-      : easeOutCubic(clamp01(attack.phaseAge / PHASE2_MAYHEM_WAVEFORM_TRAVEL_BEATS));
-    const polygon = phaseTwoMayhemWaveformPolygon(under, progress, telegraph);
-    if (polygon.length < 3) return;
+  function tracePhaseTwoMayhemWaveformLine(points) {
+    ctx.beginPath();
+    for (let index = 0; index < points.length; index++) {
+      if (index === 0) ctx.moveTo(points[index].x, points[index].y);
+      else ctx.lineTo(points[index].x, points[index].y);
+    }
+  }
 
+  function renderPhaseTwoMayhemAudioWaveform(under) {
+    const previewPoints = phaseTwoMayhemWaveformPoints(under.previewSamples);
+    const livePoints = under.liveReady
+      ? phaseTwoMayhemWaveformPoints(under.liveSamples)
+      : [];
+    const bounds = phaseTwoMayhemSpearBounds();
     ctx.save();
     ctx.beginPath();
     ctx.rect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
     ctx.clip();
-    ctx.lineJoin = 'round';
-    tracePhaseTwoMayhemPolygon(ctx, polygon);
-    if (telegraph) {
-      const pulse = 0.5 + 0.5 * Math.sin(under.elapsedBeats * Math.PI * 4);
-      ctx.fillStyle = 'rgba(37, 5, 52, 0.48)';
-      ctx.shadowColor = `rgba(123, 53, 164, ${(0.30 + pulse * 0.28).toFixed(3)})`;
-      ctx.shadowBlur = 7 + pulse * 6;
-      ctx.fill();
+    ctx.lineCap = 'round';
+
+    if (previewPoints.length) {
+      const pulse = 0.5 + 0.5 * Math.sin(under.elapsedMs * 0.012);
+      tracePhaseTwoMayhemWaveformLine(previewPoints);
+      ctx.strokeStyle = `rgba(111, 45, 150, ${(0.42 + pulse * 0.15).toFixed(3)})`;
+      ctx.lineWidth = PHASE2_MAYHEM_WAVEFORM_SHADOW_HALF_WIDTH * 2;
+      ctx.shadowColor = 'rgba(126, 55, 166, 0.52)';
+      ctx.shadowBlur = 8;
+      ctx.stroke();
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = 'rgba(151, 76, 194, 0.72)';
+      tracePhaseTwoMayhemWaveformLine(previewPoints);
+      ctx.strokeStyle = 'rgba(192, 116, 224, 0.88)';
       ctx.lineWidth = 1;
       ctx.stroke();
-    } else {
-      const fadeStart = PHASE2_MAYHEM_WAVEFORM_TRAVEL_BEATS +
-        PHASE2_MAYHEM_WAVEFORM_HOLD_BEATS;
-      const fade = attack.phaseAge <= fadeStart
-        ? 1
-        : 1 - smoothstep(clamp01(
-          (attack.phaseAge - fadeStart) / PHASE2_MAYHEM_WAVEFORM_FADE_BEATS
-        ));
-      ctx.globalAlpha = fade;
-      ctx.fillStyle = '#020204';
-      ctx.shadowColor = 'rgba(231, 10, 24, 0.78)';
-      ctx.shadowBlur = 14;
-      ctx.fill();
+    }
+
+    if (livePoints.length) {
+      tracePhaseTwoMayhemWaveformLine(livePoints);
+      ctx.strokeStyle = '#e31a29';
+      ctx.lineWidth = PHASE2_MAYHEM_WAVEFORM_LIVE_HALF_WIDTH * 2;
+      ctx.shadowColor = 'rgba(232, 10, 24, 0.72)';
+      ctx.shadowBlur = 10;
+      ctx.stroke();
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = '#ed1c2c';
-      ctx.lineWidth = 3;
+      tracePhaseTwoMayhemWaveformLine(livePoints);
+      ctx.strokeStyle = '#020204';
+      ctx.lineWidth = Math.max(2, PHASE2_MAYHEM_WAVEFORM_LIVE_HALF_WIDTH * 2 - 4);
       ctx.stroke();
-      ctx.save();
-      tracePhaseTwoMayhemPolygon(ctx, polygon);
-      ctx.clip();
-      const points = phaseTwoMayhemWaveformVisiblePoints(under, progress);
-      ctx.beginPath();
-      for (let index = 0; index < points.length; index++) {
-        const point = points[index];
-        if (index === 0) ctx.moveTo(point.x, point.y);
-        else ctx.lineTo(point.x, point.y);
-      }
-      ctx.strokeStyle = 'rgba(166, 8, 21, 0.58)';
-      ctx.lineWidth = 2;
+      tracePhaseTwoMayhemWaveformLine(livePoints);
+      ctx.strokeStyle = 'rgba(183, 12, 24, 0.72)';
+      ctx.lineWidth = 1;
       ctx.stroke();
-      ctx.restore();
     }
     ctx.restore();
   }
@@ -10251,11 +10232,15 @@
         type,
         elapsed: 0,
         elapsedBeats: 0,
-        wavesCompleted: 0,
-        waitBeats: 0.5,
-        attack: null,
-        samples: Array(PHASE2_MAYHEM_WAVEFORM_POINTS).fill(0),
-        seed: pattern.random() * 1000,
+        elapsedMs: 0,
+        previewSamples: Array(PHASE2_MAYHEM_WAVEFORM_POINTS).fill(0),
+        liveSamples: Array(PHASE2_MAYHEM_WAVEFORM_POINTS).fill(0),
+        sampleHistory: [],
+        liveReady: false,
+        pulses: [],
+        observedBeat: beatIndex,
+        beatPeak: 0,
+        peakCeiling: 0.08,
       };
       playBossSfx('phase2Whirlpool');
       return;
@@ -10861,91 +10846,104 @@
     }
   }
 
-  function updatePhaseTwoMayhemAudioSamples(under, immediate = false) {
-    const next = new Array(PHASE2_MAYHEM_WAVEFORM_POINTS);
+  function phaseTwoMayhemAudioLevel(under) {
     const music = createBossMusic();
-    let peak = 0;
+    let level = 0;
     if (music && music.analyser && music.context.state === 'running') {
       music.analyser.getByteTimeDomainData(music.analyserTimeData);
       const source = music.analyserTimeData;
-      for (let index = 0; index < next.length; index++) {
-        const sourceIndex = Math.round(index * (source.length - 1) / (next.length - 1));
-        const previous = (source[Math.max(0, sourceIndex - 2)] - 128) / 128;
-        const current = (source[sourceIndex] - 128) / 128;
-        const following = (source[Math.min(source.length - 1, sourceIndex + 2)] - 128) / 128;
-        next[index] = previous * 0.2 + current * 0.6 + following * 0.2;
-        peak = Math.max(peak, Math.abs(next[index]));
+      let energy = 0;
+      for (let index = 0; index < source.length; index++) {
+        const sample = (source[index] - 128) / 128;
+        energy += sample * sample;
       }
+      level = Math.sqrt(energy / Math.max(1, source.length));
     }
-    if (peak < 0.012) {
-      for (let index = 0; index < next.length; index++) {
-        const t = index / (next.length - 1);
-        next[index] = Math.sin(t * Math.PI * 6 + under.elapsedBeats * 1.7) * 0.48 +
-          Math.sin(t * Math.PI * 14 - under.elapsedBeats * 2.3) * 0.18;
+    if (level < 0.004) {
+      const beatProgress = clamp01(beatPhase / Math.max(1, beatMs));
+      level = 0.025 + Math.pow(1 - beatProgress, 7) * 0.32;
+    }
+    return level;
+  }
+
+  function sendPhaseTwoMayhemAudioPeak(under, peak) {
+    under.peakCeiling = Math.max(peak, under.peakCeiling * 0.92, 0.025);
+    const amplitude = Math.max(0.18, Math.min(0.98, peak / under.peakCeiling * 0.96));
+    under.pulses.push({
+      position: 0,
+      amplitude,
+      polarity: under.observedBeat % 2 === 0 ? 1 : -1,
+    });
+  }
+
+  function updatePhaseTwoMayhemWaveTimeline(under, beatStep) {
+    const level = phaseTwoMayhemAudioLevel(under);
+    under.beatPeak = Math.max(under.beatPeak, level);
+    if (beatIndex !== under.observedBeat) {
+      sendPhaseTwoMayhemAudioPeak(under, under.beatPeak);
+      under.observedBeat = beatIndex;
+      under.beatPeak = level;
+    }
+
+    for (const pulse of under.pulses) {
+      pulse.position += beatStep / PHASE2_MAYHEM_WAVEFORM_FLOW_BEATS;
+    }
+    under.pulses = under.pulses.filter((pulse) =>
+      pulse.position < 1 + PHASE2_MAYHEM_WAVEFORM_PULSE_WIDTH);
+
+    under.previewSamples.fill(0);
+    for (let index = 0; index < under.previewSamples.length; index++) {
+      const timeline = index / (under.previewSamples.length - 1);
+      let value = 0;
+      for (const pulse of under.pulses) {
+        const distance = (timeline - pulse.position) / PHASE2_MAYHEM_WAVEFORM_PULSE_WIDTH;
+        if (Math.abs(distance) >= 1) continue;
+        const envelope = Math.pow(1 - Math.abs(distance), 1.55);
+        const ripple = Math.cos(distance * Math.PI * 2.25);
+        value += pulse.polarity * pulse.amplitude * envelope * ripple;
       }
-      peak = 0.66;
-    }
-    const normalization = 0.82 / Math.max(0.08, peak);
-    const blend = immediate ? 1 : 0.24;
-    for (let index = 0; index < next.length; index++) {
-      const value = Math.max(-1, Math.min(1, next[index] * normalization));
-      under.samples[index] += (value - under.samples[index]) * blend;
+      under.previewSamples[index] = Math.max(-0.98, Math.min(0.98, value));
     }
   }
 
-  function updatePhaseTwoMayhemAudioWaveform(pattern, under, beatStep) {
+  function updatePhaseTwoMayhemAudioWaveform(pattern, under, dt, beatStep) {
     under.elapsedBeats += beatStep;
-    under.waitBeats = Math.max(0, under.waitBeats - beatStep);
-    if (!under.attack && under.waitBeats <= 0) {
-      if (under.wavesCompleted >= PHASE2_MAYHEM_WAVEFORM_COUNT) {
-        beginPhaseTwoMayhemUnderPattern(pattern);
-        return;
-      }
-      under.seed = pattern.random() * 1000;
-      under.samples.fill(0);
-      updatePhaseTwoMayhemAudioSamples(under, true);
-      under.attack = { phase: 'telegraph', phaseAge: 0 };
-      playBossSfx('phase2TileCharge');
+    under.elapsedMs += dt;
+    updatePhaseTwoMayhemWaveTimeline(under, beatStep);
+    under.sampleHistory.push({
+      at: under.elapsedMs,
+      samples: under.previewSamples.slice(),
+    });
+
+    const delayedAt = under.elapsedMs - PHASE2_MAYHEM_WAVEFORM_PREVIEW_MS;
+    while (under.sampleHistory.length > 1 && under.sampleHistory[1].at <= delayedAt) {
+      under.sampleHistory.shift();
+    }
+    if (under.sampleHistory.length && under.sampleHistory[0].at <= delayedAt) {
+      under.liveSamples = under.sampleHistory[0].samples.slice();
+      under.liveReady = true;
     }
 
-    const attack = under.attack;
-    if (!attack) return;
-    attack.phaseAge += beatStep;
-    if (attack.phase === 'telegraph') {
-      if (attack.phaseAge < PHASE2_MAYHEM_WAVEFORM_TELEGRAPH_BEATS - 0.12) {
-        updatePhaseTwoMayhemAudioSamples(under);
-      }
-      if (attack.phaseAge >= PHASE2_MAYHEM_WAVEFORM_TELEGRAPH_BEATS) {
-        attack.phase = 'strike';
-        attack.phaseAge = 0;
-        playBossSfx('phase2ClawCut');
-      }
-    } else {
-      const totalStrikeBeats = PHASE2_MAYHEM_WAVEFORM_TRAVEL_BEATS +
-        PHASE2_MAYHEM_WAVEFORM_HOLD_BEATS + PHASE2_MAYHEM_WAVEFORM_FADE_BEATS;
-      if (attack.phaseAge >= totalStrikeBeats) {
-        under.attack = null;
-        under.wavesCompleted++;
-        under.waitBeats = PHASE2_MAYHEM_WAVEFORM_GAP_BEATS;
-        pattern.lastDamageStep = -1;
-        return;
-      }
+    if (under.elapsedBeats >= PHASE2_MAYHEM_WAVEFORM_DURATION_BEATS) {
+      beginPhaseTwoMayhemUnderPattern(pattern);
+      return;
     }
 
-    const current = under.attack;
-    const telegraph = current.phase === 'telegraph';
-    const progress = telegraph
-      ? easeOutCubic(clamp01(
-        current.phaseAge / PHASE2_MAYHEM_WAVEFORM_TELEGRAPH_BEATS
-      ))
-      : easeOutCubic(clamp01(
-        current.phaseAge / PHASE2_MAYHEM_WAVEFORM_TRAVEL_BEATS
-      ));
-    const polygon = phaseTwoMayhemWaveformPolygon(under, progress, telegraph);
-    const hit = !telegraph && polygon.length >= 3 &&
-      phaseTwoMayhemPolygonHitsHero(polygon);
-    const shadow = telegraph && polygon.length >= 3 &&
-      heroBodyWorldRewardPoints().some((point) => pointInPoly(point.x, point.y, polygon));
+    const livePolygon = under.liveReady
+      ? phaseTwoMayhemWaveformPolygon(
+        under.liveSamples,
+        PHASE2_MAYHEM_WAVEFORM_LIVE_HALF_WIDTH
+      )
+      : [];
+    const previewPolygon = phaseTwoMayhemWaveformPolygon(
+      under.previewSamples,
+      PHASE2_MAYHEM_WAVEFORM_SHADOW_HALF_WIDTH
+    );
+    const hit = livePolygon.length >= 3 && phaseTwoMayhemPolygonHitsHero(livePolygon);
+    const rewardPoints = heroBodyWorldRewardPoints();
+    const shadow = !hit && previewPolygon.length >= 3 && rewardPoints.some((point) =>
+      pointInPoly(point.x, point.y, previewPolygon) &&
+      (livePolygon.length < 3 || !pointInPoly(point.x, point.y, livePolygon)));
     if (hit) {
       damagePlayer(DAMAGE_PER_BEAT * beatStep);
       const damageStep = Math.floor(
@@ -11036,7 +11034,7 @@
       return;
     }
     if (under.type === 'audioWaveform') {
-      updatePhaseTwoMayhemAudioWaveform(pattern, under, beatStep);
+      updatePhaseTwoMayhemAudioWaveform(pattern, under, dt, beatStep);
       return;
     }
     if (under.type !== 'quadrantFans') return;
