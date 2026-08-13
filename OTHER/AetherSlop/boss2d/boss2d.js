@@ -701,6 +701,7 @@
   let phase2MayhemPattern = null;
   let phase2MayhemDebugQueued = false;
   let phase2SpearRainDebugQueued = false;
+  let phase2ChevronDebugQueued = false;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
   let nextSlotId = 1;
@@ -816,7 +817,18 @@
   ];
   const PHASE2_MAYHEM_SPEAR_MAX_BOUNCES = 4;
   const PHASE2_MAYHEM_SPEAR_DAMAGE = 100;
-  const PHASE2_MAYHEM_UNDER_PATTERNS = ['quadrantFans', 'spearRain'];
+  const PHASE2_MAYHEM_COLUMN_WAVE_BEATS = 2.5;
+  const PHASE2_MAYHEM_COLUMN_SPEED_PER_BEAT = 85;
+  const PHASE2_MAYHEM_COLUMN_CHEVRON_HEIGHT = 58;
+  const PHASE2_MAYHEM_COLUMN_CHEVRON_HALF_WIDTH = 9;
+  const PHASE2_MAYHEM_COLUMN_SHADOW_HALF_WIDTH = 26;
+  const PHASE2_MAYHEM_COLUMN_SHADOW_LEAD = 20;
+  const PHASE2_MAYHEM_COLUMN_LEAD_BEATS = 0.75;
+  const PHASE2_MAYHEM_COLUMN_HALF_WAVES = 10;
+  const PHASE2_MAYHEM_COLUMN_BRAKE_BEATS = 1.5;
+  const PHASE2_MAYHEM_COLUMN_ROTATE_BEATS = 0.8;
+  const PHASE2_MAYHEM_COLUMN_RESTART_BEATS = 0.8;
+  const PHASE2_MAYHEM_UNDER_PATTERNS = ['quadrantFans', 'spearRain', 'columnSurge'];
   const PHASE2_GRID_CHANNEL_BEATS = 3;
   const PHASE2_GRID_RECALL_MS = 460;
   const PHASE2_GRID_IMPACT_MS = 220;
@@ -1781,6 +1793,16 @@
       spearRainBtn.blur();
     });
     debugPanel.appendChild(spearRainBtn);
+
+    const chevronBtn = document.createElement('button');
+    chevronBtn.type = 'button';
+    chevronBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    chevronBtn.textContent = 'CHEVRON';
+    chevronBtn.addEventListener('click', () => {
+      debugPhaseTwoChevron();
+      chevronBtn.blur();
+    });
+    debugPanel.appendChild(chevronBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -3931,12 +3953,135 @@
     ctx.restore();
   }
 
+  function phaseTwoMayhemColumnChevronPolygon(attack, shadow = false) {
+    const points = [];
+    const segments = 12;
+    const height = PHASE2_MAYHEM_COLUMN_CHEVRON_HEIGHT;
+    const centerY = attack.y +
+      (shadow ? attack.direction * PHASE2_MAYHEM_COLUMN_SHADOW_LEAD : 0);
+    for (let index = 0; index <= segments; index++) {
+      const t = index / segments;
+      const x = attack.left + (attack.right - attack.left) * t;
+      const ridge = 1 - Math.abs(t * 2 - 1);
+      const edgeFade = Math.sin(t * Math.PI);
+      const roughness = Math.sin(attack.seed + index * 2.173) * 3.2 * edgeFade +
+        Math.sin(attack.seed * 0.43 + index * 4.91) * 1.5 * edgeFade;
+      const y = attack.direction < 0
+        ? centerY + height / 2 - ridge * height + roughness
+        : centerY - height / 2 + ridge * height - roughness;
+      points.push({ x, y, t });
+    }
+    const outer = [];
+    const inner = [];
+    for (let index = 0; index < points.length; index++) {
+      const point = points[index];
+      const previous = points[Math.max(0, index - 1)];
+      const next = points[Math.min(points.length - 1, index + 1)];
+      const dx = next.x - previous.x;
+      const dy = next.y - previous.y;
+      const magnitude = Math.hypot(dx, dy) || 1;
+      const nx = -dy / magnitude;
+      const ny = dx / magnitude;
+      const edgeNoise = 0.82 +
+        Math.abs(Math.sin(attack.seed * 1.7 + index * 3.37)) * 0.34;
+      const width = (shadow
+        ? PHASE2_MAYHEM_COLUMN_SHADOW_HALF_WIDTH
+        : PHASE2_MAYHEM_COLUMN_CHEVRON_HALF_WIDTH) * edgeNoise;
+      outer.push({ x: point.x + nx * width, y: point.y + ny * width });
+      inner.push({ x: point.x - nx * width, y: point.y - ny * width });
+    }
+    const polygon = outer.concat(inner.reverse());
+    const rotation = attack.rotation || 0;
+    if (Math.abs(rotation) < 0.000001) return polygon;
+    const centerX = (attack.left + attack.right) / 2;
+    const cosine = Math.cos(rotation);
+    const sine = Math.sin(rotation);
+    return polygon.map((point) => {
+      const dx = point.x - centerX;
+      const dy = point.y - attack.y;
+      return {
+        x: centerX + dx * cosine - dy * sine,
+        y: attack.y + dx * sine + dy * cosine,
+      };
+    });
+  }
+
+  function renderPhaseTwoMayhemColumnSurge(under) {
+    const bounds = phaseTwoMayhemSpearBounds();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
+    ctx.clip();
+
+    const laneWidth = (bounds.right - bounds.left) / 3;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(112, 8, 18, 0.24)';
+    for (let lane = 1; lane < 3; lane++) {
+      const x = bounds.left + laneWidth * lane;
+      ctx.beginPath();
+      ctx.moveTo(x, bounds.top);
+      ctx.lineTo(x, bounds.bottom);
+      ctx.stroke();
+    }
+
+    ctx.lineJoin = 'miter';
+    for (const attack of under.attacks) {
+      if (!attack.active) continue;
+      const shadowPolygon = phaseTwoMayhemColumnChevronPolygon(attack, true);
+      tracePhaseTwoMayhemPolygon(ctx, shadowPolygon);
+      ctx.fillStyle = 'rgba(35, 5, 49, 0.58)';
+      ctx.shadowColor = 'rgba(83, 28, 108, 0.46)';
+      ctx.shadowBlur = 9;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(102, 48, 126, 0.42)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    for (const attack of under.attacks) {
+      if (!attack.active) continue;
+      const polygon = phaseTwoMayhemColumnChevronPolygon(attack);
+      tracePhaseTwoMayhemPolygon(ctx, polygon);
+      ctx.fillStyle = '#020204';
+      ctx.shadowColor = 'rgba(224, 9, 22, 0.58)';
+      ctx.shadowBlur = 9;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#e01624';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      ctx.save();
+      tracePhaseTwoMayhemPolygon(ctx, polygon);
+      ctx.clip();
+      for (let streak = 0; streak < 4; streak++) {
+        const t = (streak + 0.5) / 4;
+        const x = attack.left + (attack.right - attack.left) * t;
+        const jitter = Math.sin(attack.seed + streak * 4.71) * 8;
+        ctx.beginPath();
+        ctx.moveTo(x - 18, attack.y + jitter - 17);
+        ctx.lineTo(x + 16, attack.y + jitter + 19);
+        ctx.strokeStyle = streak % 2
+          ? 'rgba(205, 13, 25, 0.22)'
+          : 'rgba(210, 205, 194, 0.07)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   function renderPhaseTwoMayhem() {
     const pattern = phase2MayhemPattern;
     const under = pattern && pattern.underPattern;
     if (!under) return;
     if (under.type === 'spearRain') {
       renderPhaseTwoMayhemSpearRain(under);
+      return;
+    }
+    if (under.type === 'columnSurge') {
+      renderPhaseTwoMayhemColumnSurge(under);
       return;
     }
     if (under.type !== 'quadrantFans') return;
@@ -5635,6 +5780,7 @@
     phase2MayhemPattern = null;
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
+    phase2ChevronDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -7373,6 +7519,7 @@
     phase2MayhemPattern = null;
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
+    phase2ChevronDebugQueued = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
     entropy = 0;
@@ -8452,6 +8599,9 @@
     } else if (phase2SpearRainDebugQueued) {
       phase2SpearRainDebugQueued = false;
       beginDebugPhaseTwoSpearRain();
+    } else if (phase2ChevronDebugQueued) {
+      phase2ChevronDebugQueued = false;
+      beginDebugPhaseTwoChevron();
     } else if (phase2RushDebugQueued) beginDebugPhaseTwoRush();
     else if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
     else if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
@@ -9708,6 +9858,25 @@
       playBossSfx('phase2SwordRing');
       return;
     }
+    if (type === 'columnSurge') {
+      pattern.underPattern = {
+        type,
+        elapsed: 0,
+        elapsedBeats: 0,
+        mode: 'forward',
+        transitionBeats: 0,
+        nextWaveBeat: PHASE2_MAYHEM_COLUMN_LEAD_BEATS,
+        wavesSpawned: 0,
+        forwardWavesSpawned: 0,
+        reverseWavesSpawned: 0,
+        reverseRampBeats: 0,
+        reversalAtBeat: Infinity,
+        nextAttackId: 1,
+        attacks: [],
+      };
+      playBossSfx('phase2TileCharge');
+      return;
+    }
     pattern.underPattern = {
       type,
       elapsed: 0,
@@ -9915,7 +10084,7 @@
 
     if (!under.wavePending && under.shotsRemaining === 0 && under.arrows.length === 0) {
       if (under.waveSize >= 8) {
-        beginPhaseTwoMayhemUnderPattern(pattern);
+        beginPhaseTwoMayhemUnderPattern(pattern, 'columnSurge');
         return;
       }
       under.waveSize = Math.min(8, under.waveSize + 1);
@@ -9952,6 +10121,188 @@
     } else {
       pattern.lastDamageStep = -1;
       if (contact.arrowShadow) addVp(VP_PER_BEAT * beatStep, true);
+    }
+  }
+
+  function spawnPhaseTwoMayhemColumnWave(under, launchBeat) {
+    const bounds = phaseTwoMayhemSpearBounds();
+    const laneWidth = (bounds.right - bounds.left) / 3;
+    const margin = PHASE2_MAYHEM_COLUMN_CHEVRON_HEIGHT +
+      PHASE2_MAYHEM_COLUMN_CHEVRON_HALF_WIDTH * 2;
+    const waveIndex = under.wavesSpawned;
+    const reversed = under.mode === 'reverse';
+    for (let lane = 0; lane < 3; lane++) {
+      const direction = (lane === 1 ? 1 : -1) * (reversed ? -1 : 1);
+      const laneLaunchBeat = launchBeat +
+        (lane === 1 ? PHASE2_MAYHEM_COLUMN_WAVE_BEATS * 0.5 : 0);
+      under.attacks.push({
+        id: under.nextAttackId++,
+        lane,
+        left: bounds.left + laneWidth * lane - (lane > 0 ? 2 : 0),
+        right: bounds.left + laneWidth * (lane + 1) + (lane < 2 ? 2 : 0),
+        direction,
+        startY: direction > 0 ? bounds.top - margin : bounds.bottom + margin,
+        y: direction > 0 ? bounds.top - margin : bounds.bottom + margin,
+        launchBeat: laneLaunchBeat,
+        active: false,
+        rotation: 0,
+        seed: 8.41 + waveIndex * 17.13 + lane * 29.71,
+      });
+    }
+    under.wavesSpawned++;
+    if (reversed) under.reverseWavesSpawned++;
+    else under.forwardWavesSpawned++;
+    playBossSfx('phase2SwordStrike');
+  }
+
+  function phaseTwoMayhemPolygonHitsHero(polygon) {
+    const center = heroBodyCenterWorld();
+    const rect = {
+      left: center.x - 2.5,
+      top: center.y - 2.5,
+      right: center.x + 2.5,
+      bottom: center.y + 2.5,
+    };
+    const heroPoints = [
+      { x: center.x, y: center.y },
+      { x: rect.left, y: rect.top },
+      { x: rect.right, y: rect.top },
+      { x: rect.right, y: rect.bottom },
+      { x: rect.left, y: rect.bottom },
+    ];
+    if (heroPoints.some((point) => pointInPoly(point.x, point.y, polygon))) return true;
+    if (polygon.some((point) => point.x >= rect.left && point.x <= rect.right &&
+      point.y >= rect.top && point.y <= rect.bottom)) return true;
+    for (let index = 0; index < polygon.length; index++) {
+      const next = polygon[(index + 1) % polygon.length];
+      if (segmentIntersectsRect(
+        polygon[index].x,
+        polygon[index].y,
+        next.x,
+        next.y,
+        rect
+      )) return true;
+    }
+    return false;
+  }
+
+  function updatePhaseTwoMayhemColumnSurge(pattern, under, beatStep) {
+    under.elapsedBeats += beatStep;
+    if (under.mode === 'forward') {
+      while (under.forwardWavesSpawned < PHASE2_MAYHEM_COLUMN_HALF_WAVES &&
+             under.elapsedBeats >= under.nextWaveBeat) {
+        const launchBeat = under.nextWaveBeat;
+        spawnPhaseTwoMayhemColumnWave(under, launchBeat);
+        under.nextWaveBeat += PHASE2_MAYHEM_COLUMN_WAVE_BEATS;
+        if (under.forwardWavesSpawned >= PHASE2_MAYHEM_COLUMN_HALF_WAVES) {
+          under.reversalAtBeat = launchBeat + PHASE2_MAYHEM_COLUMN_WAVE_BEATS * 2.05;
+        }
+      }
+      if (under.elapsedBeats >= under.reversalAtBeat) {
+        under.mode = 'braking';
+        under.transitionBeats = 0;
+        playBossSfx('phase2TileCharge');
+      }
+    } else if (under.mode === 'reverse') {
+      while (under.reverseWavesSpawned < PHASE2_MAYHEM_COLUMN_HALF_WAVES &&
+             under.elapsedBeats >= under.nextWaveBeat) {
+        spawnPhaseTwoMayhemColumnWave(under, under.nextWaveBeat);
+        under.nextWaveBeat += PHASE2_MAYHEM_COLUMN_WAVE_BEATS;
+      }
+    }
+
+    let motionScale = 1;
+    if (under.mode === 'braking') {
+      under.transitionBeats += beatStep;
+      motionScale = 1 - smoothstep(clamp01(
+        under.transitionBeats / PHASE2_MAYHEM_COLUMN_BRAKE_BEATS
+      ));
+      if (under.transitionBeats >= PHASE2_MAYHEM_COLUMN_BRAKE_BEATS) {
+        under.mode = 'rotating';
+        under.transitionBeats = 0;
+        motionScale = 0;
+        playBossSfx('phase2SwordRing');
+      }
+    } else if (under.mode === 'rotating') {
+      under.transitionBeats += beatStep;
+      motionScale = 0;
+      const rotation = Math.PI * smoothstep(clamp01(
+        under.transitionBeats / PHASE2_MAYHEM_COLUMN_ROTATE_BEATS
+      ));
+      for (const attack of under.attacks) attack.rotation = rotation;
+      if (under.transitionBeats >= PHASE2_MAYHEM_COLUMN_ROTATE_BEATS) {
+        for (const attack of under.attacks) {
+          attack.direction *= -1;
+          attack.rotation = 0;
+        }
+        under.mode = 'reverse';
+        under.transitionBeats = 0;
+        under.reverseRampBeats = 0;
+        under.nextWaveBeat = under.elapsedBeats + PHASE2_MAYHEM_COLUMN_WAVE_BEATS;
+        playBossSfx('phase2SwordStrike');
+      }
+    } else if (under.mode === 'reverse') {
+      under.reverseRampBeats += beatStep;
+      motionScale = smoothstep(clamp01(
+        under.reverseRampBeats / PHASE2_MAYHEM_COLUMN_RESTART_BEATS
+      ));
+    }
+
+    const bounds = phaseTwoMayhemSpearBounds();
+    const margin = PHASE2_MAYHEM_COLUMN_CHEVRON_HEIGHT +
+      PHASE2_MAYHEM_COLUMN_CHEVRON_HALF_WIDTH * 2;
+    for (const attack of under.attacks) {
+      let movementBeats = beatStep;
+      if (!attack.active && under.elapsedBeats >= attack.launchBeat) {
+        attack.active = true;
+        movementBeats = Math.min(beatStep, under.elapsedBeats - attack.launchBeat);
+      }
+      if (!attack.active) continue;
+      attack.y += attack.direction * PHASE2_MAYHEM_COLUMN_SPEED_PER_BEAT *
+        movementBeats * motionScale;
+    }
+    if (under.mode !== 'braking' && under.mode !== 'rotating') {
+      under.attacks = under.attacks.filter((attack) => !attack.active ||
+        (attack.direction > 0
+          ? attack.y < bounds.bottom + margin
+          : attack.y > bounds.top - margin));
+    }
+
+    if (under.reverseWavesSpawned >= PHASE2_MAYHEM_COLUMN_HALF_WAVES &&
+        under.attacks.length === 0) {
+      beginPhaseTwoMayhemUnderPattern(pattern);
+      return;
+    }
+
+    const rewardPoints = heroBodyWorldRewardPoints();
+    let hit = false;
+    let shadow = false;
+    for (const attack of under.attacks) {
+      if (!attack.active) continue;
+      const livePolygon = phaseTwoMayhemColumnChevronPolygon(attack);
+      if (phaseTwoMayhemPolygonHitsHero(livePolygon)) {
+        hit = true;
+        break;
+      }
+      if (shadow) continue;
+      const shadowPolygon = phaseTwoMayhemColumnChevronPolygon(attack, true);
+      shadow = rewardPoints.some((point) =>
+        pointInPoly(point.x, point.y, shadowPolygon) &&
+        !pointInPoly(point.x, point.y, livePolygon));
+    }
+    if (hit) {
+      damagePlayer(DAMAGE_PER_BEAT * beatStep);
+      const damageStep = Math.floor(
+        (beatIndex + beatPhase / Math.max(1, beatMs)) * BOSS_SFX_DAMAGE_STEPS_PER_BEAT
+      );
+      if (damageStep !== pattern.lastDamageStep) {
+        pattern.lastDamageStep = damageStep;
+        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+      }
+      if (hp <= 0) die();
+    } else {
+      pattern.lastDamageStep = -1;
+      if (shadow) addVp(VP_PER_BEAT * beatStep, true);
     }
   }
 
@@ -10018,6 +10369,10 @@
     const beatStep = dt / Math.max(1, beatMs);
     if (under.type === 'spearRain') {
       updatePhaseTwoMayhemSpearRain(pattern, under, dt, beatStep);
+      return;
+    }
+    if (under.type === 'columnSurge') {
+      updatePhaseTwoMayhemColumnSurge(pattern, under, beatStep);
       return;
     }
     if (under.type !== 'quadrantFans') return;
@@ -10107,6 +10462,7 @@
   function beginDebugPhaseTwoMayhem() {
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
+    phase2ChevronDebugQueued = false;
     phase2MayhemPattern = null;
     return startPhaseTwoMayhemPattern('quadrantFans');
   }
@@ -10125,6 +10481,7 @@
   function beginDebugPhaseTwoSpearRain() {
     phase2SpearRainDebugQueued = false;
     phase2MayhemDebugQueued = false;
+    phase2ChevronDebugQueued = false;
     phase2MayhemPattern = null;
     return startPhaseTwoMayhemPattern('spearRain');
   }
@@ -10138,6 +10495,25 @@
     phase2SpearRainDebugQueued = true;
     if (!phase2AvatarStarted) skipPhaseTwoTransition();
     if (phase2CombatStarted && phase2SpearRainDebugQueued) beginDebugPhaseTwoSpearRain();
+  }
+
+  function beginDebugPhaseTwoChevron() {
+    phase2ChevronDebugQueued = false;
+    phase2MayhemDebugQueued = false;
+    phase2SpearRainDebugQueued = false;
+    phase2MayhemPattern = null;
+    return startPhaseTwoMayhemPattern('columnSurge');
+  }
+
+  function debugPhaseTwoChevron() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    phase2ChevronDebugQueued = true;
+    if (!phase2AvatarStarted) skipPhaseTwoTransition();
+    if (phase2CombatStarted && phase2ChevronDebugQueued) beginDebugPhaseTwoChevron();
   }
 
   function spawnPhaseTwoRushEye() {
@@ -15698,6 +16074,7 @@
     phase2MayhemPattern = null;
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
+    phase2ChevronDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
