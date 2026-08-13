@@ -700,6 +700,7 @@
   let phase2DoomDebugQueued = false;
   let phase2MayhemPattern = null;
   let phase2MayhemDebugQueued = false;
+  let phase2SpearRainDebugQueued = false;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
   let nextSlotId = 1;
@@ -799,10 +800,20 @@
   const PHASE2_MAYHEM_FAN_ORBIT_MS = 10000;
   const PHASE2_MAYHEM_FADE_MS = 760;
   const PHASE2_MAYHEM_HUB_RADIUS = 17;
-  const PHASE2_MAYHEM_SPEAR_SPEED_PER_BEAT = 185;
-  const PHASE2_MAYHEM_SPEAR_SHOT_GAP_BEATS = 0.26;
-  const PHASE2_MAYHEM_SPEAR_BURST_REST_BEATS = 2.8;
-  const PHASE2_MAYHEM_SPEAR_TRAIL_LENGTH = 720;
+  const PHASE2_MAYHEM_SPEAR_SPEED_PER_BEAT = 138.75;
+  const PHASE2_MAYHEM_SPEAR_SHOT_GAP_MS = 500;
+  const PHASE2_MAYHEM_SPEAR_WAVE_REST_BEATS = 0.6;
+  const PHASE2_MAYHEM_SPEAR_TRAIL_LENGTH = 360;
+  const PHASE2_MAYHEM_SPEAR_TRAIL_HALF_WIDTH = 3.5;
+  const PHASE2_MAYHEM_SPEAR_BODY_RADIUS = 7;
+  const PHASE2_MAYHEM_SPEAR_SPREAD_RADIANS = 0.13;
+  const PHASE2_MAYHEM_SPEAR_SHADOW_POLYGON = [
+    { x: 24, y: 0 },
+    { x: 5, y: -20 },
+    { x: -35, y: -20 },
+    { x: -35, y: 20 },
+    { x: 5, y: 20 },
+  ];
   const PHASE2_MAYHEM_SPEAR_MAX_BOUNCES = 4;
   const PHASE2_MAYHEM_SPEAR_DAMAGE = 100;
   const PHASE2_MAYHEM_UNDER_PATTERNS = ['quadrantFans', 'spearRain'];
@@ -1760,6 +1771,16 @@
       mayhemBtn.blur();
     });
     debugPanel.appendChild(mayhemBtn);
+
+    const spearRainBtn = document.createElement('button');
+    spearRainBtn.type = 'button';
+    spearRainBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    spearRainBtn.textContent = 'SPEAR RAIN';
+    spearRainBtn.addEventListener('click', () => {
+      debugPhaseTwoSpearRain();
+      spearRainBtn.blur();
+    });
+    debugPanel.appendChild(spearRainBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -3866,6 +3887,21 @@
       ctx.translate(arrow.x, arrow.y);
       ctx.rotate(angle);
       ctx.beginPath();
+      ctx.moveTo(24, 0);
+      ctx.lineTo(5, -20);
+      ctx.lineTo(-35, -20);
+      ctx.lineTo(-35, 20);
+      ctx.lineTo(5, 20);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(35, 5, 50, 0.72)';
+      ctx.shadowColor = 'rgba(96, 32, 126, 0.64)';
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(102, 48, 132, 0.72)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
       ctx.moveTo(14, 0);
       ctx.lineTo(2, -6);
       ctx.lineTo(2, -2.5);
@@ -5598,6 +5634,7 @@
     phase2DoomDebugQueued = false;
     phase2MayhemPattern = null;
     phase2MayhemDebugQueued = false;
+    phase2SpearRainDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -7335,6 +7372,7 @@
     phase2DoomDebugQueued = false;
     phase2MayhemPattern = null;
     phase2MayhemDebugQueued = false;
+    phase2SpearRainDebugQueued = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
     entropy = 0;
@@ -8411,6 +8449,9 @@
     } else if (phase2MayhemDebugQueued) {
       phase2MayhemDebugQueued = false;
       beginDebugPhaseTwoMayhem();
+    } else if (phase2SpearRainDebugQueued) {
+      phase2SpearRainDebugQueued = false;
+      beginDebugPhaseTwoSpearRain();
     } else if (phase2RushDebugQueued) beginDebugPhaseTwoRush();
     else if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
     else if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
@@ -9654,9 +9695,13 @@
         type,
         elapsed: 0,
         elapsedBeats: 0,
-        nextBurstBeat: 0.6,
-        nextShotBeat: Infinity,
+        waveSize: 1,
+        wavePending: true,
+        nextWaveBeat: 0.6,
+        nextShotAt: Infinity,
         shotsRemaining: 0,
+        activeWaveSize: 0,
+        waveShotIndex: 0,
         arrows: [],
         nextArrowId: 1,
       };
@@ -9735,13 +9780,18 @@
     const target = heroBodyCenterWorld();
     const dx = target.x - source.x;
     const dy = target.y - source.y;
-    const distance = Math.hypot(dx, dy) || 1;
+    const shotIndex = under.waveShotIndex++;
+    const waveSize = Math.max(1, under.activeWaveSize || 1);
+    const centeredSlot = shotIndex - (waveSize - 1) / 2;
+    const variation = Math.sin((under.nextArrowId + waveSize * 7) * 12.9898) * 0.025;
+    const angle = Math.atan2(dy, dx) +
+      centeredSlot * PHASE2_MAYHEM_SPEAR_SPREAD_RADIANS + variation;
     under.arrows.push({
       id: under.nextArrowId++,
       x: source.x,
       y: source.y,
-      dx: dx / distance,
-      dy: dy / distance,
+      dx: Math.cos(angle),
+      dy: Math.sin(angle),
       bounces: 0,
       age: 0,
       dead: false,
@@ -9817,24 +9867,92 @@
     }
   }
 
-  function updatePhaseTwoMayhemSpearRain(under, dt, beatStep) {
-    under.elapsedBeats += beatStep;
-    if (under.shotsRemaining === 0 && under.elapsedBeats >= under.nextBurstBeat) {
-      under.shotsRemaining = 3;
-      under.nextShotBeat = under.elapsedBeats;
+  function phaseTwoMayhemSpearRainContact(under) {
+    const bodyCenter = heroBodyCenterWorld();
+    const damageRect = {
+      left: bodyCenter.x - 2.5,
+      right: bodyCenter.x + 2.5,
+      top: bodyCenter.y - 2.5,
+      bottom: bodyCenter.y + 2.5,
+    };
+    const rewardPoints = heroBodyWorldRewardPoints();
+    let trailHits = 0;
+    let arrowShadow = false;
+    for (const arrow of under.arrows) {
+      let trailHit = false;
+      for (let index = 1; index < arrow.trail.length; index++) {
+        const previous = arrow.trail[index - 1];
+        const point = arrow.trail[index];
+        if (segmentRectDistance(
+          previous.x,
+          previous.y,
+          point.x,
+          point.y,
+          damageRect
+        ) <= PHASE2_MAYHEM_SPEAR_TRAIL_HALF_WIDTH) {
+          trailHit = true;
+          break;
+        }
+      }
+      if (trailHit) trailHits++;
+      if (arrow.dead || arrowShadow) continue;
+      arrowShadow = rewardPoints.some((point) => {
+        const offsetX = point.x - arrow.x;
+        const offsetY = point.y - arrow.y;
+        const localX = offsetX * arrow.dx + offsetY * arrow.dy;
+        const localY = -offsetX * arrow.dy + offsetY * arrow.dx;
+        return pointInPoly(localX, localY, PHASE2_MAYHEM_SPEAR_SHADOW_POLYGON) &&
+          distToSeg(localX, localY, -27, 0, 14, 0) > PHASE2_MAYHEM_SPEAR_BODY_RADIUS;
+      });
     }
-    while (under.shotsRemaining > 0 && under.elapsedBeats >= under.nextShotBeat) {
+    return { trailHits, arrowShadow };
+  }
+
+  function updatePhaseTwoMayhemSpearRain(pattern, under, dt, beatStep) {
+    under.elapsedBeats += beatStep;
+    for (const arrow of under.arrows) updatePhaseTwoMayhemSpear(arrow, dt);
+    under.arrows = under.arrows.filter((arrow) => !arrow.dead || arrow.fadeAge < 620);
+
+    if (!under.wavePending && under.shotsRemaining === 0 && under.arrows.length === 0) {
+      if (under.waveSize >= 8) {
+        beginPhaseTwoMayhemUnderPattern(pattern);
+        return;
+      }
+      under.waveSize = Math.min(8, under.waveSize + 1);
+      under.wavePending = true;
+      under.nextWaveBeat = under.elapsedBeats + PHASE2_MAYHEM_SPEAR_WAVE_REST_BEATS;
+    }
+    if (under.wavePending && under.elapsedBeats >= under.nextWaveBeat) {
+      under.wavePending = false;
+      under.shotsRemaining = under.waveSize;
+      under.activeWaveSize = under.waveSize;
+      under.waveShotIndex = 0;
+      under.nextShotAt = under.elapsed;
+    }
+    while (under.shotsRemaining > 0 && under.elapsed >= under.nextShotAt) {
       spawnPhaseTwoMayhemSpear(under);
       under.shotsRemaining--;
       if (under.shotsRemaining > 0) {
-        under.nextShotBeat += PHASE2_MAYHEM_SPEAR_SHOT_GAP_BEATS;
+        under.nextShotAt += PHASE2_MAYHEM_SPEAR_SHOT_GAP_MS;
       } else {
-        under.nextBurstBeat = under.nextShotBeat + PHASE2_MAYHEM_SPEAR_BURST_REST_BEATS;
-        under.nextShotBeat = Infinity;
+        under.nextShotAt = Infinity;
       }
     }
-    for (const arrow of under.arrows) updatePhaseTwoMayhemSpear(arrow, dt);
-    under.arrows = under.arrows.filter((arrow) => !arrow.dead || arrow.fadeAge < 620);
+    const contact = phaseTwoMayhemSpearRainContact(under);
+    if (contact.trailHits > 0) {
+      damagePlayer(DAMAGE_PER_BEAT * contact.trailHits * beatStep);
+      const damageStep = Math.floor(
+        (beatIndex + beatPhase / Math.max(1, beatMs)) * BOSS_SFX_DAMAGE_STEPS_PER_BEAT
+      );
+      if (damageStep !== pattern.lastDamageStep) {
+        pattern.lastDamageStep = damageStep;
+        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+      }
+      if (hp <= 0) die();
+    } else {
+      pattern.lastDamageStep = -1;
+      if (contact.arrowShadow) addVp(VP_PER_BEAT * beatStep, true);
+    }
   }
 
   function phaseTwoMayhemBladeGrowth(under, secondPair) {
@@ -9899,7 +10017,7 @@
     under.elapsed += dt;
     const beatStep = dt / Math.max(1, beatMs);
     if (under.type === 'spearRain') {
-      updatePhaseTwoMayhemSpearRain(under, dt, beatStep);
+      updatePhaseTwoMayhemSpearRain(pattern, under, dt, beatStep);
       return;
     }
     if (under.type !== 'quadrantFans') return;
@@ -9954,7 +10072,7 @@
     }
   }
 
-  function startPhaseTwoMayhemPattern() {
+  function startPhaseTwoMayhemPattern(initialType = 'quadrantFans') {
     if (!phase2CombatStarted || !canvas) return false;
     restorePhaseTwoSquareArena(true);
     phase2PitfallPattern = null;
@@ -9976,7 +10094,7 @@
       underPattern: null,
       lastDamageStep: -1,
     };
-    beginPhaseTwoMayhemUnderPattern(phase2MayhemPattern, 'quadrantFans');
+    beginPhaseTwoMayhemUnderPattern(phase2MayhemPattern, initialType);
     keys.clear();
     const help = overlay && overlay.querySelector('.aether-boss2d-help');
     if (help && help.firstChild) help.firstChild.nodeValue = 'WASD / ARROWS MOVE';
@@ -9988,8 +10106,9 @@
 
   function beginDebugPhaseTwoMayhem() {
     phase2MayhemDebugQueued = false;
+    phase2SpearRainDebugQueued = false;
     phase2MayhemPattern = null;
-    return startPhaseTwoMayhemPattern();
+    return startPhaseTwoMayhemPattern('quadrantFans');
   }
 
   function debugPhaseTwoMayhem() {
@@ -10001,6 +10120,24 @@
     phase2MayhemDebugQueued = true;
     if (!phase2AvatarStarted) skipPhaseTwoTransition();
     if (phase2CombatStarted && phase2MayhemDebugQueued) beginDebugPhaseTwoMayhem();
+  }
+
+  function beginDebugPhaseTwoSpearRain() {
+    phase2SpearRainDebugQueued = false;
+    phase2MayhemDebugQueued = false;
+    phase2MayhemPattern = null;
+    return startPhaseTwoMayhemPattern('spearRain');
+  }
+
+  function debugPhaseTwoSpearRain() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    phase2SpearRainDebugQueued = true;
+    if (!phase2AvatarStarted) skipPhaseTwoTransition();
+    if (phase2CombatStarted && phase2SpearRainDebugQueued) beginDebugPhaseTwoSpearRain();
   }
 
   function spawnPhaseTwoRushEye() {
@@ -15560,6 +15697,7 @@
     phase2DoomDebugQueued = false;
     phase2MayhemPattern = null;
     phase2MayhemDebugQueued = false;
+    phase2SpearRainDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
