@@ -704,6 +704,7 @@
   let phase2ChevronDebugQueued = false;
   let phase2TrianglesDebugQueued = false;
   let phase2WaveformDebugQueued = false;
+  let phase2RipplesDebugQueued = false;
   let phase2WaveformMusicRestore = null;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
@@ -853,12 +854,23 @@
   const PHASE2_MAYHEM_WAVEFORM_AUDIO_CEILING_DB = -8;
   const PHASE2_MAYHEM_WAVEFORM_AUDIO_HISTORY = 16;
   const PHASE2_MAYHEM_WAVEFORM_MIN_RANGE_DB = 2.5;
+  const PHASE2_MAYHEM_RIPPLE_ORB_INSET = 18;
+  const PHASE2_MAYHEM_RIPPLE_ORB_RADIUS = 11;
+  const PHASE2_MAYHEM_RIPPLE_HALF_ANGLE = 0.5;
+  const PHASE2_MAYHEM_RIPPLE_TELEGRAPH_BEATS = 0.55;
+  const PHASE2_MAYHEM_RIPPLE_INTERVAL_BEATS = 2.7;
+  const PHASE2_MAYHEM_RIPPLE_SPEED_PER_BEAT = 20;
+  const PHASE2_MAYHEM_RIPPLE_SHADOW_LEAD = 17;
+  const PHASE2_MAYHEM_RIPPLE_COUNT = 30;
+  const PHASE2_MAYHEM_RIPPLE_HOLE_MIN_HALF_ANGLE = 0.09375;
+  const PHASE2_MAYHEM_RIPPLE_HOLE_MAX_HALF_ANGLE = 0.15;
   const PHASE2_MAYHEM_UNDER_PATTERNS = [
     'quadrantFans',
     'spearRain',
     'columnSurge',
     'giantTriangles',
     'audioWaveform',
+    'cornerRipples',
   ];
   const PHASE2_GRID_CHANNEL_BEATS = 3;
   const PHASE2_GRID_RECALL_MS = 460;
@@ -1854,6 +1866,16 @@
       waveformBtn.blur();
     });
     debugPanel.appendChild(waveformBtn);
+
+    const ripplesBtn = document.createElement('button');
+    ripplesBtn.type = 'button';
+    ripplesBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    ripplesBtn.textContent = 'RIPPLES';
+    ripplesBtn.addEventListener('click', () => {
+      debugPhaseTwoCornerRipples();
+      ripplesBtn.blur();
+    });
+    debugPanel.appendChild(ripplesBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -4384,6 +4406,197 @@
     ctx.restore();
   }
 
+  function phaseTwoMayhemCornerRippleGeometry() {
+    const bounds = phaseTwoMayhemSpearBounds();
+    const inset = PHASE2_MAYHEM_RIPPLE_ORB_INSET;
+    const centerX = (bounds.left + bounds.right) / 2;
+    const centerY = (bounds.top + bounds.bottom) / 2;
+    const corners = [
+      { x: bounds.left + inset, y: bounds.top + inset },
+      { x: bounds.right - inset, y: bounds.top + inset },
+      { x: bounds.right - inset, y: bounds.bottom - inset },
+      { x: bounds.left + inset, y: bounds.bottom - inset },
+    ];
+    for (const corner of corners) {
+      corner.angle = Math.atan2(centerY - corner.y, centerX - corner.x);
+    }
+    return {
+      bounds,
+      corners,
+      maxRadius: Math.hypot(bounds.right - bounds.left, bounds.bottom - bounds.top) + inset,
+    };
+  }
+
+  function phaseTwoMayhemCornerRippleMetrics(wave, geometry, leadDistance) {
+    const radius = PHASE2_MAYHEM_RIPPLE_ORB_RADIUS +
+      Math.max(0, wave.ageBeats) * PHASE2_MAYHEM_RIPPLE_SPEED_PER_BEAT + leadDistance;
+    const progress = clamp01(radius / geometry.maxRadius);
+    return {
+      radius,
+      progress,
+      halfWidth: 4 + progress * 8,
+      alpha: 1 - smoothstep((progress - 0.86) / 0.14),
+    };
+  }
+
+  function tracePhaseTwoMayhemCornerRipple(corner, radius, wave) {
+    const start = corner.angle - PHASE2_MAYHEM_RIPPLE_HALF_ANGLE;
+    const end = corner.angle + PHASE2_MAYHEM_RIPPLE_HALF_ANGLE;
+    const holeCenter = corner.angle + wave.holeOffset;
+    const holeStart = holeCenter - wave.holeHalfAngle;
+    const holeEnd = holeCenter + wave.holeHalfAngle;
+    ctx.beginPath();
+    ctx.moveTo(corner.x + Math.cos(start) * radius, corner.y + Math.sin(start) * radius);
+    ctx.arc(corner.x, corner.y, radius, start, holeStart);
+    ctx.moveTo(corner.x + Math.cos(holeEnd) * radius, corner.y + Math.sin(holeEnd) * radius);
+    ctx.arc(corner.x, corner.y, radius, holeEnd, end);
+  }
+
+  function fillPhaseTwoMayhemCornerRippleHoleCaps(corner, radius, wave, capRadius, color) {
+    const holeCenter = corner.angle + wave.holeOffset;
+    const firstAngle = holeCenter - wave.holeHalfAngle;
+    const secondAngle = holeCenter + wave.holeHalfAngle;
+    const firstX = corner.x + Math.cos(firstAngle) * radius;
+    const firstY = corner.y + Math.sin(firstAngle) * radius;
+    const secondX = corner.x + Math.cos(secondAngle) * radius;
+    const secondY = corner.y + Math.sin(secondAngle) * radius;
+    ctx.beginPath();
+    ctx.moveTo(firstX + capRadius, firstY);
+    ctx.arc(firstX, firstY, capRadius, 0, Math.PI * 2);
+    ctx.moveTo(secondX + capRadius, secondY);
+    ctx.arc(secondX, secondY, capRadius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  function phaseTwoMayhemPointTouchesCornerRipple(point, corner, wave, metrics, extraWidth) {
+    const dx = point.x - corner.x;
+    const dy = point.y - corner.y;
+    const distance = Math.hypot(dx, dy);
+    if (Math.abs(distance - metrics.radius) > metrics.halfWidth + extraWidth) return false;
+    const angle = Math.atan2(dy, dx);
+    const relativeAngle = Math.atan2(
+      Math.sin(angle - corner.angle),
+      Math.cos(angle - corner.angle)
+    );
+    if (Math.abs(relativeAngle) > PHASE2_MAYHEM_RIPPLE_HALF_ANGLE) return false;
+    if (Math.abs(relativeAngle - wave.holeOffset) >= wave.holeHalfAngle) return true;
+    const capRadius = metrics.halfWidth + extraWidth;
+    const firstAngle = corner.angle + wave.holeOffset - wave.holeHalfAngle;
+    const secondAngle = corner.angle + wave.holeOffset + wave.holeHalfAngle;
+    const firstX = corner.x + Math.cos(firstAngle) * metrics.radius;
+    const firstY = corner.y + Math.sin(firstAngle) * metrics.radius;
+    const secondX = corner.x + Math.cos(secondAngle) * metrics.radius;
+    const secondY = corner.y + Math.sin(secondAngle) * metrics.radius;
+    return Math.hypot(point.x - firstX, point.y - firstY) <= capRadius ||
+      Math.hypot(point.x - secondX, point.y - secondY) <= capRadius;
+  }
+
+  function renderPhaseTwoMayhemCornerRipples(under) {
+    const geometry = phaseTwoMayhemCornerRippleGeometry();
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(
+      geometry.bounds.left,
+      geometry.bounds.top,
+      geometry.bounds.right - geometry.bounds.left,
+      geometry.bounds.bottom - geometry.bounds.top
+    );
+    ctx.clip();
+    ctx.lineCap = 'round';
+
+    for (const wave of under.waves) {
+      if (wave.ageBeats < 0) continue;
+      const corner = geometry.corners[wave.cornerIndex];
+      const metrics = phaseTwoMayhemCornerRippleMetrics(
+        wave,
+        geometry,
+        PHASE2_MAYHEM_RIPPLE_SHADOW_LEAD
+      );
+      if (metrics.radius > geometry.maxRadius || metrics.alpha <= 0) continue;
+      ctx.globalAlpha = metrics.alpha * 0.72;
+      tracePhaseTwoMayhemCornerRipple(corner, metrics.radius, wave);
+      ctx.strokeStyle = 'rgba(67, 25, 91, 0.72)';
+      ctx.lineWidth = metrics.halfWidth * 2 + 8;
+      ctx.stroke();
+      fillPhaseTwoMayhemCornerRippleHoleCaps(
+        corner,
+        metrics.radius,
+        wave,
+        metrics.halfWidth + 4,
+        'rgba(67, 25, 91, 0.72)'
+      );
+      tracePhaseTwoMayhemCornerRipple(corner, metrics.radius, wave);
+      ctx.strokeStyle = 'rgba(172, 91, 198, 0.72)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    for (const wave of under.waves) {
+      if (wave.ageBeats < 0) continue;
+      const corner = geometry.corners[wave.cornerIndex];
+      const metrics = phaseTwoMayhemCornerRippleMetrics(wave, geometry, 0);
+      if (metrics.radius > geometry.maxRadius || metrics.alpha <= 0) continue;
+      ctx.globalAlpha = metrics.alpha;
+      tracePhaseTwoMayhemCornerRipple(corner, metrics.radius, wave);
+      ctx.strokeStyle = '#e21a28';
+      ctx.lineWidth = metrics.halfWidth * 2 + 4;
+      ctx.stroke();
+      fillPhaseTwoMayhemCornerRippleHoleCaps(
+        corner,
+        metrics.radius,
+        wave,
+        metrics.halfWidth + 2,
+        '#e21a28'
+      );
+      tracePhaseTwoMayhemCornerRipple(corner, metrics.radius, wave);
+      ctx.strokeStyle = '#020204';
+      ctx.lineWidth = metrics.halfWidth * 2;
+      ctx.stroke();
+      fillPhaseTwoMayhemCornerRippleHoleCaps(
+        corner,
+        metrics.radius,
+        wave,
+        metrics.halfWidth,
+        '#020204'
+      );
+      const offset = Math.sin(wave.seed + wave.ageBeats * 3.1) * metrics.halfWidth * 0.48;
+      tracePhaseTwoMayhemCornerRipple(corner, Math.max(1, metrics.radius + offset), wave);
+      ctx.strokeStyle = 'rgba(119, 8, 18, 0.48)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+    for (let index = 0; index < geometry.corners.length; index++) {
+      const corner = geometry.corners[index];
+      const pulseAge = under.orbPulseAges[index];
+      const pulse = 1 - clamp01(pulseAge / 0.8);
+      if (pulse > 0) {
+        ctx.beginPath();
+        ctx.arc(corner.x, corner.y, PHASE2_MAYHEM_RIPPLE_ORB_RADIUS + 5 + pulse * 18, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(228, 24, 38, ${(pulse * 0.78).toFixed(3)})`;
+        ctx.lineWidth = 2 + pulse * 2;
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(corner.x, corner.y, PHASE2_MAYHEM_RIPPLE_ORB_RADIUS + pulse * 3, 0, Math.PI * 2);
+      ctx.fillStyle = pulse > 0.3 ? '#4b050d' : '#050306';
+      ctx.shadowColor = `rgba(225, 16, 31, ${(0.35 + pulse * 0.45).toFixed(3)})`;
+      ctx.shadowBlur = 8 + pulse * 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#e21a28';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(corner.x, corner.y, 3 + pulse * 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#ec1c2c';
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function renderPhaseTwoMayhem() {
     const pattern = phase2MayhemPattern;
     const under = pattern && pattern.underPattern;
@@ -4402,6 +4615,10 @@
     }
     if (under.type === 'audioWaveform') {
       renderPhaseTwoMayhemAudioWaveform(under);
+      return;
+    }
+    if (under.type === 'cornerRipples') {
+      renderPhaseTwoMayhemCornerRipples(under);
       return;
     }
     if (under.type !== 'quadrantFans') return;
@@ -6104,6 +6321,7 @@
     phase2ChevronDebugQueued = false;
     phase2TrianglesDebugQueued = false;
     phase2WaveformDebugQueued = false;
+    phase2RipplesDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -7871,6 +8089,7 @@
     phase2ChevronDebugQueued = false;
     phase2TrianglesDebugQueued = false;
     phase2WaveformDebugQueued = false;
+    phase2RipplesDebugQueued = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
     entropy = 0;
@@ -8959,6 +9178,9 @@
     } else if (phase2WaveformDebugQueued) {
       phase2WaveformDebugQueued = false;
       beginDebugPhaseTwoWaveform();
+    } else if (phase2RipplesDebugQueued) {
+      phase2RipplesDebugQueued = false;
+      beginDebugPhaseTwoCornerRipples();
     } else if (phase2RushDebugQueued) beginDebugPhaseTwoRush();
     else if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
     else if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
@@ -10269,6 +10491,22 @@
       playBossSfx('phase2Whirlpool');
       return;
     }
+    if (type === 'cornerRipples') {
+      pattern.underPattern = {
+        type,
+        elapsed: 0,
+        elapsedBeats: 0,
+        nextPulseBeat: 0.7,
+        pulsesSpawned: 0,
+        cornerOrder: [],
+        lastCorner: -1,
+        nextWaveId: 1,
+        waves: [],
+        orbPulseAges: Array(4).fill(Infinity),
+      };
+      playBossSfx('phase2TileCharge');
+      return;
+    }
     pattern.underPattern = {
       type,
       elapsed: 0,
@@ -10959,7 +11197,7 @@
     updatePhaseTwoMayhemWaveTimeline(under, beatStep);
 
     if (under.elapsedBeats >= PHASE2_MAYHEM_WAVEFORM_DURATION_BEATS) {
-      beginPhaseTwoMayhemUnderPattern(pattern);
+      beginPhaseTwoMayhemUnderPattern(pattern, 'cornerRipples');
       return;
     }
 
@@ -10995,6 +11233,163 @@
     } else {
       pattern.lastDamageStep = -1;
       if (shadow) addVp(VP_PER_BEAT * beatStep, true);
+    }
+  }
+
+  function phaseTwoMayhemNextRippleCorner(pattern, under) {
+    if (under.cornerOrder.length === 0) {
+      under.cornerOrder = [0, 1, 2, 3];
+      for (let index = under.cornerOrder.length - 1; index > 0; index--) {
+        const swapIndex = Math.floor(pattern.random() * (index + 1));
+        [under.cornerOrder[index], under.cornerOrder[swapIndex]] =
+          [under.cornerOrder[swapIndex], under.cornerOrder[index]];
+      }
+      if (under.cornerOrder[0] === under.lastCorner) {
+        const swapIndex = 1 + Math.floor(pattern.random() * (under.cornerOrder.length - 1));
+        [under.cornerOrder[0], under.cornerOrder[swapIndex]] =
+          [under.cornerOrder[swapIndex], under.cornerOrder[0]];
+      }
+    }
+    const cornerIndex = under.cornerOrder.shift();
+    under.lastCorner = cornerIndex;
+    return cornerIndex;
+  }
+
+  function spawnPhaseTwoMayhemCornerRipple(pattern, under) {
+    const cornerIndex = phaseTwoMayhemNextRippleCorner(pattern, under);
+    const holeHalfAngle = PHASE2_MAYHEM_RIPPLE_HOLE_MIN_HALF_ANGLE +
+      pattern.random() * (
+        PHASE2_MAYHEM_RIPPLE_HOLE_MAX_HALF_ANGLE -
+        PHASE2_MAYHEM_RIPPLE_HOLE_MIN_HALF_ANGLE
+      );
+    const holeOffsetLimit = PHASE2_MAYHEM_RIPPLE_HALF_ANGLE - holeHalfAngle - 0.045;
+    under.waves.push({
+      id: under.nextWaveId++,
+      cornerIndex,
+      ageBeats: -PHASE2_MAYHEM_RIPPLE_TELEGRAPH_BEATS,
+      strikeSoundPlayed: false,
+      seed: pattern.random() * Math.PI * 2,
+      holeHalfAngle,
+      holeOffset: (pattern.random() * 2 - 1) * holeOffsetLimit,
+    });
+    under.orbPulseAges[cornerIndex] = 0;
+    under.pulsesSpawned++;
+    playBossSfx('phase2TileCharge');
+  }
+
+  function updatePhaseTwoMayhemCornerRipples(pattern, under, beatStep) {
+    under.elapsedBeats += beatStep;
+    for (let index = 0; index < under.orbPulseAges.length; index++) {
+      under.orbPulseAges[index] += beatStep;
+    }
+    while (under.pulsesSpawned < PHASE2_MAYHEM_RIPPLE_COUNT &&
+           under.elapsedBeats >= under.nextPulseBeat) {
+      spawnPhaseTwoMayhemCornerRipple(pattern, under);
+      under.nextPulseBeat += PHASE2_MAYHEM_RIPPLE_INTERVAL_BEATS;
+    }
+
+    for (const wave of under.waves) {
+      const previousAge = wave.ageBeats;
+      wave.ageBeats += beatStep;
+      if (previousAge < 0 && wave.ageBeats >= 0 && !wave.strikeSoundPlayed) {
+        wave.strikeSoundPlayed = true;
+        playBossSfx('phase2SwordStrike');
+      }
+    }
+    const geometry = phaseTwoMayhemCornerRippleGeometry();
+    under.waves = under.waves.filter((wave) => {
+      if (wave.ageBeats < 0) return true;
+      const metrics = phaseTwoMayhemCornerRippleMetrics(wave, geometry, 0);
+      return metrics.radius <= geometry.maxRadius;
+    });
+
+    if (under.pulsesSpawned >= PHASE2_MAYHEM_RIPPLE_COUNT && under.waves.length === 0) {
+      beginPhaseTwoMayhemUnderPattern(pattern);
+      return;
+    }
+
+    const activeWaves = [];
+    for (const wave of under.waves) {
+      if (wave.ageBeats < 0) continue;
+      const corner = geometry.corners[wave.cornerIndex];
+      const live = phaseTwoMayhemCornerRippleMetrics(wave, geometry, 0);
+      const shadow = phaseTwoMayhemCornerRippleMetrics(
+        wave,
+        geometry,
+        PHASE2_MAYHEM_RIPPLE_SHADOW_LEAD
+      );
+      activeWaves.push({
+        wave,
+        corner,
+        live,
+        shadow: shadow.radius <= geometry.maxRadius ? shadow : null,
+      });
+    }
+
+    const bodyCenter = heroBodyCenterWorld();
+    const damagePoints = [];
+    for (let row = 0; row < 3; row++) {
+      for (let column = 0; column < 3; column++) {
+        damagePoints.push({
+          x: bodyCenter.x - 2.5 + column * 2.5,
+          y: bodyCenter.y - 2.5 + row * 2.5,
+        });
+      }
+    }
+    const touchesOrb = geometry.corners.some((corner) =>
+      damagePoints.some((point) =>
+        Math.hypot(point.x - corner.x, point.y - corner.y) <=
+          PHASE2_MAYHEM_RIPPLE_ORB_RADIUS + 2));
+    const hit = touchesOrb || activeWaves.some((activeWave) =>
+      damagePoints.some((point) => phaseTwoMayhemPointTouchesCornerRipple(
+        point,
+        activeWave.corner,
+        activeWave.wave,
+        activeWave.live,
+        2
+      )));
+    const rewardPoints = heroBodyWorldRewardPoints();
+    let touchesShadow = false;
+    if (!hit) {
+      rewardLoop:
+      for (const point of rewardPoints) {
+        const touchesLive = activeWaves.some((activeWave) =>
+          phaseTwoMayhemPointTouchesCornerRipple(
+            point,
+            activeWave.corner,
+            activeWave.wave,
+            activeWave.live,
+            2
+          ));
+        if (touchesLive) continue;
+        for (const activeWave of activeWaves) {
+          if (!activeWave.shadow) continue;
+          if (phaseTwoMayhemPointTouchesCornerRipple(
+            point,
+            activeWave.corner,
+            activeWave.wave,
+            activeWave.shadow,
+            4
+          )) {
+            touchesShadow = true;
+            break rewardLoop;
+          }
+        }
+      }
+    }
+    if (hit) {
+      damagePlayer(DAMAGE_PER_BEAT * beatStep);
+      const damageStep = Math.floor(
+        (beatIndex + beatPhase / Math.max(1, beatMs)) * BOSS_SFX_DAMAGE_STEPS_PER_BEAT
+      );
+      if (damageStep !== pattern.lastDamageStep) {
+        pattern.lastDamageStep = damageStep;
+        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+      }
+      if (hp <= 0) die();
+    } else {
+      pattern.lastDamageStep = -1;
+      if (touchesShadow) addVp(VP_PER_BEAT * beatStep, true);
     }
   }
 
@@ -11073,6 +11468,10 @@
     }
     if (under.type === 'audioWaveform') {
       updatePhaseTwoMayhemAudioWaveform(pattern, under, dt, beatStep);
+      return;
+    }
+    if (under.type === 'cornerRipples') {
+      updatePhaseTwoMayhemCornerRipples(pattern, under, beatStep);
       return;
     }
     if (under.type !== 'quadrantFans') return;
@@ -11166,6 +11565,7 @@
     phase2ChevronDebugQueued = false;
     phase2TrianglesDebugQueued = false;
     phase2WaveformDebugQueued = false;
+    phase2RipplesDebugQueued = false;
     phase2MayhemPattern = null;
     return startPhaseTwoMayhemPattern('quadrantFans');
   }
@@ -11187,6 +11587,7 @@
     phase2ChevronDebugQueued = false;
     phase2TrianglesDebugQueued = false;
     phase2WaveformDebugQueued = false;
+    phase2RipplesDebugQueued = false;
     phase2MayhemPattern = null;
     return startPhaseTwoMayhemPattern('spearRain');
   }
@@ -11208,6 +11609,7 @@
     phase2SpearRainDebugQueued = false;
     phase2TrianglesDebugQueued = false;
     phase2WaveformDebugQueued = false;
+    phase2RipplesDebugQueued = false;
     phase2MayhemPattern = null;
     return startPhaseTwoMayhemPattern('columnSurge');
   }
@@ -11229,6 +11631,7 @@
     phase2SpearRainDebugQueued = false;
     phase2ChevronDebugQueued = false;
     phase2WaveformDebugQueued = false;
+    phase2RipplesDebugQueued = false;
     phase2MayhemPattern = null;
     return startPhaseTwoMayhemPattern('giantTriangles');
   }
@@ -11250,6 +11653,7 @@
     phase2SpearRainDebugQueued = false;
     phase2ChevronDebugQueued = false;
     phase2TrianglesDebugQueued = false;
+    phase2RipplesDebugQueued = false;
     phase2MayhemPattern = null;
     return startPhaseTwoMayhemPattern('audioWaveform');
   }
@@ -11263,6 +11667,33 @@
     phase2WaveformDebugQueued = true;
     if (!phase2AvatarStarted) skipPhaseTwoTransition();
     if (phase2CombatStarted && phase2WaveformDebugQueued) beginDebugPhaseTwoWaveform();
+  }
+
+  function beginDebugPhaseTwoCornerRipples() {
+    phase2RipplesDebugQueued = false;
+    phase2WaveformDebugQueued = false;
+    phase2MayhemDebugQueued = false;
+    phase2SpearRainDebugQueued = false;
+    phase2ChevronDebugQueued = false;
+    phase2TrianglesDebugQueued = false;
+    phase2MayhemPattern = null;
+    return startPhaseTwoMayhemPattern('cornerRipples');
+  }
+
+  function debugPhaseTwoCornerRipples() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    phase2MayhemDebugQueued = false;
+    phase2SpearRainDebugQueued = false;
+    phase2ChevronDebugQueued = false;
+    phase2TrianglesDebugQueued = false;
+    phase2WaveformDebugQueued = false;
+    phase2RipplesDebugQueued = true;
+    if (!phase2AvatarStarted) skipPhaseTwoTransition();
+    if (phase2CombatStarted && phase2RipplesDebugQueued) beginDebugPhaseTwoCornerRipples();
   }
 
   function spawnPhaseTwoRushEye() {
@@ -16827,6 +17258,7 @@
     phase2ChevronDebugQueued = false;
     phase2TrianglesDebugQueued = false;
     phase2WaveformDebugQueued = false;
+    phase2RipplesDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
