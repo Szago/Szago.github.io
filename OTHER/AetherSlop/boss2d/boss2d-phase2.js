@@ -21,6 +21,8 @@
   const AVATAR_CONTACT_Y = 0.33;
   const AVATAR_FLOAT_IN_MS = 2600;
   const IMPACT_FLASH_MS = 150;
+  const SHEET_COLUMNS = 2;
+  const CAST_FRAMES = Object.freeze({ claw: 0, eye: 1, channel: 2, ritual: 3 });
 
   const clamp01 = (t) => Math.max(0, Math.min(1, t));
   const smoothstep = (t) => {
@@ -39,6 +41,12 @@
   function makeController(options) {
     const img = new Image();
     img.src = options.avatarSrc;
+    const dashImg = new Image();
+    const castImg = new Image();
+    const phaseImg = new Image();
+    if (options.dashSrc) dashImg.src = options.dashSrc;
+    if (options.castSrc) castImg.src = options.castSrc;
+    if (options.phaseSrc) phaseImg.src = options.phaseSrc;
     let scaledAvatar = null;
     let scaledAvatarSize = 0;
 
@@ -54,6 +62,7 @@
       combatAnchor: null,
       dash: null,
       combatSlam: null,
+      castPose: null,
       avatar: {
         x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0,
         size: 250, baseSize: 250, alpha: 0, squash: 0, visible: false,
@@ -75,6 +84,7 @@
       state.combatAnchor = null;
       state.dash = null;
       state.combatSlam = null;
+      state.castPose = null;
       state.layoutProgress = 0;
       state.impact = 0;
       state.impactAge = Infinity;
@@ -111,6 +121,7 @@
       state.combatAnchor = null;
       state.dash = null;
       state.combatSlam = null;
+      state.castPose = null;
       state.echoes = [];
       state.echoClock = 0;
       Object.assign(state.avatar, {
@@ -188,6 +199,10 @@
         age: 0,
         life: dashing ? DASH_ECHO_LIFE : ECHO_LIFE,
         dash: dashing,
+        visualKind: state.dash ? 'dash' : (state.combatSlam ? 'slam' : 'base'),
+        dashFrame: dashing && state.dash ? dashFrame(state.dash.progress) : 2,
+        dashAngle: dashing && state.dash ? state.dash.angle : Math.atan2(a.vy, a.vx),
+        slamFrame: state.combatSlam && state.combatSlam.elapsed / state.combatSlam.duration >= 0.70 ? 3 : 2,
       });
       if (state.echoes.length > MAX_ECHOES) state.echoes.splice(0, state.echoes.length - MAX_ECHOES);
     }
@@ -200,9 +215,12 @@
         fromY: anchor.y,
         toX: x,
         toY: y,
+        angle: Math.atan2(y - anchor.y, x - anchor.x),
+        progress: 0,
         elapsed: 0,
         duration: Math.max(180, duration || 330),
       };
+      state.castPose = null;
       // Keep a hint of the idle aura, but do not carry its full stack into the
       // much denser movement trail.
       state.echoes = state.echoes.filter((echo) => !echo.dash).slice(-2);
@@ -222,6 +240,7 @@
       const anchor = state.combatAnchor || { x: a.x, y: a.y };
       const size = a.baseSize || a.size;
       state.dash = null;
+      state.castPose = null;
       state.combatSlam = {
         fromX: anchor.x,
         fromY: anchor.y,
@@ -238,11 +257,25 @@
       return true;
     }
 
+    function setCastPose(name, duration) {
+      if (!Object.prototype.hasOwnProperty.call(CAST_FRAMES, name)) return false;
+      state.castPose = {
+        frame: CAST_FRAMES[name],
+        elapsed: 0,
+        duration: Math.max(180, Number(duration) || 720),
+      };
+      return true;
+    }
+
     function update(dt, boardRect, callbacks) {
       if (!state.active) return state;
       state.elapsed += dt;
       state.impact = Math.max(0, state.impact - dt / 520);
       state.impactAge += dt;
+      if (state.castPose) {
+        state.castPose.elapsed += dt;
+        if (state.castPose.elapsed >= state.castPose.duration) state.castPose = null;
+      }
 
       const a = state.avatar;
       a.prevX = a.x;
@@ -346,6 +379,7 @@
         } else if (state.dash) {
           state.dash.elapsed += dt;
           const p = clamp01(state.dash.elapsed / state.dash.duration);
+          state.dash.progress = p;
           const eased = p < 0.38
             ? easeInQuad(p / 0.38) * 0.46
             : 0.46 + easeOutCubic((p - 0.38) / 0.62) * 0.54;
@@ -414,10 +448,83 @@
       ctx.restore();
     }
 
+    function sheetReady(sheet) {
+      return !!(sheet && sheet.complete && sheet.naturalWidth && sheet.naturalHeight);
+    }
+
+    function dashFrame(progress) {
+      if (progress < 0.18) return 0;
+      if (progress < 0.42) return 1;
+      if (progress < 0.74) return 2;
+      return 3;
+    }
+
+    function sheetVisual(sheet, frame, scale, rotation) {
+      return { sheet, frame, scale: scale || 1, rotation: rotation || 0 };
+    }
+
+    function currentVisual() {
+      const collapseEnd = COLLAPSE_MS;
+      const emergeEnd = collapseEnd + EMERGE_MS;
+      const poiseEnd = emergeEnd + POISE_MS;
+      const slamEnd = poiseEnd + SLAM_MS;
+      const settleEnd = slamEnd + SETTLE_MS;
+
+      if (state.dash && sheetReady(dashImg)) {
+        const frame = dashFrame(state.dash.progress);
+        return sheetVisual(dashImg, frame, 1.12, frame === 3 ? 0 : state.dash.angle);
+      }
+      if (state.combatSlam && sheetReady(phaseImg)) {
+        const p = clamp01(state.combatSlam.elapsed / state.combatSlam.duration);
+        return sheetVisual(phaseImg, p < 0.70 ? 2 : 3, 1.08, 0);
+      }
+      if (sheetReady(phaseImg)) {
+        if (state.elapsed < collapseEnd) return sheetVisual(phaseImg, 0, 1.08, 0);
+        if (state.elapsed < emergeEnd) {
+          const p = (state.elapsed - collapseEnd) / EMERGE_MS;
+          return sheetVisual(phaseImg, p < 0.54 ? 0 : 1, 1.08, 0);
+        }
+        if (state.elapsed < poiseEnd) return sheetVisual(phaseImg, 1, 1.08, 0);
+        if (state.elapsed < slamEnd) {
+          const p = (state.elapsed - poiseEnd) / SLAM_MS;
+          return sheetVisual(phaseImg, p < 0.42 ? 2 : 3, 1.08, 0);
+        }
+        if (state.elapsed < settleEnd) return sheetVisual(phaseImg, 3, 1.08, 0);
+      }
+      if (state.castPose && sheetReady(castImg)) {
+        const pulse = 1 + Math.sin(state.castPose.elapsed * 0.018) * 0.012;
+        return sheetVisual(castImg, state.castPose.frame, 1.08 * pulse, 0);
+      }
+      return null;
+    }
+
+    function drawVisualAt(ctx, visual, x, y, size) {
+      if (!visual || !sheetReady(visual.sheet)) {
+        const sprite = avatarBitmap(state.avatar.baseSize || state.avatar.size);
+        ctx.drawImage(sprite, x - size / 2, y - size / 2, size, size);
+        return;
+      }
+      const sheet = visual.sheet;
+      const frameW = Math.floor(sheet.naturalWidth / SHEET_COLUMNS);
+      const frameH = Math.floor(sheet.naturalHeight / SHEET_COLUMNS);
+      const sourceX = (visual.frame % SHEET_COLUMNS) * frameW;
+      const sourceY = Math.floor(visual.frame / SHEET_COLUMNS) * frameH;
+      const drawSize = size * visual.scale;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(visual.rotation);
+      ctx.drawImage(
+        sheet,
+        sourceX, sourceY, frameW, frameH,
+        -drawSize / 2, -drawSize / 2, drawSize, drawSize
+      );
+      ctx.restore();
+    }
+
     function drawAvatar(ctx) {
       const a = state.avatar;
       if (!a.visible || a.alpha <= 0 || !img.complete || !img.naturalWidth) return;
-      const sprite = avatarBitmap(a.baseSize || a.size);
+      const visual = currentVisual();
       ctx.save();
       ctx.imageSmoothingEnabled = false;
       ctx.globalCompositeOperation = 'lighter';
@@ -429,7 +536,13 @@
         const size = e.size * (1 + p * 0.035);
         ctx.globalAlpha = alpha;
         ctx.shadowBlur = e.dash ? 0 : 5;
-        ctx.drawImage(sprite, e.x - size / 2 - e.nx * drift, e.y - size / 2 - e.ny * drift, size, size);
+        let echoVisual = null;
+        if (e.visualKind === 'dash' && sheetReady(dashImg)) {
+          echoVisual = sheetVisual(dashImg, e.dashFrame, 1.12, e.dashFrame === 3 ? 0 : e.dashAngle);
+        } else if (e.visualKind === 'slam' && sheetReady(phaseImg)) {
+          echoVisual = sheetVisual(phaseImg, e.slamFrame, 1.08, 0);
+        }
+        drawVisualAt(ctx, echoVisual, e.x - e.nx * drift, e.y - e.ny * drift, size);
       }
       ctx.globalCompositeOperation = 'source-over';
       ctx.shadowBlur = 0;
@@ -492,7 +605,7 @@
       ctx.shadowBlur = state.dash || state.combatSlam ? 8 : 18;
       ctx.translate(a.x, a.y);
       ctx.scale(sx, sy);
-      ctx.drawImage(sprite, -a.size / 2, -a.size / 2, a.size, a.size);
+      drawVisualAt(ctx, visual, 0, 0, a.size);
       ctx.restore();
     }
 
@@ -509,6 +622,7 @@
       dashTo,
       dashHome,
       slamTo,
+      setCastPose,
       update,
       render,
       get active() { return state.active; },

@@ -26,6 +26,9 @@
   const CULTIST_STAND_SRC = SCRIPT_DIR + 'spritesV2/shadow-cultist-standing-v2.png';
   const CULTIST_FALLEN_SRC = SCRIPT_DIR + 'spritesV2/shadow-cultist-fallen-v2.png';
   const AVATAR_SHADOW_SRC = SCRIPT_DIR + 'spritesV2/avatar-of-shadow-base.png';
+  const AVATAR_SHADOW_DASH_SRC = SCRIPT_DIR + 'spritesV2/avatar-of-shadow-dash-sheet.png';
+  const AVATAR_SHADOW_CAST_SRC = SCRIPT_DIR + 'spritesV2/avatar-of-shadow-cast-sheet.png';
+  const AVATAR_SHADOW_PHASE_SRC = SCRIPT_DIR + 'spritesV2/avatar-of-shadow-phase-sheet.png';
 
   // ---- Combat window geometry -------------------------------------------
   const BOARD = 500;            // the static 500x500 combat window (outer)
@@ -1064,7 +1067,12 @@
 
   function ensurePhaseTwoAvatar() {
     if (!phase2Avatar && window.AetherBoss2DPhase2 && window.AetherBoss2DPhase2.create) {
-      phase2Avatar = window.AetherBoss2DPhase2.create({ avatarSrc: AVATAR_SHADOW_SRC });
+      phase2Avatar = window.AetherBoss2DPhase2.create({
+        avatarSrc: AVATAR_SHADOW_SRC,
+        dashSrc: AVATAR_SHADOW_DASH_SRC,
+        castSrc: AVATAR_SHADOW_CAST_SRC,
+        phaseSrc: AVATAR_SHADOW_PHASE_SRC,
+      });
     }
     return phase2Avatar;
   }
@@ -8355,6 +8363,12 @@
       removedTiles: new Set(),
       seed: Math.random() * 1000,
     };
+    if (typeof phase2Avatar.setCastPose === 'function') {
+      phase2Avatar.setCastPose(
+        'channel',
+        PHASE2_GRID_RECALL_MS + PHASE2_GRID_CHANNEL_BEATS * beatMs + 180
+      );
+    }
     playBossSfx('phase2GridCharge');
     return true;
   }
@@ -8534,7 +8548,12 @@
       seed: Math.random() * 1000,
     };
     phase2TileRuinDebugQueued = false;
-    if (targets.length) playBossSfx('phase2TileCharge');
+    if (targets.length) {
+      if (phase2Avatar && typeof phase2Avatar.setCastPose === 'function') {
+        phase2Avatar.setCastPose('channel', PHASE2_TILE_RUIN_TELEGRAPH_BEATS * beatMs);
+      }
+      playBossSfx('phase2TileCharge');
+    }
     return true;
   }
 
@@ -8653,6 +8672,9 @@
       impactOutY: -1,
       seed: Math.random() * 1000,
     };
+    if (phase2Avatar && typeof phase2Avatar.setCastPose === 'function') {
+      phase2Avatar.setCastPose('ritual', PHASE2_SWORD_RING_FORM_MS + 220);
+    }
     playBossSfx('phase2SwordRing');
     keys.clear();
     return true;
@@ -11710,6 +11732,9 @@
         velocity: 0,
       })),
     });
+    if (phase2Avatar && typeof phase2Avatar.setCastPose === 'function') {
+      phase2Avatar.setCastPose('eye', Math.max(520, beatMs * 0.8));
+    }
     playBossSfx('phase2Eye');
     return true;
   }
@@ -11891,6 +11916,9 @@
     }
     if (!retargetPhaseTwoShadowClaw(claws[0], board)) return false;
     phase2Attacks.push(...claws);
+    if (typeof phase2Avatar.setCastPose === 'function') {
+      phase2Avatar.setCastPose('claw', Math.max(420, beatMs * 0.72 * timeScale));
+    }
     playBossSfx('phase2ClawCharge');
     if (phase2ClawRushMode) phase2RushEyeBurstPending = true;
     phase2BurstActive = true;
@@ -13201,6 +13229,9 @@
     if (phase2Avatar && phase2Avatar.state) {
       phase2Avatar.state.impact = 1;
       phase2Avatar.state.impactAge = 0;
+    }
+    if (phase2Avatar && typeof phase2Avatar.setCastPose === 'function') {
+      phase2Avatar.setCastPose('ritual', PHASE2_HEX_WHIRLPOOL_CAST_BEATS * beatMs);
     }
     playBossSfx('phase2Whirlpool');
     return true;
