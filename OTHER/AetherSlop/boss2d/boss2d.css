@@ -98,6 +98,17 @@
   gap: 5px;
 }
 
+/* Fixed pattern stepper for moving through the Mayhem sequence without
+   reaching into the tall debug stack. */
+.aether-boss2d-mayhem-advance {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 9;
+  display: flex;
+  gap: 5px;
+}
+
 /* Sound audition is kept behind a small launcher so it never crowds the arena. */
 .aether-boss2d-sound-debug-toggle {
   position: absolute;

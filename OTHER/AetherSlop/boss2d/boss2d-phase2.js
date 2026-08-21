@@ -21,6 +21,7 @@
   const AVATAR_CONTACT_Y = 0.33;
   const AVATAR_FLOAT_IN_MS = 2600;
   const IMPACT_FLASH_MS = 150;
+  const CAST_BLEND_MS = 130;
   const SHEET_COLUMNS = 2;
   const CAST_FRAMES = Object.freeze({ claw: 0, eye: 1, channel: 2, ritual: 3 });
 
@@ -63,6 +64,7 @@
       dash: null,
       combatSlam: null,
       castPose: null,
+      castTransition: null,
       avatar: {
         x: 0, y: 0, prevX: 0, prevY: 0, vx: 0, vy: 0,
         size: 250, baseSize: 250, alpha: 0, squash: 0, visible: false,
@@ -85,6 +87,7 @@
       state.dash = null;
       state.combatSlam = null;
       state.castPose = null;
+      state.castTransition = null;
       state.layoutProgress = 0;
       state.impact = 0;
       state.impactAge = Infinity;
@@ -122,6 +125,7 @@
       state.dash = null;
       state.combatSlam = null;
       state.castPose = null;
+      state.castTransition = null;
       state.echoes = [];
       state.echoClock = 0;
       Object.assign(state.avatar, {
@@ -221,6 +225,7 @@
         duration: Math.max(180, duration || 330),
       };
       state.castPose = null;
+      state.castTransition = null;
       // Keep a hint of the idle aura, but do not carry its full stack into the
       // much denser movement trail.
       state.echoes = state.echoes.filter((echo) => !echo.dash).slice(-2);
@@ -241,6 +246,7 @@
       const size = a.baseSize || a.size;
       state.dash = null;
       state.castPose = null;
+      state.castTransition = null;
       state.combatSlam = {
         fromX: anchor.x,
         fromY: anchor.y,
@@ -259,10 +265,30 @@
 
     function setCastPose(name, duration) {
       if (!Object.prototype.hasOwnProperty.call(CAST_FRAMES, name)) return false;
+      const frame = CAST_FRAMES[name];
+      const poseDuration = Math.max(180, Number(duration) || 720);
+      if (state.castPose && state.castPose.frame === frame) {
+        state.castPose.duration = Math.max(
+          state.castPose.duration,
+          state.castPose.elapsed + poseDuration
+        );
+        return true;
+      }
+      const previousFrame = state.castPose
+        ? state.castPose.frame
+        : (state.castTransition && state.castTransition.fadeOut
+          ? state.castTransition.fromFrame
+          : null);
       state.castPose = {
-        frame: CAST_FRAMES[name],
+        frame,
         elapsed: 0,
-        duration: Math.max(180, Number(duration) || 720),
+        duration: poseDuration,
+      };
+      state.castTransition = {
+        fromFrame: previousFrame,
+        elapsed: 0,
+        duration: CAST_BLEND_MS,
+        fadeOut: false,
       };
       return true;
     }
@@ -272,9 +298,23 @@
       state.elapsed += dt;
       state.impact = Math.max(0, state.impact - dt / 520);
       state.impactAge += dt;
+      if (state.castTransition) {
+        state.castTransition.elapsed += dt;
+        if (state.castTransition.elapsed >= state.castTransition.duration) {
+          state.castTransition = null;
+        }
+      }
       if (state.castPose) {
         state.castPose.elapsed += dt;
-        if (state.castPose.elapsed >= state.castPose.duration) state.castPose = null;
+        if (state.castPose.elapsed >= state.castPose.duration) {
+          state.castTransition = {
+            fromFrame: state.castPose.frame,
+            elapsed: 0,
+            duration: CAST_BLEND_MS,
+            fadeOut: true,
+          };
+          state.castPose = null;
+        }
       }
 
       const a = state.avatar;
@@ -493,7 +533,24 @@
       }
       if (state.castPose && sheetReady(castImg)) {
         const pulse = 1 + Math.sin(state.castPose.elapsed * 0.018) * 0.012;
-        return sheetVisual(castImg, state.castPose.frame, 1.08 * pulse, 0);
+        const visual = sheetVisual(castImg, state.castPose.frame, 1.08 * pulse, 0);
+        if (state.castTransition && !state.castTransition.fadeOut) {
+          visual.blendFrom = state.castTransition.fromFrame === null
+            ? null
+            : sheetVisual(castImg, state.castTransition.fromFrame, 1.08, 0);
+          visual.blendProgress = smoothstep(
+            state.castTransition.elapsed / state.castTransition.duration
+          );
+          visual.hasBlend = true;
+        }
+        return visual;
+      }
+      if (state.castTransition && state.castTransition.fadeOut && sheetReady(castImg)) {
+        const visual = sheetVisual(castImg, state.castTransition.fromFrame, 1.08, 0);
+        visual.fadeProgress = smoothstep(
+          state.castTransition.elapsed / state.castTransition.duration
+        );
+        return visual;
       }
       return null;
     }
@@ -605,7 +662,19 @@
       ctx.shadowBlur = state.dash || state.combatSlam ? 8 : 18;
       ctx.translate(a.x, a.y);
       ctx.scale(sx, sy);
-      drawVisualAt(ctx, visual, 0, 0, a.size);
+      if (visual && visual.hasBlend) {
+        ctx.globalAlpha = a.alpha * (1 - visual.blendProgress);
+        drawVisualAt(ctx, visual.blendFrom, 0, 0, a.size);
+        ctx.globalAlpha = a.alpha * visual.blendProgress;
+        drawVisualAt(ctx, visual, 0, 0, a.size);
+      } else if (visual && Number.isFinite(visual.fadeProgress)) {
+        ctx.globalAlpha = a.alpha;
+        drawVisualAt(ctx, null, 0, 0, a.size);
+        ctx.globalAlpha = a.alpha * (1 - visual.fadeProgress);
+        drawVisualAt(ctx, visual, 0, 0, a.size);
+      } else {
+        drawVisualAt(ctx, visual, 0, 0, a.size);
+      }
       ctx.restore();
     }
 

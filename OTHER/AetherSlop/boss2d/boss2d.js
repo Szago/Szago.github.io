@@ -1961,6 +1961,29 @@
       primePhaseTwoBtn.blur();
     });
     debugPanel.appendChild(primePhaseTwoBtn);
+
+    const mayhemAdvanceControls = document.createElement('div');
+    mayhemAdvanceControls.className = 'aether-boss2d-mayhem-advance';
+    const previousMayhemBtn = document.createElement('button');
+    previousMayhemBtn.type = 'button';
+    previousMayhemBtn.className = 'aether-boss2d-debug-btn';
+    previousMayhemBtn.textContent = 'PATTERN <';
+    previousMayhemBtn.title = 'Previous mayhem pattern';
+    previousMayhemBtn.addEventListener('click', () => {
+      advancePhaseTwoMayhemPattern(-1);
+      previousMayhemBtn.blur();
+    });
+    const nextMayhemBtn = document.createElement('button');
+    nextMayhemBtn.type = 'button';
+    nextMayhemBtn.className = 'aether-boss2d-debug-btn';
+    nextMayhemBtn.textContent = 'PATTERN >';
+    nextMayhemBtn.title = 'Next mayhem pattern';
+    nextMayhemBtn.addEventListener('click', () => {
+      advancePhaseTwoMayhemPattern(1);
+      nextMayhemBtn.blur();
+    });
+    mayhemAdvanceControls.append(previousMayhemBtn, nextMayhemBtn);
+    overlay.appendChild(mayhemAdvanceControls);
   }
 
   // ---- Rendering ---------------------------------------------------------
@@ -10436,6 +10459,14 @@
     }
   }
 
+  function setPhaseTwoMayhemCastPose(name, durationBeats) {
+    if (!phase2Avatar || typeof phase2Avatar.setCastPose !== 'function') return false;
+    return phase2Avatar.setCastPose(
+      name,
+      Math.max(240, Math.max(0, Number(durationBeats) || 0) * beatMs)
+    );
+  }
+
   function beginPhaseTwoMayhemUnderPattern(pattern, forcedType) {
     stopPhaseTwoWaveformMusic();
     const choices = PHASE2_MAYHEM_UNDER_PATTERNS.filter((type) =>
@@ -10457,6 +10488,7 @@
         arrows: [],
         nextArrowId: 1,
       };
+      setPhaseTwoMayhemCastPose('claw', 1.2);
       playBossSfx('phase2SwordRing');
       return;
     }
@@ -10476,6 +10508,7 @@
         nextAttackId: 1,
         attacks: [],
       };
+      setPhaseTwoMayhemCastPose('channel', PHASE2_MAYHEM_COLUMN_LEAD_BEATS + 1);
       playBossSfx('phase2TileCharge');
       return;
     }
@@ -10495,6 +10528,7 @@
         nextAttackId: 1,
         attacks: [],
       };
+      setPhaseTwoMayhemCastPose('ritual', 1.4);
       playBossSfx('phase2TileCharge');
       return;
     }
@@ -10509,6 +10543,7 @@
         beatEnergyWeight: 0,
         audioDbHistory: [],
       };
+      setPhaseTwoMayhemCastPose('channel', PHASE2_MAYHEM_WAVEFORM_DURATION_BEATS + 1);
       startPhaseTwoWaveformMusic();
       playBossSfx('phase2Whirlpool');
       return;
@@ -10526,6 +10561,7 @@
         waves: [],
         orbPulseAges: Array(4).fill(Infinity),
       };
+      setPhaseTwoMayhemCastPose('ritual', PHASE2_MAYHEM_RIPPLE_INTERVAL_BEATS + 0.5);
       playBossSfx('phase2TileCharge');
       return;
     }
@@ -10543,6 +10579,11 @@
         radiansPerBeat: 0.34 + index * 0.0225 + pattern.random() * 0.010,
       })),
     };
+    setPhaseTwoMayhemCastPose(
+      'ritual',
+      (PHASE2_MAYHEM_HUB_FORM_MS + PHASE2_MAYHEM_TWO_BLADE_MS) /
+        Math.max(1, beatMs) + 0.5
+    );
     playBossSfx('phase2TileCharge');
   }
 
@@ -10607,6 +10648,10 @@
     const variation = Math.sin((under.nextArrowId + waveSize * 7) * 12.9898) * 0.025;
     const angle = Math.atan2(dy, dx) +
       centeredSlot * PHASE2_MAYHEM_SPEAR_SPREAD_RADIANS + variation;
+    setPhaseTwoMayhemCastPose(
+      'claw',
+      PHASE2_MAYHEM_SPEAR_SHOT_GAP_MS / Math.max(1, beatMs) + 0.55
+    );
     under.arrows.push({
       id: under.nextArrowId++,
       x: source.x,
@@ -10783,6 +10828,7 @@
       PHASE2_MAYHEM_COLUMN_CHEVRON_HALF_WIDTH * 2;
     const waveIndex = under.wavesSpawned;
     const reversed = under.mode === 'reverse';
+    setPhaseTwoMayhemCastPose('channel', PHASE2_MAYHEM_COLUMN_WAVE_BEATS + 0.6);
     for (let lane = 0; lane < 3; lane++) {
       const direction = (lane === 1 ? 1 : -1) * (reversed ? -1 : 1);
       const laneLaunchBeat = launchBeat +
@@ -10853,6 +10899,11 @@
       if (under.elapsedBeats >= under.reversalAtBeat) {
         under.mode = 'braking';
         under.transitionBeats = 0;
+        setPhaseTwoMayhemCastPose(
+          'ritual',
+          PHASE2_MAYHEM_COLUMN_BRAKE_BEATS +
+            PHASE2_MAYHEM_COLUMN_ROTATE_BEATS + 0.3
+        );
         playBossSfx('phase2TileCharge');
       }
     } else if (under.mode === 'reverse') {
@@ -10891,6 +10942,10 @@
         under.transitionBeats = 0;
         under.reverseRampBeats = 0;
         under.nextWaveBeat = under.elapsedBeats + PHASE2_MAYHEM_COLUMN_WAVE_BEATS;
+        setPhaseTwoMayhemCastPose(
+          'channel',
+          PHASE2_MAYHEM_COLUMN_WAVE_BEATS + PHASE2_MAYHEM_COLUMN_RESTART_BEATS
+        );
         playBossSfx('phase2SwordStrike');
       }
     } else if (under.mode === 'reverse') {
@@ -10988,6 +11043,12 @@
   }
 
   function beginPhaseTwoMayhemTriangleAttack(pattern, under, side, phase, seed) {
+    setPhaseTwoMayhemCastPose(
+      'claw',
+      (phase === 'telegraph'
+        ? PHASE2_MAYHEM_TRIANGLE_TELEGRAPH_BEATS
+        : PHASE2_MAYHEM_TRIANGLE_STRIKE_BEATS) + 0.4
+    );
     under.attacks = [{
       id: under.nextAttackId++,
       side,
@@ -11285,6 +11346,10 @@
         PHASE2_MAYHEM_RIPPLE_HOLE_MIN_HALF_ANGLE
       );
     const holeOffsetLimit = PHASE2_MAYHEM_RIPPLE_HALF_ANGLE - holeHalfAngle - 0.045;
+    setPhaseTwoMayhemCastPose(
+      'ritual',
+      PHASE2_MAYHEM_RIPPLE_TELEGRAPH_BEATS + 0.65
+    );
     under.waves.push({
       id: under.nextWaveId++,
       cornerIndex,
@@ -11502,11 +11567,20 @@
     }
     if (!under.firstSoundPlayed && under.elapsed >= PHASE2_MAYHEM_HUB_FORM_MS) {
       under.firstSoundPlayed = true;
+      setPhaseTwoMayhemCastPose(
+        'ritual',
+        (PHASE2_MAYHEM_TWO_BLADE_MS + PHASE2_MAYHEM_FOUR_BLADE_MS) /
+          Math.max(1, beatMs) + 0.5
+      );
       playBossSfx('phase2SwordRing');
     }
     const secondStart = PHASE2_MAYHEM_HUB_FORM_MS + PHASE2_MAYHEM_TWO_BLADE_MS;
     if (!under.secondSoundPlayed && under.elapsed >= secondStart) {
       under.secondSoundPlayed = true;
+      setPhaseTwoMayhemCastPose(
+        'ritual',
+        PHASE2_MAYHEM_FOUR_BLADE_MS / Math.max(1, beatMs) + 0.5
+      );
       playBossSfx('phase2SwordRing');
     }
     const orbitStart = secondStart + PHASE2_MAYHEM_FOUR_BLADE_MS;
@@ -11516,6 +11590,11 @@
         orbitDt / Math.max(1, beatMs);
       if (!under.orbitSoundPlayed) {
         under.orbitSoundPlayed = true;
+        setPhaseTwoMayhemCastPose(
+          'channel',
+          (PHASE2_MAYHEM_FAN_ORBIT_MS + PHASE2_MAYHEM_FADE_MS) /
+            Math.max(1, beatMs) + 0.3
+        );
         playBossSfx('phase2Whirlpool');
       }
     }
@@ -11571,13 +11650,46 @@
       underPattern: null,
       lastDamageStep: -1,
     };
-    beginPhaseTwoMayhemUnderPattern(phase2MayhemPattern, initialType);
     keys.clear();
     const help = overlay && overlay.querySelector('.aether-boss2d-help');
     if (help && help.firstChild) help.firstChild.nodeValue = 'WASD / ARROWS MOVE';
     if (phase2Avatar && typeof phase2Avatar.dashHome === 'function') {
       phase2Avatar.dashHome(getBoardRect(), PHASE2_BOSS_RETURN_DASH_MS);
     }
+    beginPhaseTwoMayhemUnderPattern(phase2MayhemPattern, initialType);
+    return true;
+  }
+
+  function advancePhaseTwoMayhemPattern(direction) {
+    const step = direction < 0 ? -1 : 1;
+    const currentType = phase2MayhemPattern && (
+      phase2MayhemPattern.underPattern
+        ? phase2MayhemPattern.underPattern.type
+        : phase2MayhemPattern.lastType
+    );
+    const currentIndex = PHASE2_MAYHEM_UNDER_PATTERNS.indexOf(currentType);
+    const startIndex = currentIndex >= 0
+      ? currentIndex
+      : (step > 0 ? -1 : 0);
+    const nextIndex = (startIndex + step + PHASE2_MAYHEM_UNDER_PATTERNS.length) %
+      PHASE2_MAYHEM_UNDER_PATTERNS.length;
+    const nextType = PHASE2_MAYHEM_UNDER_PATTERNS[nextIndex];
+
+    if (phase2MayhemPattern) {
+      beginPhaseTwoMayhemUnderPattern(phase2MayhemPattern, nextType);
+      return true;
+    }
+
+    const debugStart = {
+      quadrantFans: debugPhaseTwoMayhem,
+      spearRain: debugPhaseTwoSpearRain,
+      columnSurge: debugPhaseTwoChevron,
+      giantTriangles: debugPhaseTwoTriangles,
+      audioWaveform: debugPhaseTwoWaveform,
+      cornerRipples: debugPhaseTwoCornerRipples,
+    }[nextType];
+    if (!debugStart) return false;
+    debugStart();
     return true;
   }
 
