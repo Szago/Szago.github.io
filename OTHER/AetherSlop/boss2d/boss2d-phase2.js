@@ -203,10 +203,9 @@
         age: 0,
         life: dashing ? DASH_ECHO_LIFE : ECHO_LIFE,
         dash: dashing,
-        visualKind: state.dash ? 'dash' : (state.combatSlam ? 'slam' : 'base'),
-        dashFrame: dashing && state.dash ? dashFrame(state.dash.progress) : 2,
-        dashAngle: dashing && state.dash ? state.dash.angle : Math.atan2(a.vy, a.vx),
-        slamFrame: state.combatSlam && state.combatSlam.elapsed / state.combatSlam.duration >= 0.70 ? 3 : 2,
+        // Freeze the visual at spawn time. Older ripples keep their original
+        // frame while newly-created ones inherit the current pose or blend.
+        visual: currentVisual(),
       });
       if (state.echoes.length > MAX_ECHOES) state.echoes.splice(0, state.echoes.length - MAX_ECHOES);
     }
@@ -578,6 +577,23 @@
       ctx.restore();
     }
 
+    function drawVisualSnapshotAt(ctx, visual, x, y, size, alpha) {
+      if (visual && visual.hasBlend) {
+        ctx.globalAlpha = alpha * (1 - visual.blendProgress);
+        drawVisualAt(ctx, visual.blendFrom, x, y, size);
+        ctx.globalAlpha = alpha * visual.blendProgress;
+        drawVisualAt(ctx, visual, x, y, size);
+      } else if (visual && Number.isFinite(visual.fadeProgress)) {
+        ctx.globalAlpha = alpha;
+        drawVisualAt(ctx, null, x, y, size);
+        ctx.globalAlpha = alpha * (1 - visual.fadeProgress);
+        drawVisualAt(ctx, visual, x, y, size);
+      } else {
+        ctx.globalAlpha = alpha;
+        drawVisualAt(ctx, visual, x, y, size);
+      }
+    }
+
     function drawAvatar(ctx) {
       const a = state.avatar;
       if (!a.visible || a.alpha <= 0 || !img.complete || !img.naturalWidth) return;
@@ -591,15 +607,15 @@
         const alpha = (1 - p) * (e.dash ? 0.20 : 0.26);
         const drift = e.dash ? p * 12 : 18 + p * 44;
         const size = e.size * (1 + p * 0.035);
-        ctx.globalAlpha = alpha;
         ctx.shadowBlur = e.dash ? 0 : 5;
-        let echoVisual = null;
-        if (e.visualKind === 'dash' && sheetReady(dashImg)) {
-          echoVisual = sheetVisual(dashImg, e.dashFrame, 1.12, e.dashFrame === 3 ? 0 : e.dashAngle);
-        } else if (e.visualKind === 'slam' && sheetReady(phaseImg)) {
-          echoVisual = sheetVisual(phaseImg, e.slamFrame, 1.08, 0);
-        }
-        drawVisualAt(ctx, echoVisual, e.x - e.nx * drift, e.y - e.ny * drift, size);
+        drawVisualSnapshotAt(
+          ctx,
+          e.visual,
+          e.x - e.nx * drift,
+          e.y - e.ny * drift,
+          size,
+          alpha
+        );
       }
       ctx.globalCompositeOperation = 'source-over';
       ctx.shadowBlur = 0;
