@@ -708,6 +708,7 @@
   let phase2TrianglesDebugQueued = false;
   let phase2WaveformDebugQueued = false;
   let phase2RipplesDebugQueued = false;
+  let phase2TornadoDebugQueued = false;
   let phase2WaveformMusicRestore = null;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
@@ -867,6 +868,21 @@
   const PHASE2_MAYHEM_RIPPLE_COUNT = 30;
   const PHASE2_MAYHEM_RIPPLE_HOLE_MIN_HALF_ANGLE = 0.09375;
   const PHASE2_MAYHEM_RIPPLE_HOLE_MAX_HALF_ANGLE = 0.15;
+  const PHASE2_MAYHEM_TORNADO_DURATION_MS = 25000;
+  const PHASE2_MAYHEM_TORNADO_SPAWN_INTERVAL_MS = 5000;
+  const PHASE2_MAYHEM_TORNADO_COUNT = 5;
+  const PHASE2_MAYHEM_TORNADO_FADE_MS = 700;
+  const PHASE2_MAYHEM_TORNADO_RADIUS = 30;
+  const PHASE2_MAYHEM_TORNADO_MOVE_PER_BEAT = 39;
+  const PHASE2_MAYHEM_TORNADO_PROJECTILE_BEATS = 0.41;
+  const PHASE2_MAYHEM_TORNADO_PROJECTILE_SPEED_MIN = 41;
+  const PHASE2_MAYHEM_TORNADO_PROJECTILE_SPEED_MAX = 77;
+  const PHASE2_MAYHEM_TORNADO_PROJECTILE_RADIUS_MIN = 15;
+  const PHASE2_MAYHEM_TORNADO_PROJECTILE_RADIUS_MAX = 18.75;
+  const PHASE2_MAYHEM_TORNADO_PROJECTILE_DAMAGE_SCALE = 2;
+  const PHASE2_MAYHEM_TORNADO_PROJECTILE_LIFE_MS = 5000;
+  const PHASE2_MAYHEM_TORNADO_MAX_PROJECTILES = 192;
+  const PHASE2_MAYHEM_TORNADO_SHADOW_CHANCE = 0.25;
   const PHASE2_MAYHEM_UNDER_PATTERNS = [
     'quadrantFans',
     'spearRain',
@@ -874,6 +890,7 @@
     'giantTriangles',
     'audioWaveform',
     'cornerRipples',
+    'tornadoRumble',
   ];
   const PHASE2_GRID_CHANNEL_BEATS = 3;
   const PHASE2_GRID_RECALL_MS = 460;
@@ -991,6 +1008,7 @@
   const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
   const smoothstep = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
   const clamp01 = (t) => Math.max(0, Math.min(1, t));
+  const clampRange = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
   function setCombatBpm(nextBpm, preserveBeatPhase = true) {
     const normalizedBpm = Math.max(1, Number(nextBpm) || 1);
@@ -1885,6 +1903,16 @@
     });
     debugPanel.appendChild(ripplesBtn);
 
+    const tornadoBtn = document.createElement('button');
+    tornadoBtn.type = 'button';
+    tornadoBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    tornadoBtn.textContent = 'TORNADO';
+    tornadoBtn.addEventListener('click', () => {
+      debugPhaseTwoTornadoRumble();
+      tornadoBtn.blur();
+    });
+    debugPanel.appendChild(tornadoBtn);
+
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
     gridSpecialBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
@@ -2076,6 +2104,7 @@
 
   // ---- Falling shadow + landing shockwave -------------------------------
   function renderFallShadow(progress) {
+    progress = clamp01(progress);
     const rw = 7 + progress * 17;
     ctx.save();
     ctx.fillStyle = 'rgba(0, 0, 0, ' + (0.18 + progress * 0.38).toFixed(3) + ')';
@@ -4628,6 +4657,100 @@
     ctx.restore();
   }
 
+  function renderPhaseTwoMayhemTornadoProjectile(projectile, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(projectile.x, projectile.y);
+    ctx.rotate(projectile.angle);
+    ctx.beginPath();
+    for (let index = 0; index < projectile.points.length; index++) {
+      const point = projectile.points[index];
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    }
+    ctx.closePath();
+    ctx.shadowColor = projectile.shadow ? 'rgba(150, 62, 194, 0.72)' : 'transparent';
+    ctx.shadowBlur = projectile.shadow ? 8 : 0;
+    ctx.fillStyle = projectile.shadow ? '#09030e' : '#030205';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = projectile.shadow ? '#9a4fc4' : '#e81b2c';
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = alpha * 0.46;
+    ctx.strokeStyle = projectile.shadow ? '#5c2375' : '#7a1325';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-projectile.radius * 0.55, 0);
+    ctx.lineTo(projectile.radius * 0.58, 0);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function renderPhaseTwoMayhemTornadoRumble(under) {
+    const bounds = phaseTwoMayhemSpearBounds();
+    const fade = under.fadeAge < 0
+      ? 1
+      : 1 - smoothstep(under.fadeAge / PHASE2_MAYHEM_TORNADO_FADE_MS);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bounds.left, bounds.top, bounds.right - bounds.left, bounds.bottom - bounds.top);
+    ctx.clip();
+
+    for (const projectile of under.projectiles) {
+      const life = 1 - clamp01(projectile.age / PHASE2_MAYHEM_TORNADO_PROJECTILE_LIFE_MS);
+      renderPhaseTwoMayhemTornadoProjectile(projectile, fade * life);
+    }
+
+    for (const tornado of under.tornadoes) {
+      const birth = smoothstep(clamp01(tornado.age / 280));
+      const radius = PHASE2_MAYHEM_TORNADO_RADIUS * birth;
+      const spin = tornado.spin;
+      ctx.save();
+      ctx.translate(tornado.x, tornado.y);
+      ctx.globalAlpha = fade * birth;
+      ctx.globalCompositeOperation = 'lighter';
+      for (let band = 0; band < 13; band++) {
+        const progress = band / 12;
+        const bandRadius = radius * (0.28 + (1 - progress) * 0.92);
+        const y = (progress - 0.5) * radius * 2.35;
+        const wave = Math.sin(spin * 2.8 + band * 1.91) * radius * 0.26;
+        const lean = Math.sin(spin + band * 0.77) * radius * 0.17;
+        ctx.beginPath();
+        ctx.ellipse(wave, y, bandRadius, Math.max(2, radius * 0.095), lean, 0, Math.PI * 2);
+        ctx.fillStyle = band % 3 === 0
+          ? 'rgba(99, 26, 118, 0.28)'
+          : 'rgba(8, 3, 12, 0.88)';
+        ctx.fill();
+        ctx.strokeStyle = band % 2 === 0
+          ? 'rgba(218, 18, 36, 0.84)'
+          : 'rgba(89, 24, 105, 0.68)';
+        ctx.lineWidth = band % 2 === 0 ? 1.5 : 1;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = fade * birth * 0.82;
+      for (let shard = 0; shard < 14; shard++) {
+        const angle = spin * 3.8 + shard * Math.PI * 2 / 14;
+        const distance = radius * (0.35 + ((shard * 7) % 11) / 10);
+        const x = Math.cos(angle) * distance;
+        const y = Math.sin(angle) * distance * 0.72;
+        ctx.fillStyle = shard % 3 === 0 ? '#d51b2c' : '#4d1861';
+        ctx.fillRect(Math.round(x), Math.round(y), 2, 2);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = fade * birth;
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 0.27, 0, Math.PI * 2);
+      ctx.fillStyle = '#050207';
+      ctx.fill();
+      ctx.strokeStyle = '#ed1b2f';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   function renderPhaseTwoMayhem() {
     const pattern = phase2MayhemPattern;
     const under = pattern && pattern.underPattern;
@@ -4650,6 +4773,10 @@
     }
     if (under.type === 'cornerRipples') {
       renderPhaseTwoMayhemCornerRipples(under);
+      return;
+    }
+    if (under.type === 'tornadoRumble') {
+      renderPhaseTwoMayhemTornadoRumble(under);
       return;
     }
     if (under.type !== 'quadrantFans') return;
@@ -6353,6 +6480,7 @@
     phase2TrianglesDebugQueued = false;
     phase2WaveformDebugQueued = false;
     phase2RipplesDebugQueued = false;
+    phase2TornadoDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -8121,6 +8249,7 @@
     phase2TrianglesDebugQueued = false;
     phase2WaveformDebugQueued = false;
     phase2RipplesDebugQueued = false;
+    phase2TornadoDebugQueued = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
     entropy = 0;
@@ -9226,6 +9355,9 @@
     } else if (phase2RipplesDebugQueued) {
       phase2RipplesDebugQueued = false;
       beginDebugPhaseTwoCornerRipples();
+    } else if (phase2TornadoDebugQueued) {
+      phase2TornadoDebugQueued = false;
+      beginDebugPhaseTwoTornadoRumble();
     } else if (phase2RushDebugQueued) beginDebugPhaseTwoRush();
     else if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
     else if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
@@ -10565,6 +10697,23 @@
       playBossSfx('phase2TileCharge');
       return;
     }
+    if (type === 'tornadoRumble') {
+      pattern.underPattern = {
+        type,
+        elapsed: 0,
+        elapsedBeats: 0,
+        nextTornadoAt: 0,
+        tornadoesSpawned: 0,
+        nextTornadoId: 1,
+        nextProjectileId: 1,
+        tornadoes: [],
+        projectiles: [],
+        fadeAge: -1,
+      };
+      setPhaseTwoMayhemCastPose('ritual', 1.25);
+      playBossSfx('phase2Whirlpool');
+      return;
+    }
     pattern.underPattern = {
       type,
       elapsed: 0,
@@ -11480,6 +11629,252 @@
     }
   }
 
+  function spawnPhaseTwoMayhemTornado(pattern, under) {
+    const bounds = phaseTwoMayhemSpearBounds();
+    const heroCenter = heroBodyCenterWorld();
+    const radius = PHASE2_MAYHEM_TORNADO_RADIUS;
+    const fallbackSpawns = [
+      { x: bounds.left + radius, y: bounds.top + radius },
+      { x: bounds.right - radius, y: bounds.top + radius },
+      { x: bounds.right - radius, y: bounds.bottom - radius },
+      { x: bounds.left + radius, y: bounds.bottom - radius },
+    ].sort((first, second) =>
+      Math.hypot(second.x - heroCenter.x, second.y - heroCenter.y) -
+      Math.hypot(first.x - heroCenter.x, first.y - heroCenter.y));
+    let spawnX = fallbackSpawns[0].x;
+    let spawnY = fallbackSpawns[0].y;
+    let bestClearance = Math.min(
+      Math.hypot(spawnX - heroCenter.x, spawnY - heroCenter.y),
+      under.tornadoes.length
+        ? Math.min(...under.tornadoes.map((tornado) =>
+          Math.hypot(spawnX - tornado.x, spawnY - tornado.y)))
+        : Infinity
+    );
+    for (let attempt = 0; attempt < 18; attempt++) {
+      const candidateX = bounds.left + radius +
+        pattern.random() * Math.max(1, bounds.right - bounds.left - radius * 2);
+      const candidateY = bounds.top + radius +
+        pattern.random() * Math.max(1, bounds.bottom - bounds.top - radius * 2);
+      const heroClearance = Math.hypot(candidateX - heroCenter.x, candidateY - heroCenter.y);
+      const tornadoClearance = under.tornadoes.length
+        ? Math.min(...under.tornadoes.map((tornado) =>
+          Math.hypot(candidateX - tornado.x, candidateY - tornado.y)))
+        : Infinity;
+      if (heroClearance < 120) continue;
+      const clearance = Math.min(heroClearance, tornadoClearance);
+      if (clearance > bestClearance) {
+        bestClearance = clearance;
+        spawnX = candidateX;
+        spawnY = candidateY;
+      }
+      if (heroClearance >= 145 && tornadoClearance >= 105) break;
+    }
+    under.tornadoes.push({
+      id: under.nextTornadoId++,
+      x: spawnX,
+      y: spawnY,
+      followX: heroCenter.x,
+      followY: heroCenter.y,
+      moveVx: 0,
+      moveVy: 0,
+      spin: pattern.random() * Math.PI * 2,
+      orbitAngle: pattern.random() * Math.PI * 2,
+      seed: pattern.random() * Math.PI * 2,
+      fireBeats: 0.28 + pattern.random() * 0.4,
+      age: 0,
+    });
+    under.tornadoesSpawned++;
+    setPhaseTwoMayhemCastPose('ritual', 1.1);
+    playBossSfx('phase2Whirlpool');
+  }
+
+  function spawnPhaseTwoMayhemTornadoProjectile(pattern, under, tornado) {
+    if (under.projectiles.length >= PHASE2_MAYHEM_TORNADO_MAX_PROJECTILES) {
+      under.projectiles.shift();
+    }
+    const direction = pattern.random() * Math.PI * 2;
+    const radius = PHASE2_MAYHEM_TORNADO_PROJECTILE_RADIUS_MIN +
+      pattern.random() * (
+        PHASE2_MAYHEM_TORNADO_PROJECTILE_RADIUS_MAX -
+        PHASE2_MAYHEM_TORNADO_PROJECTILE_RADIUS_MIN
+      );
+    const speed = PHASE2_MAYHEM_TORNADO_PROJECTILE_SPEED_MIN +
+      pattern.random() * (
+        PHASE2_MAYHEM_TORNADO_PROJECTILE_SPEED_MAX -
+        PHASE2_MAYHEM_TORNADO_PROJECTILE_SPEED_MIN
+      );
+    const points = [];
+    const pointCount = 4 + Math.floor(pattern.random() * 4);
+    for (let index = 0; index < pointCount; index++) {
+      const angle = index * Math.PI * 2 / pointCount;
+      const length = radius * (0.58 + pattern.random() * 0.62);
+      points.push({ x: Math.cos(angle) * length, y: Math.sin(angle) * length });
+    }
+    under.projectiles.push({
+      id: under.nextProjectileId++,
+      x: tornado.x + Math.cos(direction) * PHASE2_MAYHEM_TORNADO_RADIUS * 0.45,
+      y: tornado.y + Math.sin(direction) * PHASE2_MAYHEM_TORNADO_RADIUS * 0.45,
+      vx: Math.cos(direction) * speed,
+      vy: Math.sin(direction) * speed,
+      angle: direction,
+      spin: (pattern.random() * 2 - 1) * (2.8 + pattern.random() * 4.6),
+      radius,
+      points,
+      shadow: pattern.random() < PHASE2_MAYHEM_TORNADO_SHADOW_CHANCE,
+      age: 0,
+    });
+  }
+
+  function phaseTwoMayhemTornadoProjectilePolygon(projectile) {
+    const cosine = Math.cos(projectile.angle);
+    const sine = Math.sin(projectile.angle);
+    return projectile.points.map((point) => ({
+      x: projectile.x + point.x * cosine - point.y * sine,
+      y: projectile.y + point.x * sine + point.y * cosine,
+    }));
+  }
+
+  function phaseTwoMayhemPointTouchesTornadoProjectile(point, projectile) {
+    const dx = point.x - projectile.x;
+    const dy = point.y - projectile.y;
+    const cosine = Math.cos(projectile.angle);
+    const sine = Math.sin(projectile.angle);
+    return pointInPoly(
+      dx * cosine + dy * sine,
+      -dx * sine + dy * cosine,
+      projectile.points
+    );
+  }
+
+  function updatePhaseTwoMayhemTornadoRumble(pattern, under, dt, beatStep) {
+    under.elapsedBeats += beatStep;
+    const bounds = phaseTwoMayhemSpearBounds();
+    const active = under.fadeAge < 0;
+    if (active) {
+      while (under.tornadoesSpawned < PHASE2_MAYHEM_TORNADO_COUNT &&
+             under.elapsed >= under.nextTornadoAt) {
+        spawnPhaseTwoMayhemTornado(pattern, under);
+        under.nextTornadoAt += PHASE2_MAYHEM_TORNADO_SPAWN_INTERVAL_MS;
+      }
+    }
+
+    const heroCenter = heroBodyCenterWorld();
+    for (const tornado of under.tornadoes) {
+      tornado.age += dt;
+      tornado.spin += beatStep * (9.4 + Math.sin(tornado.seed + under.elapsed * 0.006) * 2.4);
+      if (!active) continue;
+      const followBlend = clamp01(beatStep * 0.46);
+      tornado.followX += (heroCenter.x - tornado.followX) * followBlend;
+      tornado.followY += (heroCenter.y - tornado.followY) * followBlend;
+      tornado.orbitAngle += beatStep * (0.14 + Math.sin(tornado.seed + under.elapsed * 0.003) * 0.04);
+      const followDistance = 72 + Math.sin(tornado.seed + under.elapsed * 0.002) * 22;
+      const targetX = clampRange(
+        tornado.followX + Math.cos(tornado.orbitAngle) * followDistance,
+        bounds.left + PHASE2_MAYHEM_TORNADO_RADIUS,
+        bounds.right - PHASE2_MAYHEM_TORNADO_RADIUS
+      );
+      const targetY = clampRange(
+        tornado.followY + Math.sin(tornado.orbitAngle) * followDistance,
+        bounds.top + PHASE2_MAYHEM_TORNADO_RADIUS,
+        bounds.bottom - PHASE2_MAYHEM_TORNADO_RADIUS
+      );
+      const dx = targetX - tornado.x;
+      const dy = targetY - tornado.y;
+      const distance = Math.hypot(dx, dy);
+      const desiredSpeed = Math.min(PHASE2_MAYHEM_TORNADO_MOVE_PER_BEAT, distance);
+      const desiredVx = distance > 0.001 ? dx / distance * desiredSpeed : 0;
+      const desiredVy = distance > 0.001 ? dy / distance * desiredSpeed : 0;
+      const steerBlend = clamp01(beatStep * 0.62);
+      tornado.moveVx += (desiredVx - tornado.moveVx) * steerBlend;
+      tornado.moveVy += (desiredVy - tornado.moveVy) * steerBlend;
+      tornado.x = clampRange(
+        tornado.x + tornado.moveVx * beatStep,
+        bounds.left + PHASE2_MAYHEM_TORNADO_RADIUS,
+        bounds.right - PHASE2_MAYHEM_TORNADO_RADIUS
+      );
+      tornado.y = clampRange(
+        tornado.y + tornado.moveVy * beatStep,
+        bounds.top + PHASE2_MAYHEM_TORNADO_RADIUS,
+        bounds.bottom - PHASE2_MAYHEM_TORNADO_RADIUS
+      );
+      tornado.fireBeats -= beatStep;
+      while (tornado.fireBeats <= 0) {
+        spawnPhaseTwoMayhemTornadoProjectile(pattern, under, tornado);
+        tornado.fireBeats += PHASE2_MAYHEM_TORNADO_PROJECTILE_BEATS *
+          (0.66 + pattern.random() * 0.72);
+      }
+    }
+
+    const boundary = 72;
+    for (const projectile of under.projectiles) {
+      projectile.age += dt;
+      projectile.x += projectile.vx * beatStep;
+      projectile.y += projectile.vy * beatStep;
+      projectile.angle += projectile.spin * beatStep;
+    }
+    under.projectiles = under.projectiles.filter((projectile) =>
+      projectile.age < PHASE2_MAYHEM_TORNADO_PROJECTILE_LIFE_MS &&
+      projectile.x >= bounds.left - boundary && projectile.x <= bounds.right + boundary &&
+      projectile.y >= bounds.top - boundary && projectile.y <= bounds.bottom + boundary
+    );
+
+    let projectileHits = 0;
+    let shadowProjectileHits = 0;
+    const bodyCenter = heroBodyCenterWorld();
+    const rewardPoints = heroBodyWorldRewardPoints();
+    for (const projectile of under.projectiles) {
+      const centerDistance = Math.hypot(
+        projectile.x - bodyCenter.x,
+        projectile.y - bodyCenter.y
+      );
+      if (projectile.shadow) {
+        if (centerDistance <= projectile.radius + Math.max(HERO_W, HERO_H) * 0.52 &&
+            rewardPoints.some((point) =>
+              phaseTwoMayhemPointTouchesTornadoProjectile(point, projectile))) {
+          shadowProjectileHits++;
+        }
+      } else if (centerDistance <= projectile.radius + 5 &&
+                 phaseTwoMayhemPolygonHitsHero(
+                   phaseTwoMayhemTornadoProjectilePolygon(projectile)
+                 )) {
+        projectileHits++;
+      }
+    }
+    const tornadoHit = under.tornadoes.some((tornado) =>
+      Math.hypot(tornado.x - bodyCenter.x, tornado.y - bodyCenter.y) <=
+        PHASE2_MAYHEM_TORNADO_RADIUS * 0.72 + 3
+    );
+    if (active && (projectileHits || tornadoHit)) {
+      const damage = projectileHits * DAMAGE_PER_BEAT *
+          PHASE2_MAYHEM_TORNADO_PROJECTILE_DAMAGE_SCALE * beatStep +
+        (tornadoHit ? DAMAGE_PER_BEAT * 1.05 * beatStep : 0);
+      damagePlayer(damage);
+      const damageStep = Math.floor(
+        (beatIndex + beatPhase / Math.max(1, beatMs)) * BOSS_SFX_DAMAGE_STEPS_PER_BEAT
+      );
+      if (damageStep !== pattern.lastDamageStep) {
+        pattern.lastDamageStep = damageStep;
+        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+      }
+      if (hp <= 0) die();
+    } else {
+      pattern.lastDamageStep = -1;
+    }
+    if (active && shadowProjectileHits > 0) {
+      addVp(VP_PER_BEAT * shadowProjectileHits * beatStep, true);
+    }
+
+    if (active && under.elapsed >= PHASE2_MAYHEM_TORNADO_DURATION_MS) {
+      under.fadeAge = 0;
+      setPhaseTwoMayhemCastPose('channel', 0.75);
+    } else if (!active) {
+      under.fadeAge += dt;
+      if (under.fadeAge >= PHASE2_MAYHEM_TORNADO_FADE_MS) {
+        beginPhaseTwoMayhemUnderPattern(pattern);
+      }
+    }
+  }
+
   function phaseTwoMayhemBladeGrowth(under, secondPair) {
     const start = PHASE2_MAYHEM_HUB_FORM_MS +
       (secondPair ? PHASE2_MAYHEM_TWO_BLADE_MS : 0);
@@ -11559,6 +11954,10 @@
     }
     if (under.type === 'cornerRipples') {
       updatePhaseTwoMayhemCornerRipples(pattern, under, beatStep);
+      return;
+    }
+    if (under.type === 'tornadoRumble') {
+      updatePhaseTwoMayhemTornadoRumble(pattern, under, dt, beatStep);
       return;
     }
     if (under.type !== 'quadrantFans') return;
@@ -11687,6 +12086,7 @@
       giantTriangles: debugPhaseTwoTriangles,
       audioWaveform: debugPhaseTwoWaveform,
       cornerRipples: debugPhaseTwoCornerRipples,
+      tornadoRumble: debugPhaseTwoTornadoRumble,
     }[nextType];
     if (!debugStart) return false;
     debugStart();
@@ -11695,6 +12095,7 @@
 
   function beginDebugPhaseTwoMayhem() {
     phase2MayhemDebugQueued = false;
+    phase2TornadoDebugQueued = false;
     phase2SpearRainDebugQueued = false;
     phase2ChevronDebugQueued = false;
     phase2TrianglesDebugQueued = false;
@@ -11717,6 +12118,7 @@
 
   function beginDebugPhaseTwoSpearRain() {
     phase2SpearRainDebugQueued = false;
+    phase2TornadoDebugQueued = false;
     phase2MayhemDebugQueued = false;
     phase2ChevronDebugQueued = false;
     phase2TrianglesDebugQueued = false;
@@ -11739,6 +12141,7 @@
 
   function beginDebugPhaseTwoChevron() {
     phase2ChevronDebugQueued = false;
+    phase2TornadoDebugQueued = false;
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
     phase2TrianglesDebugQueued = false;
@@ -11761,6 +12164,7 @@
 
   function beginDebugPhaseTwoTriangles() {
     phase2TrianglesDebugQueued = false;
+    phase2TornadoDebugQueued = false;
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
     phase2ChevronDebugQueued = false;
@@ -11783,6 +12187,7 @@
 
   function beginDebugPhaseTwoWaveform() {
     phase2WaveformDebugQueued = false;
+    phase2TornadoDebugQueued = false;
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
     phase2ChevronDebugQueued = false;
@@ -11805,6 +12210,7 @@
 
   function beginDebugPhaseTwoCornerRipples() {
     phase2RipplesDebugQueued = false;
+    phase2TornadoDebugQueued = false;
     phase2WaveformDebugQueued = false;
     phase2MayhemDebugQueued = false;
     phase2SpearRainDebugQueued = false;
@@ -11828,6 +12234,29 @@
     phase2RipplesDebugQueued = true;
     if (!phase2AvatarStarted) skipPhaseTwoTransition();
     if (phase2CombatStarted && phase2RipplesDebugQueued) beginDebugPhaseTwoCornerRipples();
+  }
+
+  function beginDebugPhaseTwoTornadoRumble() {
+    phase2TornadoDebugQueued = false;
+    phase2MayhemDebugQueued = false;
+    phase2SpearRainDebugQueued = false;
+    phase2ChevronDebugQueued = false;
+    phase2TrianglesDebugQueued = false;
+    phase2WaveformDebugQueued = false;
+    phase2RipplesDebugQueued = false;
+    phase2MayhemPattern = null;
+    return startPhaseTwoMayhemPattern('tornadoRumble');
+  }
+
+  function debugPhaseTwoTornadoRumble() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    phase2TornadoDebugQueued = true;
+    if (!phase2AvatarStarted) skipPhaseTwoTransition();
+    if (phase2CombatStarted && phase2TornadoDebugQueued) beginDebugPhaseTwoTornadoRumble();
   }
 
   function spawnPhaseTwoRushEye() {
