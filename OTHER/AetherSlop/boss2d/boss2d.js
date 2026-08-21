@@ -709,6 +709,8 @@
   let phase2WaveformDebugQueued = false;
   let phase2RipplesDebugQueued = false;
   let phase2TornadoDebugQueued = false;
+  let phase2GravityPattern = null;
+  let phase2GravityDebugQueued = false;
   let phase2WaveformMusicRestore = null;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
@@ -883,6 +885,16 @@
   const PHASE2_MAYHEM_TORNADO_PROJECTILE_LIFE_MS = 5000;
   const PHASE2_MAYHEM_TORNADO_MAX_PROJECTILES = 192;
   const PHASE2_MAYHEM_TORNADO_SHADOW_CHANCE = 0.25;
+  const PHASE2_GRAVITY_ROAR_MS = 4500;
+  const PHASE2_GRAVITY_RIPPLE_INTERVAL_BEATS = 4;
+  const PHASE2_GRAVITY_RIPPLE_SPEED_PER_BEAT = 75;
+  const PHASE2_GRAVITY_RIPPLE_HALF_WIDTH = 0.75;
+  const PHASE2_GRAVITY_RIPPLE_PUSH_SPEED = 0.13;
+  const PHASE2_GRAVITY_ACCELERATION = 0.0016;
+  const PHASE2_GRAVITY_DIVE_ACCELERATION = 0.0024;
+  const PHASE2_GRAVITY_JUMP_SPEED = 0.82;
+  const PHASE2_GRAVITY_JUMP_RELEASE_SPEED = 0.58;
+  const PHASE2_GRAVITY_KNOCKBACK_DRAG = 0.00155;
   const PHASE2_MAYHEM_UNDER_PATTERNS = [
     'quadrantFans',
     'spearRain',
@@ -1188,6 +1200,7 @@
     phase2TowerPattern = null;
     phase2DoomPattern = null;
     phase2MayhemPattern = null;
+    phase2GravityPattern = null;
     overlay.classList.remove('hex-arena-active');
     overlay.classList.remove('tower-climb-active');
     const help = overlay.querySelector('.aether-boss2d-help');
@@ -1912,6 +1925,16 @@
       tornadoBtn.blur();
     });
     debugPanel.appendChild(tornadoBtn);
+
+    const gravityBtn = document.createElement('button');
+    gravityBtn.type = 'button';
+    gravityBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
+    gravityBtn.textContent = 'GRAVITY';
+    gravityBtn.addEventListener('click', () => {
+      debugPhaseTwoGravityPattern();
+      gravityBtn.blur();
+    });
+    debugPanel.appendChild(gravityBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -6481,6 +6504,8 @@
     phase2WaveformDebugQueued = false;
     phase2RipplesDebugQueued = false;
     phase2TornadoDebugQueued = false;
+    phase2GravityPattern = null;
+    phase2GravityDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
@@ -8250,6 +8275,8 @@
     phase2WaveformDebugQueued = false;
     phase2RipplesDebugQueued = false;
     phase2TornadoDebugQueued = false;
+    phase2GravityPattern = null;
+    phase2GravityDebugQueued = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
     entropy = 0;
@@ -9329,6 +9356,7 @@
     phase2TowerPattern = null;
     phase2DoomPattern = null;
     phase2MayhemPattern = null;
+    phase2GravityPattern = null;
     nextPhase2AttackBeat = phase2DebugClawQueued ? 0 : 2;
     if (bpmElement) bpmElement.textContent = 'BPM ' + Math.round(bpm);
     if (phase2TowerDebugQueued) {
@@ -9358,6 +9386,9 @@
     } else if (phase2TornadoDebugQueued) {
       phase2TornadoDebugQueued = false;
       beginDebugPhaseTwoTornadoRumble();
+    } else if (phase2GravityDebugQueued) {
+      phase2GravityDebugQueued = false;
+      beginDebugPhaseTwoGravityPattern();
     } else if (phase2RushDebugQueued) beginDebugPhaseTwoRush();
     else if (phase2PitfallDebugQueued) beginDebugPhaseTwoPitfall();
     else if (phase2SwordRingDebugQueued) beginDebugPhaseTwoSwordRing();
@@ -11540,7 +11571,7 @@
     });
 
     if (under.pulsesSpawned >= PHASE2_MAYHEM_RIPPLE_COUNT && under.waves.length === 0) {
-      beginPhaseTwoMayhemUnderPattern(pattern);
+      beginPhaseTwoMayhemUnderPattern(pattern, 'tornadoRumble');
       return;
     }
 
@@ -11870,7 +11901,7 @@
     } else if (!active) {
       under.fadeAge += dt;
       if (under.fadeAge >= PHASE2_MAYHEM_TORNADO_FADE_MS) {
-        beginPhaseTwoMayhemUnderPattern(pattern);
+        startPhaseTwoGravityPattern();
       }
     }
   }
@@ -12061,6 +12092,10 @@
 
   function advancePhaseTwoMayhemPattern(direction) {
     const step = direction < 0 ? -1 : 1;
+    if (phase2GravityPattern) {
+      if (step < 0) return startPhaseTwoMayhemPattern('tornadoRumble');
+      return false;
+    }
     const currentType = phase2MayhemPattern && (
       phase2MayhemPattern.underPattern
         ? phase2MayhemPattern.underPattern.type
@@ -12075,6 +12110,9 @@
     const nextType = PHASE2_MAYHEM_UNDER_PATTERNS[nextIndex];
 
     if (phase2MayhemPattern) {
+      if (currentType === 'tornadoRumble' && step > 0) {
+        return startPhaseTwoGravityPattern();
+      }
       beginPhaseTwoMayhemUnderPattern(phase2MayhemPattern, nextType);
       return true;
     }
@@ -12257,6 +12295,213 @@
     phase2TornadoDebugQueued = true;
     if (!phase2AvatarStarted) skipPhaseTwoTransition();
     if (phase2CombatStarted && phase2TornadoDebugQueued) beginDebugPhaseTwoTornadoRumble();
+  }
+
+  function phaseTwoGravityBounds() {
+    return {
+      left: arena.x - arena.width / 2 + BORDER + PAD + HERO_W / 2,
+      right: arena.x + arena.width / 2 - BORDER - PAD - HERO_W / 2,
+      top: arena.y - arena.height / 2 + BORDER + PAD + HERO_H / 2,
+      bottom: arena.y + arena.height / 2 - BORDER - PAD - HERO_H / 2,
+    };
+  }
+
+  function activatePhaseTwoGravityPattern(pattern) {
+    const avatar = phase2Avatar && phase2Avatar.state && phase2Avatar.state.avatar;
+    pattern.mode = 'active';
+    pattern.elapsed = 0;
+    pattern.elapsedBeats = 0;
+    pattern.nextRippleBeat = 0;
+    pattern.originX = avatar ? avatar.x : window.innerWidth / 2;
+    pattern.originY = avatar ? avatar.y : Math.max(30, getBoardRect().top - 40);
+    pattern.gravityStrength = 0;
+    pattern.vx = 0;
+    pattern.vy = 0;
+    pattern.grounded = false;
+    pattern.jumpQueued = false;
+    pattern.ripples = [];
+    setPhaseTwoMayhemCastPose(
+      'ritual',
+      PHASE2_GRAVITY_ROAR_MS / Math.max(1, beatMs) + 0.6
+    );
+    playBossSfx('phase2Mass');
+    playBossSfx('phase2Whirlpool');
+  }
+
+  function startPhaseTwoGravityPattern() {
+    if (!phase2CombatStarted || !canvas || !phase2Avatar) return false;
+    stopPhaseTwoWaveformMusic();
+    restorePhaseTwoSquareArena(true);
+    phase2PitfallPattern = null;
+    phase2TowerPattern = null;
+    phase2DoomPattern = null;
+    phase2MayhemPattern = null;
+    phase2GridSpecial = null;
+    phase2TileRuinPattern = null;
+    phase2SwordRingPattern = null;
+    phase2Attacks = [];
+    phase2Cracks = [];
+    phase2ClawPatternStopped = true;
+    phase2BurstActive = false;
+    nextPhase2AttackBeat = Infinity;
+    phase2GravityPattern = {
+      mode: 'recall',
+      elapsed: 0,
+      elapsedBeats: 0,
+      nextRippleId: 1,
+      ripples: [],
+      vx: 0,
+      vy: 0,
+      grounded: false,
+      jumpQueued: false,
+    };
+    keys.clear();
+    const help = overlay && overlay.querySelector('.aether-boss2d-help');
+    if (help && help.firstChild) help.firstChild.nodeValue = 'A / D MOVE   W JUMP   S DIVE';
+    const startedDash = phase2Avatar.dashHome(getBoardRect(), PHASE2_BOSS_RETURN_DASH_MS);
+    if (!startedDash) activatePhaseTwoGravityPattern(phase2GravityPattern);
+    return true;
+  }
+
+  function spawnPhaseTwoGravityRipple(pattern) {
+    const corners = [
+      { x: 0, y: 0 },
+      { x: attackCanvas.width, y: 0 },
+      { x: attackCanvas.width, y: attackCanvas.height },
+      { x: 0, y: attackCanvas.height },
+    ];
+    pattern.ripples.push({
+      id: pattern.nextRippleId++,
+      x: pattern.originX,
+      y: pattern.originY,
+      radius: 1,
+      previousRadius: 1,
+      maxRadius: Math.max(...corners.map((corner) =>
+        Math.hypot(corner.x - pattern.originX, corner.y - pattern.originY))) + 40,
+      pushed: false,
+      seed: pattern.nextRippleId * 7.13,
+    });
+    playBossSfx('phase2TileCharge');
+  }
+
+  function updatePhaseTwoGravityMovement(dt) {
+    const pattern = phase2GravityPattern;
+    if (!pattern || pattern.mode !== 'active') {
+      heroMove.x = 0;
+      heroMove.y = 0;
+      return;
+    }
+    const bounds = phaseTwoGravityBounds();
+    const horizontal = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) -
+      (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+    const moveVx = horizontal * MOVE_SPEED * (bpm / BASE_BPM);
+    pattern.vx -= Math.sign(pattern.vx) * Math.min(
+      Math.abs(pattern.vx),
+      PHASE2_GRAVITY_KNOCKBACK_DRAG * dt
+    );
+    if (pattern.jumpQueued) {
+      if (pattern.grounded) {
+        pattern.vy = -PHASE2_GRAVITY_JUMP_SPEED;
+        pattern.grounded = false;
+        playBossSfx('phase2SwordStrike');
+      }
+      pattern.jumpQueued = false;
+    }
+    const jumpHeld = keys.has('KeyW') || keys.has('ArrowUp');
+    if (!jumpHeld && pattern.vy < -PHASE2_GRAVITY_JUMP_RELEASE_SPEED) {
+      pattern.vy = -PHASE2_GRAVITY_JUMP_RELEASE_SPEED;
+    }
+    const diving = !pattern.grounded && (keys.has('KeyS') || keys.has('ArrowDown'));
+    pattern.vy += (
+      PHASE2_GRAVITY_ACCELERATION * pattern.gravityStrength +
+      (diving ? PHASE2_GRAVITY_DIVE_ACCELERATION : 0)
+    ) * dt;
+    hero.x += (moveVx + pattern.vx) * dt;
+    hero.y += pattern.vy * dt;
+    if (hero.x <= bounds.left || hero.x >= bounds.right) {
+      hero.x = clampRange(hero.x, bounds.left, bounds.right);
+      pattern.vx = 0;
+    }
+    if (hero.y <= bounds.top) {
+      hero.y = bounds.top;
+      pattern.vy = Math.max(0, pattern.vy);
+    }
+    if (hero.y >= bounds.bottom) {
+      hero.y = bounds.bottom;
+      pattern.vy = 0;
+      pattern.grounded = true;
+    } else {
+      pattern.grounded = false;
+    }
+    heroMove.x = horizontal || Math.sign(pattern.vx);
+    heroMove.y = Math.sign(pattern.vy);
+  }
+
+  function updatePhaseTwoGravityPattern(dt) {
+    const pattern = phase2GravityPattern;
+    if (!pattern) return;
+    if (pattern.mode === 'recall') {
+      if (!phase2Avatar || !phase2Avatar.dashing) activatePhaseTwoGravityPattern(pattern);
+      return;
+    }
+    pattern.elapsed += dt;
+    const beatStep = dt / Math.max(1, beatMs);
+    pattern.elapsedBeats += beatStep;
+    pattern.gravityStrength = smoothstep(pattern.elapsed / 1250);
+    while (pattern.elapsedBeats >= pattern.nextRippleBeat) {
+      spawnPhaseTwoGravityRipple(pattern);
+      pattern.nextRippleBeat += PHASE2_GRAVITY_RIPPLE_INTERVAL_BEATS;
+    }
+    const board = getBoardRect();
+    const hitboxes = heroViewportHitboxes(board);
+    let liveRippleCount = 0;
+    for (const ripple of pattern.ripples) {
+      ripple.previousRadius = ripple.radius;
+      ripple.radius += PHASE2_GRAVITY_RIPPLE_SPEED_PER_BEAT * beatStep;
+      if (ripple.radius > ripple.maxRadius) continue;
+      pattern.ripples[liveRippleCount++] = ripple;
+      if (ripple.pushed) continue;
+      const dx = hitboxes.center.x - ripple.x;
+      const dy = hitboxes.center.y - ripple.y;
+      const distance = Math.hypot(dx, dy);
+      const contactWidth = PHASE2_GRAVITY_RIPPLE_HALF_WIDTH + 9;
+      const crossedHero = ripple.previousRadius <= distance + contactWidth &&
+        ripple.radius >= distance - contactWidth;
+      if (!crossedHero) continue;
+      ripple.pushed = true;
+      const length = distance || 1;
+      const scaleX = canvas.width / Math.max(1, board.width);
+      const scaleY = canvas.height / Math.max(1, board.height);
+      pattern.vx += dx / length * PHASE2_GRAVITY_RIPPLE_PUSH_SPEED * scaleX;
+      pattern.vy += dy / length * PHASE2_GRAVITY_RIPPLE_PUSH_SPEED * scaleY;
+      pattern.grounded = false;
+      playBossSfx('phase2SwordStrike');
+    }
+    pattern.ripples.length = liveRippleCount;
+  }
+
+  function beginDebugPhaseTwoGravityPattern() {
+    phase2GravityDebugQueued = false;
+    phase2MayhemDebugQueued = false;
+    phase2SpearRainDebugQueued = false;
+    phase2ChevronDebugQueued = false;
+    phase2TrianglesDebugQueued = false;
+    phase2WaveformDebugQueued = false;
+    phase2RipplesDebugQueued = false;
+    phase2TornadoDebugQueued = false;
+    phase2GravityPattern = null;
+    return startPhaseTwoGravityPattern();
+  }
+
+  function debugPhaseTwoGravityPattern() {
+    if (!active) return;
+    if (phase !== PHASE.SECOND) {
+      if (phase !== PHASE.ACTIVE) skipToActive();
+      startSecondPhase();
+    }
+    phase2GravityDebugQueued = true;
+    if (!phase2AvatarStarted) skipPhaseTwoTransition();
+    if (phase2CombatStarted && phase2GravityDebugQueued) beginDebugPhaseTwoGravityPattern();
   }
 
   function spawnPhaseTwoRushEye() {
@@ -14018,6 +14263,8 @@
       heroMove.y = 0;
     } else if (phase2PitfallPattern) {
       updatePhaseTwoPitfallMovement(dt);
+    } else if (phase2GravityPattern) {
+      updatePhaseTwoGravityMovement(dt);
     } else if (phase2SwordRingPattern || (phase2GridSpecial && phase2GridSpecial.struck)) {
       heroMove.x = 0;
       heroMove.y = 0;
@@ -14073,6 +14320,11 @@
         }
         if (phase2MayhemPattern) {
           updatePhaseTwoMayhemPattern(dt);
+          updateCombat(dt);
+          return;
+        }
+        if (phase2GravityPattern) {
+          updatePhaseTwoGravityPattern(dt);
           updateCombat(dt);
           return;
         }
@@ -15583,6 +15835,37 @@
     }
   }
 
+  function renderPhaseTwoGravityPattern() {
+    const pattern = phase2GravityPattern;
+    if (!pattern) return;
+    actx.save();
+    actx.lineCap = 'round';
+    for (const ripple of pattern.ripples) {
+      const fadeStart = ripple.maxRadius * 0.78;
+      const alpha = 1 - smoothstep(
+        (ripple.radius - fadeStart) / Math.max(1, ripple.maxRadius - fadeStart)
+      );
+      if (alpha <= 0) continue;
+      const tremor = Math.sin(ripple.seed + ripple.radius * 0.035) * 1.1;
+      actx.globalAlpha = alpha * 0.16;
+      actx.strokeStyle = '#b5b8b8';
+      actx.lineWidth = PHASE2_GRAVITY_RIPPLE_HALF_WIDTH * 2;
+      actx.beginPath();
+      actx.arc(ripple.x, ripple.y, Math.max(1, ripple.radius + tremor), 0, Math.PI * 2);
+      actx.stroke();
+    }
+    if (pattern.elapsed < PHASE2_GRAVITY_ROAR_MS) {
+      const pulse = 1 - clamp01(pattern.elapsed / PHASE2_GRAVITY_ROAR_MS);
+      actx.globalAlpha = 0.2 + pulse * 0.32;
+      actx.strokeStyle = '#d2d4d1';
+      actx.lineWidth = 2 + pulse * 3;
+      actx.beginPath();
+      actx.arc(pattern.originX, pattern.originY, 25 + (1 - pulse) * 34, 0, Math.PI * 2);
+      actx.stroke();
+    }
+    actx.restore();
+  }
+
   // Clears and repaints the full-viewport attack canvas (pentagrams + beams).
   function renderAttackLayer() {
     if (!actx) return;
@@ -15608,6 +15891,7 @@
         if (a.type === 'shadowClaw') renderAttack(a, 'front');
       }
       renderPhaseTwoSwordRingPattern();
+      renderPhaseTwoGravityPattern();
     }
   }
 
@@ -17707,6 +17991,15 @@
         event.preventDefault();
         return;
       }
+      if (phase2GravityPattern) {
+        keys.add(event.code);
+        if (!event.repeat && phase2GravityPattern.mode === 'active' &&
+            (event.code === 'KeyW' || event.code === 'ArrowUp')) {
+          phase2GravityPattern.jumpQueued = true;
+        }
+        event.preventDefault();
+        return;
+      }
       if (phase2GridSpecial && phase2GridSpecial.tileMode) {
         if (!event.repeat) {
           if (event.code === 'KeyW' || event.code === 'ArrowUp') queuePhaseTwoGridHop(0, -1);
@@ -17831,6 +18124,9 @@
     phase2TrianglesDebugQueued = false;
     phase2WaveformDebugQueued = false;
     phase2RipplesDebugQueued = false;
+    phase2TornadoDebugQueued = false;
+    phase2GravityPattern = null;
+    phase2GravityDebugQueued = false;
     phase2CombatStarted = false;
     phase2DebugClawQueued = false;
     nextPhase2AttackBeat = Infinity;
