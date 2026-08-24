@@ -273,6 +273,18 @@
   color: #fff0ee;
 }
 
+.aether-boss2d-debug-btn-gravity {
+  color: #d8d4ff;
+  background: rgba(24, 18, 54, 0.92);
+  border-color: #5d52a5;
+}
+
+.aether-boss2d-debug-btn-gravity:hover {
+  background: rgba(54, 44, 108, 0.96);
+  color: #f1efff;
+  border-color: #9d91ef;
+}
+
 /* Right-click-armed for a combo: waiting on a partner left-click. */
 .aether-boss2d-debug-btn.is-selected {
   background: rgba(90, 20, 120, 0.95);

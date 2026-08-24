@@ -711,6 +711,9 @@
   let phase2TornadoDebugQueued = false;
   let phase2GravityPattern = null;
   let phase2GravityDebugQueued = false;
+  let phase2GravityMassMaskCanvas = null;
+  let phase2GravityMassEdgeCanvas = null;
+  let phase2GravityMassFillCanvas = null;
   let phase2WaveformMusicRestore = null;
   let nextPhase2AttackBeat = Infinity;
   let nextAttackBeat = 0;            // earliest beat the next attack wave may spawn
@@ -895,6 +898,19 @@
   const PHASE2_GRAVITY_JUMP_SPEED = 0.82;
   const PHASE2_GRAVITY_JUMP_RELEASE_SPEED = 0.58;
   const PHASE2_GRAVITY_KNOCKBACK_DRAG = 0.00155;
+  const PHASE2_GRAVITY_SPEAR_INTERVAL_BEATS = 3;
+  const PHASE2_GRAVITY_SPEAR_SPEED_PER_BEAT = 90;
+  const PHASE2_GRAVITY_SPEAR_LENGTH_MIN = 72;
+  const PHASE2_GRAVITY_SPEAR_LENGTH_MAX = 132;
+  const PHASE2_GRAVITY_SPEAR_WIDTH_MIN = 13;
+  const PHASE2_GRAVITY_SPEAR_WIDTH_MAX = 23;
+  const PHASE2_GRAVITY_SPEAR_SHADOW_WIDTH = 20;
+  const PHASE2_GRAVITY_SPEAR_DAMAGE = 75;
+  const PHASE2_GRAVITY_SPEAR_MAX_ACTIVE = 32;
+  const PHASE2_GRAVITY_TERRAIN_MAX = 72;
+  const PHASE2_GRAVITY_MASS_SINK_PER_MS = 0.006;
+  const PHASE2_GRAVITY_MASS_CONNECT_GAP = 10;
+  const PHASE2_GRAVITY_CEILING_DAMAGE = 20;
   const PHASE2_MAYHEM_UNDER_PATTERNS = [
     'quadrantFans',
     'spearRain',
@@ -1935,6 +1951,17 @@
       gravityBtn.blur();
     });
     debugPanel.appendChild(gravityBtn);
+
+    const gravitySpearsBtn = document.createElement('button');
+    gravitySpearsBtn.type = 'button';
+    gravitySpearsBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-gravity';
+    gravitySpearsBtn.textContent = 'GRAVITY SPEARS';
+    gravitySpearsBtn.title = 'Start the Gravity spear-rain subpattern';
+    gravitySpearsBtn.addEventListener('click', () => {
+      debugPhaseTwoGravitySpears();
+      gravitySpearsBtn.blur();
+    });
+    debugPanel.appendChild(gravitySpearsBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -12307,22 +12334,22 @@
   }
 
   function activatePhaseTwoGravityPattern(pattern) {
-    const avatar = phase2Avatar && phase2Avatar.state && phase2Avatar.state.avatar;
     pattern.mode = 'active';
     pattern.elapsed = 0;
     pattern.elapsedBeats = 0;
     pattern.nextRippleBeat = 0;
-    pattern.originX = avatar ? avatar.x : window.innerWidth / 2;
-    pattern.originY = avatar ? avatar.y : Math.max(30, getBoardRect().top - 40);
+    pattern.originX = canvas.width / 2;
+    pattern.originY = canvas.height / 2;
     pattern.gravityStrength = 0;
     pattern.vx = 0;
     pattern.vy = 0;
     pattern.grounded = false;
     pattern.jumpQueued = false;
     pattern.ripples = [];
+    pattern.spearRain = createPhaseTwoGravitySpearRain();
     setPhaseTwoMayhemCastPose(
       'ritual',
-      PHASE2_GRAVITY_ROAR_MS / Math.max(1, beatMs) + 0.6
+      100000
     );
     playBossSfx('phase2Mass');
     playBossSfx('phase2Whirlpool');
@@ -12354,6 +12381,7 @@
       vy: 0,
       grounded: false,
       jumpQueued: false,
+      spearRain: null,
     };
     keys.clear();
     const help = overlay && overlay.querySelector('.aether-boss2d-help');
@@ -12366,9 +12394,9 @@
   function spawnPhaseTwoGravityRipple(pattern) {
     const corners = [
       { x: 0, y: 0 },
-      { x: attackCanvas.width, y: 0 },
-      { x: attackCanvas.width, y: attackCanvas.height },
-      { x: 0, y: attackCanvas.height },
+      { x: canvas.width, y: 0 },
+      { x: canvas.width, y: canvas.height },
+      { x: 0, y: canvas.height },
     ];
     pattern.ripples.push({
       id: pattern.nextRippleId++,
@@ -12384,6 +12412,311 @@
     playBossSfx('phase2TileCharge');
   }
 
+  function createPhaseTwoGravitySpearRain() {
+    return {
+      elapsedBeats: 0,
+      nextDropBeat: 0,
+      nextSpearId: 1,
+      spears: [],
+      terrain: [],
+    };
+  }
+
+  function phaseTwoGravitySpearPolygon(spear, x = spear.x, y = spear.y) {
+    const normalX = -spear.dy;
+    const normalY = spear.dx;
+    return spear.points.map((point) => ({
+      x: x + normalX * point.x + spear.dx * point.y,
+      y: y + normalY * point.x + spear.dy * point.y,
+    }));
+  }
+
+  function phaseTwoGravityTerrainSurfaceAtX(rain, x, bounds) {
+    let surface = bounds.bottom;
+    for (const terrain of rain.terrain) {
+      if (x >= terrain.left && x <= terrain.right) surface = Math.min(surface, terrain.top);
+    }
+    return clampRange(surface, bounds.top, bounds.bottom);
+  }
+
+  function phaseTwoGravityWeaponPoints(kind, length, width) {
+    if (kind === 'shuriken') {
+      const radius = width * 0.78;
+      const points = [];
+      for (let index = 0; index < 8; index++) {
+        const angle = -Math.PI / 2 + index * Math.PI / 4;
+        const pointRadius = index % 2 === 0 ? radius : radius * 0.32;
+        points.push({ x: Math.cos(angle) * pointRadius, y: Math.sin(angle) * pointRadius });
+      }
+      return points;
+    }
+    if (kind === 'scythe') {
+      return [
+        { x: -width * 0.18, y: -length * 0.50 },
+        { x: width * 0.10, y: -length * 0.42 },
+        { x: width * 0.55, y: -length * 0.18 },
+        { x: width * 0.72, y: length * 0.02 },
+        { x: width * 0.58, y: length * 0.18 },
+        { x: width * 0.28, y: length * 0.27 },
+        { x: width * 0.08, y: length * 0.18 },
+        { x: width * 0.34, y: length * 0.04 },
+        { x: width * 0.05, y: -length * 0.06 },
+        { x: -width * 0.28, y: length * 0.50 },
+        { x: -width * 0.50, y: length * 0.42 },
+        { x: -width * 0.34, y: -length * 0.10 },
+      ];
+    }
+    if (kind === 'claw') {
+      return [
+        { x: -width * 0.34, y: -length * 0.50 },
+        { x: width * 0.05, y: -length * 0.50 },
+        { x: width * 0.18, y: length * 0.10 },
+        { x: width * 0.58, y: length * 0.32 },
+        { x: width * 0.34, y: length * 0.40 },
+        { x: width * 0.02, y: length * 0.20 },
+        { x: -width * 0.22, y: length * 0.50 },
+        { x: -width * 0.38, y: length * 0.34 },
+        { x: -width * 0.08, y: length * 0.08 },
+      ];
+    }
+    if (kind === 'sword') {
+      return [
+        { x: -width * 0.19, y: -length * 0.50 },
+        { x: width * 0.19, y: -length * 0.50 },
+        { x: width * 0.27, y: length * 0.23 },
+        { x: 0, y: length * 0.50 },
+        { x: -width * 0.27, y: length * 0.23 },
+      ];
+    }
+    return [
+      { x: -width * 0.44, y: -length * 0.50 },
+      { x: width * 0.38, y: -length * 0.50 },
+      { x: width * 0.62, y: length * 0.18 },
+      { x: width * 0.18, y: length * 0.35 },
+      { x: 0, y: length * 0.50 },
+      { x: -width * 0.22, y: length * 0.30 },
+      { x: -width * 0.58, y: length * 0.12 },
+    ];
+  }
+
+  function spawnPhaseTwoGravitySpear(rain) {
+    const bounds = phaseTwoGravityBounds();
+    const kinds = ['sword', 'spear', 'claw', 'scythe', 'shuriken'];
+    const kind = kinds[Math.floor(Math.random() * kinds.length)];
+    const length = (kind === 'shuriken' ? 48 : PHASE2_GRAVITY_SPEAR_LENGTH_MIN) +
+      Math.random() * (PHASE2_GRAVITY_SPEAR_LENGTH_MAX - PHASE2_GRAVITY_SPEAR_LENGTH_MIN);
+    const width = (kind === 'shuriken' ? 26 : PHASE2_GRAVITY_SPEAR_WIDTH_MIN) +
+      Math.random() * (PHASE2_GRAVITY_SPEAR_WIDTH_MAX - PHASE2_GRAVITY_SPEAR_WIDTH_MIN);
+    const angle = (Math.random() - 0.5) * 1.55;
+    const dx = Math.sin(angle);
+    const dy = Math.cos(angle);
+    const targetX = clampRange(
+      hero.x + (Math.random() - 0.5) * Math.min(112, canvas.width * 0.28),
+      bounds.left + width,
+      bounds.right - width
+    );
+    const surface = phaseTwoGravityTerrainSurfaceAtX(rain, targetX, bounds);
+    const frontExtent = kind === 'shuriken' ? width * 0.78 : length * 0.5;
+    const spawnY = bounds.top - length - 48;
+    const landingCenterY = surface - dy * frontExtent;
+    const travel = Math.max(1, (landingCenterY - spawnY) / Math.max(0.25, dy));
+    const points = phaseTwoGravityWeaponPoints(kind, length, width);
+    const spear = {
+      id: rain.nextSpearId++,
+      x: targetX - dx * travel,
+      y: spawnY,
+      dx,
+      dy,
+      kind,
+      length,
+      width,
+      frontExtent,
+      points,
+      age: 0,
+      telegraphAge: 0,
+      telegraphDuration: 340,
+      launched: false,
+      landed: false,
+      hitHero: false,
+      shadowEndX: targetX,
+      shadowEndY: landingCenterY,
+    };
+    rain.spears.push(spear);
+    playBossSfx('phase2TileCharge');
+  }
+
+  function phaseTwoGravitySpearHitsHeroCore(x1, y1, x2, y2) {
+    const center = heroBodyCenterWorld();
+    return segmentIntersectsRect(x1, y1, x2, y2, {
+      left: center.x - 2.5,
+      right: center.x + 2.5,
+      top: center.y - 2.5,
+      bottom: center.y + 2.5,
+    });
+  }
+
+  function phaseTwoGravitySpearShadowTouchesHero(spear) {
+    const points = heroBodyWorldRewardPoints();
+    const shadowHalfWidth = PHASE2_GRAVITY_SPEAR_SHADOW_WIDTH * 0.5;
+    const shadowSpan = phaseTwoGravitySpearShadowSpan(spear);
+    const startX = spear.x + (spear.shadowEndX - spear.x) * shadowSpan.startT;
+    const startY = spear.y + (spear.shadowEndY - spear.y) * shadowSpan.startT;
+    const endX = spear.x + (spear.shadowEndX - spear.x) * shadowSpan.endT;
+    const endY = spear.y + (spear.shadowEndY - spear.y) * shadowSpan.endT;
+    return points.some((point) => distToSeg(
+      point.x,
+      point.y,
+      startX,
+      startY,
+      endX,
+      endY
+    ) <= shadowHalfWidth);
+  }
+
+  function phaseTwoGravitySpearShadowSpan(spear) {
+    const progress = clamp01(spear.telegraphAge / Math.max(1, spear.telegraphDuration));
+    const endT = 0.10 + progress * 0.78;
+    return {
+      startT: Math.max(0, endT - 0.18),
+      endT: Math.min(1, endT),
+    };
+  }
+
+  function settlePhaseTwoGravitySpear(rain, spear, bounds) {
+    const tipX = spear.x + spear.dx * spear.frontExtent;
+    const tipY = spear.y + spear.dy * spear.frontExtent;
+    const surface = phaseTwoGravityTerrainSurfaceAtX(rain, tipX, bounds);
+    const penetration = Math.max(0, tipY - surface);
+    const correction = penetration / Math.max(0.25, spear.dy);
+    spear.x -= spear.dx * correction;
+    spear.y -= spear.dy * correction;
+    const sink = spear.length * 0.10;
+    spear.x += spear.dx * sink;
+    spear.y += spear.dy * sink;
+    spear.landed = true;
+    const polygon = phaseTwoGravitySpearPolygon(spear);
+    const xs = polygon.map((point) => point.x);
+    const ys = polygon.map((point) => point.y);
+    const visualLeft = Math.min(...xs);
+    const visualRight = Math.max(...xs);
+    const visualTop = Math.min(...ys);
+    const visualBottom = Math.max(...ys);
+    rain.terrain.push({
+      polygon,
+      left: visualLeft - PHASE2_GRAVITY_MASS_CONNECT_GAP,
+      right: visualRight + PHASE2_GRAVITY_MASS_CONNECT_GAP,
+      top: visualTop,
+      bottom: visualBottom,
+      visualLeft,
+      visualRight,
+      visualTop,
+      visualBottom,
+      seed: spear.id * 1.73,
+    });
+    if (rain.terrain.length > PHASE2_GRAVITY_TERRAIN_MAX) rain.terrain.shift();
+    playBossSfx('phase2ClawCut');
+  }
+
+  function updatePhaseTwoGravitySpearRain(pattern, dt, beatStep) {
+    const rain = pattern.spearRain;
+    if (!rain) return;
+    const bounds = phaseTwoGravityBounds();
+    const sinkPerFrame = PHASE2_GRAVITY_MASS_SINK_PER_MS * dt;
+    let liveTerrainCount = 0;
+    for (const terrain of rain.terrain) {
+      for (const point of terrain.polygon) point.y += sinkPerFrame;
+      terrain.top += sinkPerFrame;
+      terrain.bottom += sinkPerFrame;
+      terrain.visualTop += sinkPerFrame;
+      terrain.visualBottom += sinkPerFrame;
+      if (terrain.top <= bounds.bottom + 14) rain.terrain[liveTerrainCount++] = terrain;
+    }
+    rain.terrain.length = liveTerrainCount;
+    rain.elapsedBeats += beatStep;
+    while (rain.elapsedBeats >= rain.nextDropBeat && rain.spears.length < PHASE2_GRAVITY_SPEAR_MAX_ACTIVE) {
+      spawnPhaseTwoGravitySpear(rain);
+      rain.nextDropBeat += PHASE2_GRAVITY_SPEAR_INTERVAL_BEATS;
+    }
+    let shadowTouchesHero = false;
+    const travel = PHASE2_GRAVITY_SPEAR_SPEED_PER_BEAT * beatStep;
+    for (const spear of rain.spears) {
+      if (spear.landed) continue;
+      spear.age += dt;
+      if (!spear.launched) {
+        spear.telegraphAge += dt;
+        if (phaseTwoGravitySpearShadowTouchesHero(spear)) shadowTouchesHero = true;
+        if (spear.telegraphAge < spear.telegraphDuration) continue;
+        spear.launched = true;
+        continue;
+      }
+      const previousX = spear.x;
+      const previousY = spear.y;
+      spear.x += spear.dx * travel;
+      spear.y += spear.dy * travel;
+      if (!spear.hitHero && phaseTwoGravitySpearHitsHeroCore(
+        previousX,
+        previousY,
+        spear.x,
+        spear.y
+      )) {
+        spear.hitHero = true;
+        damagePlayer(PHASE2_GRAVITY_SPEAR_DAMAGE * (bpm / PHASE2_BPM_MIN));
+        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+        if (hp <= 0) die();
+      }
+      const tipY = spear.y + spear.dy * spear.frontExtent;
+      const surface = phaseTwoGravityTerrainSurfaceAtX(
+        rain,
+        spear.x + spear.dx * spear.frontExtent,
+        bounds
+      );
+      if (tipY >= surface) settlePhaseTwoGravitySpear(rain, spear, bounds);
+    }
+    if (shadowTouchesHero) addVp(VP_PER_BEAT * beatStep, true);
+    let liveSpearCount = 0;
+    for (const spear of rain.spears) {
+      if (!spear.landed) rain.spears[liveSpearCount++] = spear;
+    }
+    rain.spears.length = liveSpearCount;
+  }
+
+  function resolvePhaseTwoGravityTerrainMovement(pattern, previousX, previousY, bounds) {
+    const rain = pattern.spearRain;
+    if (!rain) return false;
+    const halfW = HERO_W / 2;
+    const halfH = HERO_H / 2;
+    const horizontalDelta = hero.x - previousX;
+    for (const terrain of rain.terrain) {
+      const verticalOverlap = hero.y + halfH > terrain.top + 1 &&
+        hero.y - halfH < terrain.bottom - 1;
+      if (!verticalOverlap || hero.x + halfW <= terrain.left || hero.x - halfW >= terrain.right) continue;
+      if (horizontalDelta > 0) hero.x = terrain.left - halfW;
+      else if (horizontalDelta < 0) hero.x = terrain.right + halfW;
+    }
+    hero.x = clampRange(hero.x, bounds.left, bounds.right);
+    let grounded = false;
+    const previousBottom = previousY + halfH;
+    const previousTop = previousY - halfH;
+    const currentBottom = hero.y + halfH;
+    const currentTop = hero.y - halfH;
+    for (const terrain of rain.terrain) {
+      const horizontalOverlap = hero.x + halfW > terrain.left && hero.x - halfW < terrain.right;
+      if (!horizontalOverlap) continue;
+      if (pattern.vy >= 0 && previousBottom <= terrain.top + 2 && currentBottom >= terrain.top) {
+        hero.y = terrain.top - halfH;
+        pattern.vy = 0;
+        grounded = true;
+      } else if (pattern.vy < 0 && previousTop >= terrain.bottom - 2 && currentTop <= terrain.bottom &&
+                 pattern.elapsed - (terrain.lastCeilingHitAt || -Infinity) > 300) {
+        terrain.lastCeilingHitAt = pattern.elapsed;
+        damagePlayer(PHASE2_GRAVITY_CEILING_DAMAGE * (bpm / PHASE2_BPM_MIN));
+        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+        if (hp <= 0) die();
+      }
+    }
+    return grounded;
+  }
+
   function updatePhaseTwoGravityMovement(dt) {
     const pattern = phase2GravityPattern;
     if (!pattern || pattern.mode !== 'active') {
@@ -12392,6 +12725,8 @@
       return;
     }
     const bounds = phaseTwoGravityBounds();
+    const previousX = hero.x;
+    const previousY = hero.y;
     const horizontal = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) -
       (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
     const moveVx = horizontal * MOVE_SPEED * (bpm / BASE_BPM);
@@ -12433,6 +12768,12 @@
     } else {
       pattern.grounded = false;
     }
+    pattern.grounded = resolvePhaseTwoGravityTerrainMovement(
+      pattern,
+      previousX,
+      previousY,
+      bounds
+    ) || pattern.grounded;
     heroMove.x = horizontal || Math.sign(pattern.vx);
     heroMove.y = Math.sign(pattern.vy);
   }
@@ -12452,8 +12793,7 @@
       spawnPhaseTwoGravityRipple(pattern);
       pattern.nextRippleBeat += PHASE2_GRAVITY_RIPPLE_INTERVAL_BEATS;
     }
-    const board = getBoardRect();
-    const hitboxes = heroViewportHitboxes(board);
+    const hitboxes = { center: heroBodyCenterWorld() };
     let liveRippleCount = 0;
     for (const ripple of pattern.ripples) {
       ripple.previousRadius = ripple.radius;
@@ -12470,14 +12810,13 @@
       if (!crossedHero) continue;
       ripple.pushed = true;
       const length = distance || 1;
-      const scaleX = canvas.width / Math.max(1, board.width);
-      const scaleY = canvas.height / Math.max(1, board.height);
-      pattern.vx += dx / length * PHASE2_GRAVITY_RIPPLE_PUSH_SPEED * scaleX;
-      pattern.vy += dy / length * PHASE2_GRAVITY_RIPPLE_PUSH_SPEED * scaleY;
+      pattern.vx += dx / length * PHASE2_GRAVITY_RIPPLE_PUSH_SPEED;
+      pattern.vy += dy / length * PHASE2_GRAVITY_RIPPLE_PUSH_SPEED;
       pattern.grounded = false;
       playBossSfx('phase2SwordStrike');
     }
     pattern.ripples.length = liveRippleCount;
+    updatePhaseTwoGravitySpearRain(pattern, dt, beatStep);
   }
 
   function beginDebugPhaseTwoGravityPattern() {
@@ -12502,6 +12841,10 @@
     phase2GravityDebugQueued = true;
     if (!phase2AvatarStarted) skipPhaseTwoTransition();
     if (phase2CombatStarted && phase2GravityDebugQueued) beginDebugPhaseTwoGravityPattern();
+  }
+
+  function debugPhaseTwoGravitySpears() {
+    debugPhaseTwoGravityPattern();
   }
 
   function spawnPhaseTwoRushEye() {
@@ -15835,11 +16178,208 @@
     }
   }
 
+  function tracePhaseTwoGravityPolygon(g, polygon) {
+    if (!polygon.length) return;
+    g.beginPath();
+    g.moveTo(polygon[0].x, polygon[0].y);
+    for (let index = 1; index < polygon.length; index++) g.lineTo(polygon[index].x, polygon[index].y);
+    g.closePath();
+  }
+
+  function renderPhaseTwoGravitySpearRain(rain) {
+    if (!rain) return;
+    actx.globalAlpha = 1;
+    if (rain.terrain.length) {
+      const width = canvas.width;
+      const height = canvas.height;
+      if (!phase2GravityMassMaskCanvas || phase2GravityMassMaskCanvas.width !== width ||
+          phase2GravityMassMaskCanvas.height !== height) {
+        phase2GravityMassMaskCanvas = document.createElement('canvas');
+        phase2GravityMassEdgeCanvas = document.createElement('canvas');
+        phase2GravityMassFillCanvas = document.createElement('canvas');
+        phase2GravityMassMaskCanvas.width = width;
+        phase2GravityMassMaskCanvas.height = height;
+        phase2GravityMassEdgeCanvas.width = width;
+        phase2GravityMassEdgeCanvas.height = height;
+        phase2GravityMassFillCanvas.width = width;
+        phase2GravityMassFillCanvas.height = height;
+      }
+      const maskCtx = phase2GravityMassMaskCanvas.getContext('2d');
+      const edgeCtx = phase2GravityMassEdgeCanvas.getContext('2d');
+      const fillCtx = phase2GravityMassFillCanvas.getContext('2d');
+      maskCtx.clearRect(0, 0, width, height);
+      maskCtx.fillStyle = '#fff';
+      maskCtx.lineJoin = 'round';
+      for (const terrain of rain.terrain) {
+        tracePhaseTwoGravityPolygon(maskCtx, terrain.polygon);
+        maskCtx.fill();
+      }
+      // Join only genuinely close landed pieces. Stroking every weapon made
+      // each silhouette swell into a single oversized blob.
+      maskCtx.strokeStyle = '#fff';
+      maskCtx.lineWidth = 4;
+      maskCtx.lineCap = 'round';
+      for (let firstIndex = 0; firstIndex < rain.terrain.length; firstIndex++) {
+        const first = rain.terrain[firstIndex];
+        for (let secondIndex = firstIndex + 1; secondIndex < rain.terrain.length; secondIndex++) {
+          const second = rain.terrain[secondIndex];
+          const overlapX = Math.min(first.visualRight, second.visualRight) -
+            Math.max(first.visualLeft, second.visualLeft);
+          const overlapY = Math.min(first.visualBottom, second.visualBottom) -
+            Math.max(first.visualTop, second.visualTop);
+          if (overlapY > 0) {
+            if (first.visualRight < second.visualLeft &&
+                second.visualLeft - first.visualRight <= PHASE2_GRAVITY_MASS_CONNECT_GAP) {
+              const y = (Math.max(first.visualTop, second.visualTop) +
+                Math.min(first.visualBottom, second.visualBottom)) * 0.5;
+              maskCtx.beginPath();
+              maskCtx.moveTo(first.visualRight, y);
+              maskCtx.lineTo(second.visualLeft, y);
+              maskCtx.stroke();
+            } else if (second.visualRight < first.visualLeft &&
+                first.visualLeft - second.visualRight <= PHASE2_GRAVITY_MASS_CONNECT_GAP) {
+              const y = (Math.max(first.visualTop, second.visualTop) +
+                Math.min(first.visualBottom, second.visualBottom)) * 0.5;
+              maskCtx.beginPath();
+              maskCtx.moveTo(second.visualRight, y);
+              maskCtx.lineTo(first.visualLeft, y);
+              maskCtx.stroke();
+            }
+          }
+          if (overlapX > 0) {
+            if (first.visualBottom < second.visualTop &&
+                second.visualTop - first.visualBottom <= PHASE2_GRAVITY_MASS_CONNECT_GAP) {
+              const x = (Math.max(first.visualLeft, second.visualLeft) +
+                Math.min(first.visualRight, second.visualRight)) * 0.5;
+              maskCtx.beginPath();
+              maskCtx.moveTo(x, first.visualBottom);
+              maskCtx.lineTo(x, second.visualTop);
+              maskCtx.stroke();
+            } else if (second.visualBottom < first.visualTop &&
+                first.visualTop - second.visualBottom <= PHASE2_GRAVITY_MASS_CONNECT_GAP) {
+              const x = (Math.max(first.visualLeft, second.visualLeft) +
+                Math.min(first.visualRight, second.visualRight)) * 0.5;
+              maskCtx.beginPath();
+              maskCtx.moveTo(x, second.visualBottom);
+              maskCtx.lineTo(x, first.visualTop);
+              maskCtx.stroke();
+            }
+          }
+        }
+      }
+      edgeCtx.clearRect(0, 0, width, height);
+      edgeCtx.globalCompositeOperation = 'source-over';
+      for (const offset of [[-3, 0], [3, 0], [0, -3], [0, 3], [-2, -2], [2, 2], [-2, 2], [2, -2]]) {
+        edgeCtx.drawImage(phase2GravityMassMaskCanvas, offset[0], offset[1]);
+      }
+      edgeCtx.globalCompositeOperation = 'destination-out';
+      edgeCtx.drawImage(phase2GravityMassMaskCanvas, 0, 0);
+      edgeCtx.globalCompositeOperation = 'source-in';
+      edgeCtx.fillStyle = '#f01827';
+      edgeCtx.fillRect(0, 0, width, height);
+      edgeCtx.globalCompositeOperation = 'source-over';
+      fillCtx.clearRect(0, 0, width, height);
+      fillCtx.fillStyle = '#000';
+      fillCtx.fillRect(0, 0, width, height);
+      fillCtx.globalCompositeOperation = 'destination-in';
+      fillCtx.drawImage(phase2GravityMassMaskCanvas, 0, 0);
+      fillCtx.globalCompositeOperation = 'source-over';
+      actx.drawImage(phase2GravityMassFillCanvas, 0, 0);
+      actx.drawImage(phase2GravityMassEdgeCanvas, 0, 0);
+    }
+    for (const spear of rain.spears) {
+      if (spear.landed || spear.launched) continue;
+      const flash = spear.telegraphAge < 64 ||
+        (spear.telegraphAge >= 164 && spear.telegraphAge < 228);
+      if (!flash) continue;
+      actx.save();
+      const shadowSpan = phaseTwoGravitySpearShadowSpan(spear);
+      const normalX = -spear.dy;
+      const normalY = spear.dx;
+      const waveSize = 8 + spear.width * 0.25;
+      for (let index = 0; index < 5; index++) {
+        const pointT = shadowSpan.endT - index * 0.045;
+        if (pointT < shadowSpan.startT || pointT > shadowSpan.endT) continue;
+        const centerX = spear.x + (spear.shadowEndX - spear.x) * pointT;
+        const centerY = spear.y + (spear.shadowEndY - spear.y) * pointT;
+        const tipX = centerX + spear.dx * waveSize * 0.52;
+        const tipY = centerY + spear.dy * waveSize * 0.52;
+        const baseX = centerX - spear.dx * waveSize * 0.25;
+        const baseY = centerY - spear.dy * waveSize * 0.25;
+        const sideX = normalX * waveSize * 0.42;
+        const sideY = normalY * waveSize * 0.42;
+        const fade = (1 - index / 5) * 0.58;
+        actx.beginPath();
+        actx.moveTo(baseX + sideX, baseY + sideY);
+        actx.lineTo(tipX, tipY);
+        actx.lineTo(baseX - sideX, baseY - sideY);
+        actx.strokeStyle = `rgba(83, 38, 115, ${fade.toFixed(3)})`;
+        actx.lineWidth = 3;
+        actx.stroke();
+      }
+      actx.restore();
+    }
+    for (const spear of rain.spears) {
+      if (spear.landed) continue;
+      const polygon = phaseTwoGravitySpearPolygon(spear);
+      tracePhaseTwoGravityPolygon(actx, polygon);
+      actx.fillStyle = '#000000';
+      actx.fill();
+      actx.strokeStyle = '#f01827';
+      actx.lineWidth = 2.4;
+      actx.stroke();
+      const normalX = -spear.dy;
+      const normalY = spear.dx;
+      const localPoint = (localX, localY) => ({
+        x: spear.x + normalX * localX + spear.dx * localY,
+        y: spear.y + normalY * localX + spear.dy * localY,
+      });
+      const tip = localPoint(0, spear.frontExtent * 0.72);
+      actx.beginPath();
+      actx.moveTo(spear.x - normalX * spear.width * 0.20, spear.y - normalY * spear.width * 0.20);
+      actx.lineTo(tip.x, tip.y);
+      actx.strokeStyle = 'rgba(255, 79, 81, 0.62)';
+      actx.lineWidth = 1;
+      actx.stroke();
+      if (spear.kind === 'sword') {
+        const guardA = localPoint(-spear.width * 0.62, -spear.length * 0.20);
+        const guardB = localPoint(spear.width * 0.62, -spear.length * 0.20);
+        actx.beginPath();
+        actx.moveTo(guardA.x, guardA.y);
+        actx.lineTo(guardB.x, guardB.y);
+        actx.strokeStyle = '#f01827';
+        actx.lineWidth = 2;
+        actx.stroke();
+      } else if (spear.kind === 'shuriken') {
+        actx.beginPath();
+        actx.arc(spear.x, spear.y, spear.width * 0.14, 0, Math.PI * 2);
+        actx.fillStyle = '#e51a28';
+        actx.fill();
+      }
+    }
+  }
+
   function renderPhaseTwoGravityPattern() {
     const pattern = phase2GravityPattern;
     if (!pattern) return;
+    const board = getBoardRect();
+    if (!board || !canvas) return;
+    const scaleX = board.width / Math.max(1, canvas.width);
+    const scaleY = board.height / Math.max(1, canvas.height);
     actx.save();
+    actx.translate(board.left, board.top);
+    actx.scale(scaleX, scaleY);
+    actx.beginPath();
+    const contentInset = BORDER + PAD;
+    actx.rect(
+      arena.x - arena.width / 2 + contentInset,
+      arena.y - arena.height / 2 + contentInset,
+      Math.max(1, arena.width - contentInset * 2),
+      Math.max(1, arena.height - contentInset * 2)
+    );
+    actx.clip();
     actx.lineCap = 'round';
+    actx.globalAlpha = 1;
     for (const ripple of pattern.ripples) {
       const fadeStart = ripple.maxRadius * 0.78;
       const alpha = 1 - smoothstep(
@@ -15854,6 +16394,7 @@
       actx.arc(ripple.x, ripple.y, Math.max(1, ripple.radius + tremor), 0, Math.PI * 2);
       actx.stroke();
     }
+    renderPhaseTwoGravitySpearRain(pattern.spearRain);
     if (pattern.elapsed < PHASE2_GRAVITY_ROAR_MS) {
       const pulse = 1 - clamp01(pattern.elapsed / PHASE2_GRAVITY_ROAR_MS);
       actx.globalAlpha = 0.2 + pulse * 0.32;
