@@ -1064,26 +1064,30 @@ function sigilsFromLifetime(lifetimeGold) {
 const ERA_NAMES = ['Age of Wood', 'Age of Stone', 'Age of Iron', 'Age of Gold', 'Age of Storms', 'Age of Aether'];
 
 /* ---- THE AGES TREE: solar-system layout ----
-   Center = The Crown. EIGHT branches radiate outward; eras are
+   Center = The Crown. NINE branches radiate outward; eras are
    concentric rings. Era gates sit ON the ring and act as starter
    nodes: every branch of that era chains from the gate.
    Nodes may carry side: -1|1 — they hang off the spine at a
    perpendicular offset (sub-branches).                           */
 const TREE_BRANCHES = {
-  war:    { name: 'War',        angle: -90 },
-  pros:   { name: 'Prosperity', angle: -90 + 45 },
-  for:    { name: 'Fortune',    angle: -90 + 2 * 45 },
-  mys:    { name: 'Mysticism',  angle: -90 + 3 * 45 },
-  ind:    { name: 'Industry',   angle: -90 + 4 * 45 },
-  crown:  { name: 'Sovereignty', angle: -90 + 5 * 45 },
-  spirit: { name: 'Spirit',     angle: -90 + 6 * 45 },
-  auto:   { name: 'Automation', angle: -90 + 7 * 45 },
+  war:     { name: 'War',         angle: -90 },
+  pros:    { name: 'Prosperity',  angle: -90 + 40 },
+  for:     { name: 'Fortune',     angle: -90 + 2 * 40 },
+  mys:     { name: 'Mysticism',   angle: -90 + 3 * 40 },
+  ind:     { name: 'Industry',    angle: -90 + 4 * 40 },
+  crown:   { name: 'Sovereignty', angle: -90 + 5 * 40 },
+  spirit:  { name: 'Spirit',      angle: -90 + 6 * 40 },
+  auto:    { name: 'Automation',  angle: -90 + 7 * 40 },
+  offline: { name: 'Aftertime',   angle: -90 + 8 * 40 },
 };
 const ERA_RING_R = [0, 560, 1080, 1600, 2120, 2640];      // gate ring radius (era 2..6)
 const ERA_NODE_R0 = [190, 690, 1210, 1730, 2250, 2770];   // first node radius per era
-const TREE_NODE_STEP = 150;
+const TREE_NODE_STEP = 152;
 const TREE_SIDE_OFF = 215;   // side nodes: perpendicular offset from the spine
+const TREE_OFFLINE_SIDE_OFF = 105; // compact side lanes fit inside the ninth sector
 const TREE_SIDE_OUT = 70;    // ...plus a small outward push (diagonal hang)
+const TREE_ERA1_BRANCH_OUT = { pros: 55, mys: 55, crown: 55, auto: 55, offline: 70 };
+const TREE_OFFLINE_ERA2_OUT = 30;
 
 /* node costs per era per step — the incline gets BRUTAL in the
    outer rings, because Sigil masters scale off every one earned */
@@ -1097,6 +1101,20 @@ const ERA_NODE_COST = [
 ];
 const ERA_GATE_COST = [0, 30, 400, 6000, 100000, 2000000];
 const ERA_GATE_NEED = [0, 14, 36, 64, 94, 125];
+
+/* Aftertime progression is deliberately explicit: every spine node adds
+   exactly 10 percentage points of offline Gold production, up to 150%.
+   Side paths separately unlock resources, loot and idle combat. */
+const OFFLINE_GOLD_NODE_IDS = [
+  'off1', 'off2', 'off3', 'off4', 'off5', 'off6', 'off7', 'off8', 'off9',
+  'off10', 'off11', 'off12', 'off13', 'off14', 'off15',
+];
+const OFFLINE_COMBAT_NODE_IDS = ['xoffwar1', 'xoffwar2', 'xoffwar3', 'xoffwar4'];
+const OFFLINE_LOOT_NODE_IDS = ['xoffloot1', 'xoffloot2', 'xoffloot3', 'xoffloot4'];
+const OFFLINE_CAP_NODE_IDS = [
+  'auto7', 'auto8', 'xautotime1', 'xautotime2', 'xautotime3', 'xautotime4', 'xautotime5',
+];
+const OFFLINE_CAP_HOURS = [8, 12, 16, 20, 24, 48, Infinity];
 
 /* node helper: n(id, era, branch, step, name, desc, opts)
    opts.req  — explicit requirement: a node id, or an ARRAY (needs all)
@@ -1155,6 +1173,14 @@ const PRESTIGE_TREE = (() => {
   n('auto1', 1, 'auto', 0, 'Buying Ledgers', '🔓 the x10 buy amount.');
   n('auto2', 1, 'auto', 1, 'Procurement Office', '🔓 the x100, N10, N100 and MAX buy amounts.');
   n('auto3', 1, 'auto', 2, 'Steward of Works', '🔓 the 💰 BUY ALL UPGRADES buttons (units, buildings & the Royal Works).');
+  n('off1', 1, 'offline', 0, 'Closed Ledgers', 'Offline Gold production runs at 10% of its normal rate.', { cost: 1 });
+  n('xoffwood', 1, 'offline', 0, 'Night Sawmills', 'Wood is produced while offline at your current Aftertime efficiency.', { req: 'off1', side: 1, cost: 1 });
+  n('xoffwar1', 1, 'offline', 0, 'Watch Patrols', 'Your army deals 25% of its normal idle damage while offline and can pass Zones.', { req: 'off1', side: -1, cost: 1 });
+  n('off2', 1, 'offline', 1, 'After-Hours Mint', 'Offline Gold production efficiency increases to 20%.', { cost: 1 });
+  n('xoffstone', 1, 'offline', 1, 'Silent Quarries', 'Stone is produced while offline at your current Aftertime efficiency.', { req: 'off2', side: 1, cost: 1 });
+  n('off3', 1, 'offline', 2, 'Moonlit Accounts', 'Offline Gold production efficiency increases to 30%.', { cost: 2 });
+  n('xoffmana', 1, 'offline', 2, 'Dreaming Wells', 'Mana is produced while offline at your current Aftertime efficiency.', { req: 'off3', side: 1, cost: 2 });
+  n('xoffloot1', 1, 'offline', 2, 'Scavenger Patrols', 'Offline kills roll item drops at 25% of their normal chance.', { req: 'xoffwar1', side: -1, cost: 2 });
 
   /* ===== GATE + ERA 2 — AGE OF STONE ===== */
   gate('era2', 2, 'Age of Stone', '+25% ALL gold. The kingsroads are gravelled. Every Age of Stone branch starts here.');
@@ -1198,6 +1224,11 @@ const PRESTIGE_TREE = (() => {
   n('auton2', 2, 'auto', 1, 'Silent Couriers', 'AUTOMATION SETTING: hide treasure-chest notifications.', { req: 'auto5', side: 1 });
   n('auto6', 2, 'auto', 2, 'Punctual Couriers', 'Treasure chests are delivered TWICE as often.');
   n('auton3', 2, 'auto', 2, 'Workshop Ledgers', 'AUTOMATION SETTING: hide items and Portal supplies created by buildings.', { req: 'auto6', side: 1 });
+  n('off4', 2, 'offline', 0, 'Graveyard Shift', 'Offline Gold production efficiency increases to 40%.', { req: ['era2', 'off3'], cost: 5 });
+  n('xoffwar2', 2, 'offline', 0, 'Relief Companies', 'Your army deals 50% of its normal idle damage while offline.', { req: 'xoffwar1', side: -1, cost: 5 });
+  n('off5', 2, 'offline', 1, 'Unsetting Scales', 'Offline Gold production efficiency increases to 50%.', { cost: 10 });
+  n('off6', 2, 'offline', 2, 'Second Treasury', 'Offline Gold production efficiency increases to 60%.', { cost: 20 });
+  n('xoffloot2', 2, 'offline', 2, 'Night Reclaimers', 'Offline kills roll item drops at 50% of their normal chance.', { req: ['xoffloot1', 'xoffwar2'], side: -1, cost: 10 });
 
   /* ===== GATE + ERA 3 — AGE OF IRON ===== */
   gate('era3', 3, 'Age of Iron', '+50% ALL gold. The kingsroads are cobbled. Every Age of Iron branch starts here.');
@@ -1238,9 +1269,14 @@ const PRESTIGE_TREE = (() => {
   n('xspirit3', 3, 'spirit', 1, 'Soul Tithe', 'Every spirit click also gathers 0.5 Mana.', { req: 'spirit8', side: 1 });
   n('xspirit7', 3, 'spirit', 2, 'Grave Robbers', 'Spirits LOOT any treasure chest you let slip away — chests never vanish unclaimed.', { req: 'xspirit3', side: 1 });
   n('spirit9', 3, 'spirit', 2, 'Restless Night', 'Spirit Hands click 25% faster at night.');
-  n('auto7', 3, 'auto', 0, 'Counting Engines', 'Offline progress runs at 75% rate (instead of 50%).');
-  n('auto8', 3, 'auto', 1, 'Tireless Scribes', 'Offline progress is counted for up to 16 hours (instead of 8).');
+  n('auto7', 3, 'auto', 0, 'Counting Engines', 'Offline progress is counted for up to 8 hours (instead of 4).');
+  n('auto8', 3, 'auto', 1, 'Tireless Scribes', 'Offline progress is counted for up to 12 hours (instead of 8).');
   n('auto9', 3, 'auto', 2, 'Animated Armory', 'TOGGLE: automatically equips the best loadout, prioritizing more affixes and then higher tiers.');
+  n('off7', 3, 'offline', 0, 'Iron Night Office', 'Offline Gold production efficiency increases to 70%.', { req: ['era3', 'off6'], cost: 100 });
+  n('xoffwar3', 3, 'offline', 0, 'Sleepless Legions', 'Your army deals 75% of its normal idle damage while offline.', { req: 'xoffwar2', side: -1, cost: 100 });
+  n('off8', 3, 'offline', 1, 'Clockwork Exchequer', 'Offline Gold production efficiency increases to 80%.', { cost: 200 });
+  n('off9', 3, 'offline', 2, 'Dusk Dividends', 'Offline Gold production efficiency increases to 90%.', { cost: 350 });
+  n('xoffloot3', 3, 'offline', 2, 'Dream Delvers', 'Offline kills roll item drops at 75% of their normal chance.', { req: ['xoffloot2', 'xoffwar3'], side: -1, cost: 200 });
 
   /* ===== GATE + ERA 4 — AGE OF GOLD ===== */
   gate('era4', 4, 'Age of Gold', '+75% ALL gold. The kingsroads are paved in marble. Every Age of Gold branch starts here.');
@@ -1290,6 +1326,12 @@ const PRESTIGE_TREE = (() => {
   n('auto10', 4, 'auto', 0, 'Court of Cogs', 'MAX buying handles up to 5,000 at once (instead of 1,000).');
   n('auto11', 4, 'auto', 1, 'Standing Reserves', 'RIFT PORTAL: a defeat auto-revives your team with Phoenix Feathers, if you carry them.');
   n('auto12', 4, 'auto', 2, 'Brass Foremen', 'Mechanized labor: ALL production +15%.');
+  n('xautotime1', 4, 'auto', 0, 'Night Chronometers', 'Offline progress is counted for up to 16 hours.', { req: ['era4', 'auto8'], side: -1, cost: 2000 });
+  n('xautotime2', 4, 'auto', 1, 'Longwatch Escapements', 'Offline progress is counted for up to 20 hours.', { req: 'xautotime1', side: -1, cost: 4000 });
+  n('off10', 4, 'offline', 0, 'Golden Nightwatch', 'Offline Gold production efficiency increases to 100%.', { req: ['era4', 'off9'], cost: 2000 });
+  n('xoffwar4', 4, 'offline', 0, 'Army Without Dawn', 'Your army deals 100% of its normal idle damage while offline.', { req: 'xoffwar3', side: -1, cost: 2000 });
+  n('off11', 4, 'offline', 1, 'Nocturnal Empire', 'Offline Gold production efficiency increases to 110%.', { cost: 4000 });
+  n('xoffloot4', 4, 'offline', 2, 'Unblinking Scavengers', 'Offline kills use their full normal item-drop chance.', { req: ['xoffloot3', 'xoffwar4'], side: -1, cost: 4000 });
 
   /* ===== GATE + ERA 5 — AGE OF STORMS ===== */
   gate('era5', 5, 'Age of Storms', '+100% ALL gold. Lightning dances along the kingsroads. Every Age of Storms branch starts here.');
@@ -1336,6 +1378,9 @@ const PRESTIGE_TREE = (() => {
   n('xauto1', 5, 'auto', 2, 'Fast Foremen', 'AUTO BUILD works continuously at up to 7.5 buildings per second.', { req: 'auto15', side: -1 });
   n('xauto2', 5, 'auto', 2, 'Instant Blueprints', 'AUTO BUILD works continuously at up to 50 buildings per second.', { req: 'xauto1', side: 1 });
   n('xauto3', 5, 'auto', 2, 'Muster Drums', 'AUTO RECRUIT works continuously at up to 10 units per second.', { req: 'auto21', side: -1 });
+  n('xautotime3', 5, 'auto', 0, 'Sleepless Calendar', 'Offline progress is counted for up to 24 hours.', { req: ['era5', 'xautotime2'], side: -1, cost: 100000 });
+  n('off12', 5, 'offline', 0, 'Stormgrave Commerce', 'Offline Gold production efficiency increases to 120%.', { req: ['era5', 'off11'], cost: 50000 });
+  n('off13', 5, 'offline', 1, 'Tempest Trusts', 'Offline Gold production efficiency increases to 130%.', { cost: 100000 });
 
   /* ===== GATE + ERA 6 — AGE OF AETHER ===== */
   gate('era6', 6, 'Age of Aether', '+150% ALL gold. The kingsroads glow with aether. The final ring.');
@@ -1383,6 +1428,10 @@ const PRESTIGE_TREE = (() => {
   n('auto18', 6, 'auto', 2, 'The other automatons work EVERY SECOND, AUTO BUILD reaches 100 buildings/s, Legion Foundry reaches 100 units/s, and ALL production +25%.');
   n('xauto4', 6, 'auto', 2, 'Legion Foundry', 'AUTO RECRUIT works continuously at up to 50 units per second, or 100 with the Grand Automaton.', { req: 'xauto3', side: -1 });
   n('auto20', 6, 'auto', 2, 'Crown Planner', 'ASCENSION: unlocks BUY ALL NODES, buying the cheapest available Advancement nodes first.', { req: 'auto18', side: 1 });
+  n('xautotime4', 6, 'auto', 0, 'The Lost Week', 'Offline progress is counted for up to 48 hours.', { req: ['era6', 'xautotime3'], side: -1, cost: 2500000 });
+  n('xautotime5', 6, 'auto', 1, 'Clock Beyond Time', 'Offline progress is UNCAPPED. Every moment away is counted.', { req: ['xautotime4', 'auto20'], side: -1, cost: 4000000 });
+  n('off14', 6, 'offline', 0, 'Aether Nightbanks', 'Offline Gold production efficiency increases to 140%.', { req: ['era6', 'off13'], cost: 1000000 });
+  n('off15', 6, 'offline', 1, 'The Kingdom Never Sleeps', 'Offline Gold production reaches 150% of its normal rate.', { cost: 2000000 });
 
   return T;
 })();

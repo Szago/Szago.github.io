@@ -2542,21 +2542,152 @@ function load() {
   }
 }
 
+function ownedTreeFraction(ids, step, cap) {
+  return Math.min(cap, ids.reduce((n, id) => n + (hasTree(id) ? 1 : 0), 0) * step);
+}
+
+function offlineGoldRate() {
+  return ownedTreeFraction(OFFLINE_GOLD_NODE_IDS, 0.10, 1.50);
+}
+
+function offlineCombatRate() {
+  return ownedTreeFraction(OFFLINE_COMBAT_NODE_IDS, 0.25, 1);
+}
+
+function offlineLootRate() {
+  return ownedTreeFraction(OFFLINE_LOOT_NODE_IDS, 0.25, 1);
+}
+
+function offlineCapHours() {
+  for (let i = OFFLINE_CAP_NODE_IDS.length - 1; i >= 0; i--)
+    if (hasTree(OFFLINE_CAP_NODE_IDS[i])) return OFFLINE_CAP_HOURS[i];
+  return 4;
+}
+
+function offlineCapLabel() {
+  const hours = offlineCapHours();
+  return Number.isFinite(hours) ? hours + ' hours' : 'Uncapped';
+}
+
+function offlineElapsedSeconds(elapsed) {
+  return Math.min(elapsed, offlineCapHours() * 3600);
+}
+
+function offlineResourceEnabled(res) {
+  return res === 'gold' || hasTree({ wood: 'xoffwood', stone: 'xoffstone', mana: 'xoffmana' }[res]);
+}
+
+function makeOfflineMonster(c) {
+  const m = monsterFor(state.zone, state.killIdx);
+  if (c.night) {
+    m.hp = Math.ceil(m.hp * NIGHT_HP_MULT);
+    m.gold *= c.nightBountyMult || NIGHT_BOUNTY_MULT;
+    m.night = true;
+  }
+  if (c.enemyHpMult < 1) m.hp = Math.ceil(m.hp * c.enemyHpMult);
+  return { ...m, maxHp: m.hp };
+}
+
+function grantOfflineDrop(isBoss, lootRate) {
+  const chance = Math.max(0, itemDropChance(isBoss) * lootRate);
+  let count = Math.floor(chance) + (Math.random() < chance % 1 ? 1 : 0);
+  let granted = 0;
+  while (count-- > 0) {
+    const d = rollDrop();
+    invAdd(d.t, d.tier, 1, d.a);
+    state.stats.itemsFound++;
+    granted++;
+    if (hasTree('fors2') && Math.random() < 0.25) {
+      const twin = rollDrop();
+      invAdd(twin.t, twin.tier, 1, twin.a);
+      state.stats.itemsFound++;
+      granted++;
+    }
+  }
+  return granted;
+}
+
+/* Spend one snapshot of expected idle damage across successive monsters.
+   Monster HP grows exponentially by Zone, so even extreme saves converge
+   quickly; the guard is only a final safety net for malformed/debug saves. */
+function simulateOfflineCombat(c, secs, combatRate, lootRate) {
+  const result = { kills: 0, zones: 0, gold: 0, items: 0 };
+  let damage = c.rosterDps * secs * combatRate;
+  if (!(damage > 0) || (state.monster && state.monster.endgameCultist)) return result;
+
+  let m = state.monster && !state.monster.endgameCultist &&
+      Number.isFinite(state.monster.hp) && Number.isFinite(state.monster.gold)
+    ? { ...state.monster }
+    : makeOfflineMonster(c);
+  if (!Number.isFinite(m.maxHp)) m.maxHp = m.hp;
+  const startZone = state.zone;
+  let guard = 0;
+  while (damage > 0 && guard++ < 10000) {
+    const executeAt = hasTree('xwar9') && !m.isBoss ? m.maxHp * 0.15 : 0;
+    const needed = Math.max(0, m.hp - executeAt);
+    if (damage < needed) {
+      m.hp -= damage;
+      state._offlineMonsterHp = m.hp;
+      damage = 0;
+      break;
+    }
+    damage -= needed;
+
+    let bounty = m.gold * c.killMult;
+    if (m.isBoss) bounty *= 1 + (c.equip.boss || 0) / 100;
+    if (m.isBoss && hasTree('xfor1')) bounty *= 1.5;
+    earnGold(bounty);
+    result.gold += bounty;
+    result.kills++;
+    state.totalKills++;
+    if (m.isBoss) state.stats.bossKills++;
+    if (lootRate > 0) result.items += grantOfflineDrop(m.isBoss, lootRate);
+
+    state.killIdx++;
+    if (state.killIdx > KILLS_PER_ZONE) {
+      state.killIdx = 1;
+      state.zone++;
+      if (state.zone > state.highestZone) state.highestZone = state.zone;
+    }
+    m = makeOfflineMonster(c);
+  }
+  result.zones = state.zone - startZone;
+  state.monster = null; // init renders the monster reached by the patrols
+  return result;
+}
+
 function offlineProgress() {
   const elapsed = (Date.now() - (state.lastSave || Date.now())) / 1000;
   if (elapsed < 60) return;
-  const capH = hasTree('auto8') ? 16 : 8;            // Tireless Scribes
-  const rate = hasTree('auto7') ? 0.75 : 0.5;        // Counting Engines
-  const secs = Math.min(elapsed, capH * 3600);
+  const secs = offlineElapsedSeconds(elapsed);
+  const prodRate = offlineGoldRate();
+  const combatRate = offlineCombatRate();
+  const lootRate = offlineLootRate();
   const c = calc();
+  C = c; // item-drop helpers read the current derived drop multiplier
   const gains = [];
   for (const res of RESOURCES) {
-    const amt = c.prod[res] * secs * rate;
+    if (!offlineResourceEnabled(res)) continue;
+    const amt = c.prod[res] * secs * prodRate;
     if (amt <= 0) continue;
     if (res === 'gold') earnGold(amt); else state[res] += amt;
     gains.push(fmt(amt) + ' ' + RES_META[res].name);
   }
-  if (gains.length) toast('While you were away (' + Math.floor(secs / 60) + 'min): +' + gains.join(', +'));
+  const patrol = simulateOfflineCombat(c, secs, combatRate, lootRate);
+  if (patrol.items) autoEquipBest('item');
+
+  const parts = [];
+  if (gains.length) parts.push('+' + gains.join(', +'));
+  if (patrol.kills) parts.push(fmt(patrol.kills) + ' enemies defeated' +
+    (patrol.zones ? ', ' + fmt(patrol.zones) + ' Zone' + (patrol.zones === 1 ? '' : 's') + ' passed' : '') +
+    ', +' + fmt(patrol.gold) + ' bounty Gold');
+  if (patrol.items) parts.push('+' + fmt(patrol.items) + ' item' + (patrol.items === 1 ? '' : 's'));
+  const emptySummary = prodRate === 0 && combatRate === 0
+    ? 'Aftertime is dormant — unlock Closed Ledgers in the Ascension tree.'
+    : 'No eligible production or patrol rewards were available.';
+  toast('While you were away (' + fmtTime(secs) + '): ' +
+    (parts.length ? parts.join('; ') : emptySummary));
+  save(); // claim this elapsed period exactly once, including on an immediate reload
 }
 
 function exportSave() {
@@ -4681,16 +4812,20 @@ function treeNodePos(node) {
     return [cx, cy - r];
   }
   const a = TREE_BRANCHES[node.branch].angle * Math.PI / 180;
-  const r = ERA_NODE_R0[node.era - 1] + node.step * TREE_NODE_STEP +
+  const r = ERA_NODE_R0[node.era - 1] +
+    (node.era === 1 ? (TREE_ERA1_BRANCH_OUT[node.branch] || 0) : 0) +
+    (node.era === 2 && node.branch === 'offline' ? TREE_OFFLINE_ERA2_OUT : 0) +
+    node.step * TREE_NODE_STEP +
     (node.side ? TREE_SIDE_OUT : 0);
   let x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
   if (node.side) {
+    const sideOff = node.branch === 'offline' ? TREE_OFFLINE_SIDE_OFF : TREE_SIDE_OFF;
     const sameSlot = PRESTIGE_TREE.filter(n => !n.gate && n.side === node.side &&
       n.era === node.era && n.branch === node.branch && n.step === node.step);
     const slotIndex = sameSlot.findIndex(n => n.id === node.id);
     const stack = slotIndex > 0 ? slotIndex : 0;
-    x += Math.cos(a + Math.PI / 2) * TREE_SIDE_OFF * node.side;
-    y += Math.sin(a + Math.PI / 2) * TREE_SIDE_OFF * node.side;
+    x += Math.cos(a + Math.PI / 2) * sideOff * node.side;
+    y += Math.sin(a + Math.PI / 2) * sideOff * node.side;
     if (stack) {
       x += Math.cos(a + Math.PI / 2) * 175 * node.side * stack;
       y += Math.sin(a + Math.PI / 2) * 175 * node.side * stack;
@@ -4781,8 +4916,8 @@ function renderPrestige() {
     const lbl = document.createElement('div');
     lbl.className = 'branch-ray-label';
     lbl.textContent = br.name.toUpperCase();
-    lbl.style.left = (cx + Math.cos(a) * 90) + 'px';
-    lbl.style.top = (cy + Math.sin(a) * 90) + 'px';
+    lbl.style.left = (cx + Math.cos(a) * 120) + 'px';
+    lbl.style.top = (cy + Math.sin(a) * 120) + 'px';
     world.appendChild(lbl);
   }
 
@@ -4792,7 +4927,8 @@ function renderPrestige() {
     const owned = hasTree(node.id);
     const avail = nodeAvailable(node);
     const btn = document.createElement('button');
-    btn.className = 'node snode' + (node.gate ? ' gate-node' : '') + (owned ? ' owned' : avail ? '' : ' locked');
+    btn.className = 'node snode branch-' + node.branch + (node.side ? ' side-node' : '') +
+      (node.gate ? ' gate-node' : '') + (owned ? ' owned' : avail ? '' : ' locked');
     btn.style.left = x + 'px';
     btn.style.top = y + 'px';
     btn.disabled = owned || !avail || state.sigils < node.cost;
@@ -5399,6 +5535,14 @@ function renderMenu() {
         ['Night effects', () => '+50% mob HP, +' + Math.round((C.nightBountyMult - 1) * 100) + '% bounty, x' +
           ((hasTree('mys9') ? NIGHT_DROP_MULT * 2 : NIGHT_DROP_MULT) * (hasTree('mys6') ? 1.5 : 1) * (hasTree('myss3') ? 1.5 : 1)) + ' drops'],
       ]],
+      ['AFTERTIME', [
+        ['Offline Gold efficiency', () => Math.round(offlineGoldRate() * 100) + '%'],
+        ['Offline resources', () => ['wood', 'stone', 'mana'].filter(offlineResourceEnabled)
+          .map(res => RES_META[res].name).join(' / ') || 'None'],
+        ['Offline army damage', () => Math.round(offlineCombatRate() * 100) + '%'],
+        ['Offline item-drop chance', () => Math.round(offlineLootRate() * 100) + '% of normal'],
+        ['Offline time cap', offlineCapLabel],
+      ]],
       ['ITEMS', [
         ['Items found', () => fmt(state.stats.itemsFound)],
         ['Items forged', () => fmt(state.stats.itemsCombined)],
@@ -5440,9 +5584,15 @@ function renderMenu() {
     /* SETTINGS */
     const sec = document.createElement('div');
     sec.className = 'menu-section';
+    const offlineMaterials = ['wood', 'stone', 'mana'].filter(offlineResourceEnabled)
+      .map(res => RES_META[res].name).join(', ');
+    const offlineMaterialText = offlineMaterials ? offlineMaterials + ' production' : 'no material production';
     sec.innerHTML =
       '<div class="menu-section-title">SAVE</div>' +
-      '<div class="menu-note">The game autosaves every 15 seconds and on close. Offline production runs at 50% rate, capped at 8 hours.</div>' +
+      '<div class="menu-note">The game autosaves every 15 seconds and on close. Aftertime currently grants ' +
+      Math.round(offlineGoldRate() * 100) + '% Gold production, ' + offlineMaterialText + ', ' +
+      Math.round(offlineCombatRate() * 100) + '% army damage and ' + Math.round(offlineLootRate() * 100) +
+      '% item-drop chance while offline. Time cap: ' + offlineCapLabel() + '.</div>' +
       '<div class="menu-section-title">INPUT CODE</div>' +
       '<div class="debug-code-row"><input id="debug-code" class="debug-input" placeholder="Enter code..." maxlength="16">' +
       '<button id="debug-code-btn" class="menu-btn">OK</button></div>' +
@@ -5677,6 +5827,10 @@ function init() {
   buildUnitCards();
   renderCity(true);
   spawnMonster();
+  if (typeof state._offlineMonsterHp === 'number' && state.monster && !state.monster.endgameCultist) {
+    state.monster.hp = Math.max(1, Math.min(state.monster.maxHp, state._offlineMonsterHp));
+    delete state._offlineMonsterHp;
+  }
   updateEndgameVisualState();
   syncRightPanel();
   updateCycleUi();

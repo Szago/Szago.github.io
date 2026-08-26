@@ -78,15 +78,17 @@ x2 item drops (x4 with the Lunar Covenant ascension node). The map darkens at ni
   systems (Golden Harvest boosts Farms *and* Markets, Masonry boosts Walls,
   Hero's Rest boosts click damage, Royal Decree boosts everything...).
 - **Ascension (rebirth):** lifetime gold converts to **Crown Sigils**
-  (`floor(sqrt(lifetime / 3e6))`, cumulative). Sigils are spent on **THE AGES
-  TREE** — a draggable star-map: The Crown at the center, **5 branches**
-  radiating outward (War / Prosperity=gold / Industry=wood+stone / Mysticism /
-  Fortune=items), and 4 era rings (Wood / Stone / Iron / Aether). Era gates sit
+  (`floor((lifetime / 1e8)^0.24)`, cumulative). Sigils are spent on **THE AGES
+  TREE** — a draggable star-map: The Crown at the center, **9 branches**
+  radiating outward (War / Prosperity / Fortune / Mysticism / Industry /
+  Sovereignty / Spirit / Automation / Aftertime), and 6 era rings. Era gates sit
   on the rings, require owned-node counts, buff all gold, **visibly upgrade the
-  kingsroads**, and act as starter nodes for every branch of that era. 63 nodes,
-  ~2256 sigils to buy out completely. Start-grant nodes (Royal Treasury, Royal
+  kingsroads**, and act as starter nodes for every branch of that era. Start-grant nodes (Royal Treasury, Royal
   Charter) apply IMMEDIATELY when bought. The sigil-% nodes (Banking Houses,
   Golden Age, Golden Aeon) are a MASTER multiplier on ALL production & bounties.
+- **Aftertime:** offline progress begins at 0%. Its Ascension spine adds 10%
+  Gold production per node up to 150%; cheap side paths unlock Wood, Stone,
+  Mana, item drops, and idle army damage/Zone progression while the game is closed.
 - **Menu (bottom bar):** full statistics screen + settings with save export/import
   (base64 code, copy or download) and wipe.
 
@@ -102,6 +104,8 @@ x2 item drops (x4 with the Lunar Covenant ascension node). The map darkens at ni
 - `js/game.js` — engine: state, derived stats, combat, items/equipment, districts,
   pan/zoom, day/night, panels, save
 
-Saves to `localStorage` every 15s (offline progress: 50% production rate, 8h cap).
+Saves to `localStorage` every 15s. Offline progress is controlled by the Aftertime
+branch and is capped at 4h by default. Automation extends it through
+8/12/16/20/24h, then 48h, and finally removes the cap in the very late game.
 To expand the game, almost everything lives in `js/data.js` — add a building, item,
 upgrade, monster type or prestige node there and the engine picks it up.

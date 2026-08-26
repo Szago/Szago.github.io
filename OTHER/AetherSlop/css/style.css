@@ -1091,6 +1091,7 @@ body.endgame-calamity .plot:hover canvas {
 .node.snode::after { display: none; }
 .node.snode .node-name { font-size: 8px; line-height: 1.45; }
 .node.snode .node-cost { font-size: 7px; display: block; margin-top: 4px; }
+.node.snode.branch-offline.side-node { width: 100px; }
 .node.snode.gate-node {
   width: 150px;
   border-color: var(--mana);
