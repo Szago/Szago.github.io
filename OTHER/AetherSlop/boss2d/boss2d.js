@@ -110,6 +110,15 @@
       }
     }
   }
+  const HERO_BODY_FOOT_PIXEL_OFFSETS = (function buildHeroBodyFootPixelOffsets() {
+    const feetByX = new Map();
+    for (const point of HERO_BODY_PIXEL_OFFSETS) {
+      const x = Math.floor(point.x);
+      const existing = feetByX.get(x);
+      if (!existing || point.y > existing.y) feetByX.set(x, point);
+    }
+    return Array.from(feetByX.values());
+  })();
   const HERO_BODY_OUTLINE_OFFSETS = (function buildHeroBodyOutlineOffsets() {
     const gap = 7;
     const thickness = 4;
@@ -711,6 +720,7 @@
   let phase2TornadoDebugQueued = false;
   let phase2GravityPattern = null;
   let phase2GravityDebugQueued = false;
+  let phase2GravityDebugSubpattern = 'weaponTetris';
   let phase2GravityMassMaskCanvas = null;
   let phase2GravityMassEdgeCanvas = null;
   let phase2GravityMassFillCanvas = null;
@@ -899,18 +909,46 @@
   const PHASE2_GRAVITY_JUMP_RELEASE_SPEED = 0.58;
   const PHASE2_GRAVITY_KNOCKBACK_DRAG = 0.00155;
   const PHASE2_GRAVITY_SPEAR_INTERVAL_BEATS = 3;
-  const PHASE2_GRAVITY_SPEAR_SPEED_PER_BEAT = 90;
+  const PHASE2_GRAVITY_SPEAR_INITIAL_SPEED_PER_BEAT = 45;
+  const PHASE2_GRAVITY_SPEAR_ACCELERATION_PER_BEAT = 85;
+  const PHASE2_GRAVITY_SPEAR_MAX_SPEED_PER_BEAT = 190;
+  const PHASE2_GRAVITY_SPEAR_TELEGRAPH_BEATS = 1;
+  const PHASE2_GRAVITY_TETRIS_ATTACK_COUNT = 20;
   const PHASE2_GRAVITY_SPEAR_LENGTH_MIN = 72;
   const PHASE2_GRAVITY_SPEAR_LENGTH_MAX = 132;
   const PHASE2_GRAVITY_SPEAR_WIDTH_MIN = 13;
   const PHASE2_GRAVITY_SPEAR_WIDTH_MAX = 23;
   const PHASE2_GRAVITY_SPEAR_SHADOW_WIDTH = 20;
   const PHASE2_GRAVITY_SPEAR_DAMAGE = 75;
-  const PHASE2_GRAVITY_SPEAR_MAX_ACTIVE = 32;
-  const PHASE2_GRAVITY_TERRAIN_MAX = 72;
-  const PHASE2_GRAVITY_MASS_SINK_PER_MS = 0.006;
-  const PHASE2_GRAVITY_MASS_CONNECT_GAP = 10;
-  const PHASE2_GRAVITY_CEILING_DAMAGE = 20;
+  const PHASE2_GRAVITY_SPEAR_MAX_ACTIVE = 20;
+  const PHASE2_GRAVITY_TERRAIN_MAX = 20;
+  const PHASE2_GRAVITY_MASS_SINK_PER_BEAT = 5;
+  const PHASE2_GRAVITY_MASS_DRAIN_PER_BEAT = 30;
+  const PHASE2_GRAVITY_TICTACTOE_LANES = 7;
+  const PHASE2_GRAVITY_TICTACTOE_SPAWN_BEATS = 0.5;
+  const PHASE2_GRAVITY_TICTACTOE_SIDE_BEATS = 8;
+  const PHASE2_GRAVITY_TICTACTOE_ALL_SIDE_BEATS = 12;
+  const PHASE2_GRAVITY_TICTACTOE_SPEED_PER_BEAT = 36;
+  const PHASE2_GRAVITY_TICTACTOE_BODY_LENGTH = 58;
+  const PHASE2_GRAVITY_TICTACTOE_BODY_WIDTH = 5;
+  const PHASE2_GRAVITY_TICTACTOE_HEAD_LENGTH = 13;
+  const PHASE2_GRAVITY_TICTACTOE_HEAD_WIDTH = 18;
+  const PHASE2_GRAVITY_TICTACTOE_SHADOW_CHANCE = 0.20;
+  const PHASE2_GRAVITY_TICTACTOE_DURATION_BEATS =
+    PHASE2_GRAVITY_TICTACTOE_SIDE_BEATS * 4 + PHASE2_GRAVITY_TICTACTOE_ALL_SIDE_BEATS;
+  const PHASE2_GRAVITY_TICTACTOE_FADE_BEATS = 1;
+  const PHASE2_GRAVITY_SPIKE_COUNT = 30;
+  const PHASE2_GRAVITY_SPIKE_SPAWN_BEATS = 0.5;
+  const PHASE2_GRAVITY_SPIKE_TELEGRAPH_BEATS = 1;
+  const PHASE2_GRAVITY_SPIKE_SPEED_MIN_PER_BEAT = 120;
+  const PHASE2_GRAVITY_SPIKE_SPEED_MAX_PER_BEAT = 180;
+  const PHASE2_GRAVITY_SPIKE_LENGTH_MIN = 42;
+  const PHASE2_GRAVITY_SPIKE_LENGTH_MAX = 105;
+  const PHASE2_GRAVITY_SPIKE_WIDTH_MIN = 12;
+  const PHASE2_GRAVITY_SPIKE_WIDTH_MAX = 30;
+  const PHASE2_GRAVITY_SPIKE_HOLD_BEATS = 0.5;
+  const PHASE2_GRAVITY_SPIKE_SINK_BEATS = 0.5;
+  const PHASE2_GRAVITY_SUBPATTERNS = ['weaponTetris', 'ticTacToe', 'spikeDropper'];
   const PHASE2_MAYHEM_UNDER_PATTERNS = [
     'quadrantFans',
     'spearRain',
@@ -1962,6 +2000,28 @@
       gravitySpearsBtn.blur();
     });
     debugPanel.appendChild(gravitySpearsBtn);
+
+    const gravityTicTacToeBtn = document.createElement('button');
+    gravityTicTacToeBtn.type = 'button';
+    gravityTicTacToeBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-gravity';
+    gravityTicTacToeBtn.textContent = 'TICTACTOE';
+    gravityTicTacToeBtn.title = 'Start the Gravity moving-arrow subpattern';
+    gravityTicTacToeBtn.addEventListener('click', () => {
+      debugPhaseTwoGravitySubpattern('ticTacToe');
+      gravityTicTacToeBtn.blur();
+    });
+    debugPanel.appendChild(gravityTicTacToeBtn);
+
+    const gravitySpikeBtn = document.createElement('button');
+    gravitySpikeBtn.type = 'button';
+    gravitySpikeBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-gravity';
+    gravitySpikeBtn.textContent = 'SPIKE DROPPER';
+    gravitySpikeBtn.title = 'Start the Gravity spike-dropper subpattern';
+    gravitySpikeBtn.addEventListener('click', () => {
+      debugPhaseTwoGravitySubpattern('spikeDropper');
+      gravitySpikeBtn.blur();
+    });
+    debugPanel.appendChild(gravitySpikeBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -12120,8 +12180,32 @@
   function advancePhaseTwoMayhemPattern(direction) {
     const step = direction < 0 ? -1 : 1;
     if (phase2GravityPattern) {
-      if (step < 0) return startPhaseTwoMayhemPattern('tornadoRumble');
-      return false;
+      const activeType = phase2GravityPattern.subpattern
+        ? phase2GravityPattern.subpattern.type
+        : phase2GravityPattern.initialSubpattern;
+      if (activeType === 'idle') {
+        return step < 0
+          ? beginPhaseTwoGravitySubpattern(phase2GravityPattern, 'spikeDropper')
+          : false;
+      }
+      const canonicalType = activeType === 'terrainDrain'
+        ? 'weaponTetris'
+        : activeType === 'ticTacToeFade' ? 'ticTacToe'
+          : activeType;
+      const currentIndex = PHASE2_GRAVITY_SUBPATTERNS.indexOf(canonicalType);
+      if (step < 0 && currentIndex <= 0) return startPhaseTwoMayhemPattern('tornadoRumble');
+      if (step > 0 && currentIndex >= PHASE2_GRAVITY_SUBPATTERNS.length - 1) {
+        return beginPhaseTwoGravitySubpattern(phase2GravityPattern, 'idle');
+      }
+      const nextIndex = clampRange(
+        currentIndex + step,
+        0,
+        PHASE2_GRAVITY_SUBPATTERNS.length - 1
+      );
+      return beginPhaseTwoGravitySubpattern(
+        phase2GravityPattern,
+        PHASE2_GRAVITY_SUBPATTERNS[nextIndex]
+      );
     }
     const currentType = phase2MayhemPattern && (
       phase2MayhemPattern.underPattern
@@ -12333,6 +12417,16 @@
     };
   }
 
+  function phaseTwoGravityContentRect() {
+    const inset = BORDER + PAD;
+    return {
+      left: arena.x - arena.width / 2 + inset,
+      right: arena.x + arena.width / 2 - inset,
+      top: arena.y - arena.height / 2 + inset,
+      bottom: arena.y + arena.height / 2 - inset,
+    };
+  }
+
   function activatePhaseTwoGravityPattern(pattern) {
     pattern.mode = 'active';
     pattern.elapsed = 0;
@@ -12345,8 +12439,9 @@
     pattern.vy = 0;
     pattern.grounded = false;
     pattern.jumpQueued = false;
+    pattern.terrainPassThrough = false;
     pattern.ripples = [];
-    pattern.spearRain = createPhaseTwoGravitySpearRain();
+    beginPhaseTwoGravitySubpattern(pattern, pattern.initialSubpattern || 'weaponTetris');
     setPhaseTwoMayhemCastPose(
       'ritual',
       100000
@@ -12355,7 +12450,7 @@
     playBossSfx('phase2Whirlpool');
   }
 
-  function startPhaseTwoGravityPattern() {
+  function startPhaseTwoGravityPattern(initialSubpattern = 'weaponTetris') {
     if (!phase2CombatStarted || !canvas || !phase2Avatar) return false;
     stopPhaseTwoWaveformMusic();
     restorePhaseTwoSquareArena(true);
@@ -12381,7 +12476,9 @@
       vy: 0,
       grounded: false,
       jumpQueued: false,
-      spearRain: null,
+      terrainPassThrough: false,
+      initialSubpattern,
+      subpattern: null,
     };
     keys.clear();
     const help = overlay && overlay.querySelector('.aether-boss2d-help');
@@ -12414,12 +12511,128 @@
 
   function createPhaseTwoGravitySpearRain() {
     return {
+      type: 'weaponTetris',
       elapsedBeats: 0,
       nextDropBeat: 0,
       nextSpearId: 1,
+      spawnedCount: 0,
+      landedCount: 0,
+      lastDamageStep: -1,
       spears: [],
       terrain: [],
     };
+  }
+
+  function phaseTwoGravityPolygonBounds(polygon) {
+    let left = Infinity;
+    let right = -Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const point of polygon) {
+      left = Math.min(left, point.x);
+      right = Math.max(right, point.x);
+      top = Math.min(top, point.y);
+      bottom = Math.max(bottom, point.y);
+    }
+    return { left, right, top, bottom };
+  }
+
+  function phaseTwoGravityBoundsOverlap(first, second) {
+    return first.left <= second.right && first.right >= second.left &&
+      first.top <= second.bottom && first.bottom >= second.top;
+  }
+
+  function phaseTwoGravitySegmentsIntersect(a, b, c, d) {
+    const cross = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    const abC = cross(a, b, c);
+    const abD = cross(a, b, d);
+    const cdA = cross(c, d, a);
+    const cdB = cross(c, d, b);
+    if (((abC > 0 && abD < 0) || (abC < 0 && abD > 0)) &&
+        ((cdA > 0 && cdB < 0) || (cdA < 0 && cdB > 0))) return true;
+    const onSegment = (p, q, r) => Math.abs(cross(p, q, r)) < 0.0001 &&
+      r.x >= Math.min(p.x, q.x) - 0.0001 && r.x <= Math.max(p.x, q.x) + 0.0001 &&
+      r.y >= Math.min(p.y, q.y) - 0.0001 && r.y <= Math.max(p.y, q.y) + 0.0001;
+    return onSegment(a, b, c) || onSegment(a, b, d) ||
+      onSegment(c, d, a) || onSegment(c, d, b);
+  }
+
+  function phaseTwoGravityPolygonsOverlap(first, second) {
+    if (!phaseTwoGravityBoundsOverlap(
+      phaseTwoGravityPolygonBounds(first),
+      phaseTwoGravityPolygonBounds(second)
+    )) return false;
+    if (first.some((point) => pointInPoly(point.x, point.y, second)) ||
+        second.some((point) => pointInPoly(point.x, point.y, first))) return true;
+    for (let firstIndex = 0; firstIndex < first.length; firstIndex++) {
+      const a = first[firstIndex];
+      const b = first[(firstIndex + 1) % first.length];
+      for (let secondIndex = 0; secondIndex < second.length; secondIndex++) {
+        const c = second[secondIndex];
+        const d = second[(secondIndex + 1) % second.length];
+        if (phaseTwoGravitySegmentsIntersect(a, b, c, d)) return true;
+      }
+    }
+    return false;
+  }
+
+  function phaseTwoGravityRectPolygonOverlap(rect, polygon) {
+    const rectPolygon = [
+      { x: rect.left, y: rect.top },
+      { x: rect.right, y: rect.top },
+      { x: rect.right, y: rect.bottom },
+      { x: rect.left, y: rect.bottom },
+    ];
+    return phaseTwoGravityPolygonsOverlap(rectPolygon, polygon);
+  }
+
+  function phaseTwoGravityHeroBodyRectAt(x = hero.x, y = hero.y) {
+    const originX = Math.round(x - HERO_W / 2);
+    const originY = Math.round(y - HERO_H / 2);
+    return {
+      left: originX + HERO_BODY_BOUNDS.minX * HERO_SCALE,
+      right: originX + (HERO_BODY_BOUNDS.maxX + 1) * HERO_SCALE,
+      top: originY + HERO_BODY_BOUNDS.minY * HERO_SCALE,
+      bottom: originY + (HERO_BODY_BOUNDS.maxY + 1) * HERO_SCALE,
+    };
+  }
+
+  function phaseTwoGravityHeroBodyTouchesPolygon(
+    polygon,
+    x = hero.x,
+    y = hero.y,
+    polygonBounds = null
+  ) {
+    const bodyBounds = phaseTwoGravityHeroBodyRectAt(x, y);
+    if (!phaseTwoGravityBoundsOverlap(
+      bodyBounds,
+      polygonBounds || phaseTwoGravityPolygonBounds(polygon)
+    )) {
+      return false;
+    }
+    const originX = Math.round(x - HERO_W / 2);
+    const originY = Math.round(y - HERO_H / 2);
+    return HERO_BODY_PIXEL_OFFSETS.some((point) =>
+      pointInPoly(originX + point.x, originY + point.y, polygon));
+  }
+
+  function phaseTwoGravityCoreRect() {
+    const center = heroBodyCenterWorld();
+    return {
+      left: center.x - 2.5,
+      right: center.x + 2.5,
+      top: center.y - 2.5,
+      bottom: center.y + 2.5,
+    };
+  }
+
+  function phaseTwoGravityPlayDamageSfx(subpattern) {
+    const step = Math.floor(
+      (beatIndex + beatPhase / Math.max(1, beatMs)) * BOSS_SFX_DAMAGE_STEPS_PER_BEAT
+    );
+    if (subpattern.lastDamageStep === step) return;
+    subpattern.lastDamageStep = step;
+    playBossSfx('damage', { step });
   }
 
   function phaseTwoGravitySpearPolygon(spear, x = spear.x, y = spear.y) {
@@ -12429,14 +12642,6 @@
       x: x + normalX * point.x + spear.dx * point.y,
       y: y + normalY * point.x + spear.dy * point.y,
     }));
-  }
-
-  function phaseTwoGravityTerrainSurfaceAtX(rain, x, bounds) {
-    let surface = bounds.bottom;
-    for (const terrain of rain.terrain) {
-      if (x >= terrain.left && x <= terrain.right) surface = Math.min(surface, terrain.top);
-    }
-    return clampRange(surface, bounds.top, bounds.bottom);
   }
 
   function phaseTwoGravityWeaponPoints(kind, length, width) {
@@ -12501,6 +12706,7 @@
 
   function spawnPhaseTwoGravitySpear(rain) {
     const bounds = phaseTwoGravityBounds();
+    const content = phaseTwoGravityContentRect();
     const kinds = ['sword', 'spear', 'claw', 'scythe', 'shuriken'];
     const kind = kinds[Math.floor(Math.random() * kinds.length)];
     const length = (kind === 'shuriken' ? 48 : PHASE2_GRAVITY_SPEAR_LENGTH_MIN) +
@@ -12515,10 +12721,9 @@
       bounds.left + width,
       bounds.right - width
     );
-    const surface = phaseTwoGravityTerrainSurfaceAtX(rain, targetX, bounds);
     const frontExtent = kind === 'shuriken' ? width * 0.78 : length * 0.5;
     const spawnY = bounds.top - length - 48;
-    const landingCenterY = surface - dy * frontExtent;
+    const landingCenterY = content.bottom - dy * frontExtent;
     const travel = Math.max(1, (landingCenterY - spawnY) / Math.max(0.25, dy));
     const points = phaseTwoGravityWeaponPoints(kind, length, width);
     const spear = {
@@ -12532,9 +12737,10 @@
       width,
       frontExtent,
       points,
-      age: 0,
-      telegraphAge: 0,
-      telegraphDuration: 340,
+      ageBeats: 0,
+      telegraphAgeBeats: 0,
+      telegraphDurationBeats: PHASE2_GRAVITY_SPEAR_TELEGRAPH_BEATS,
+      speedPerBeat: PHASE2_GRAVITY_SPEAR_INITIAL_SPEED_PER_BEAT,
       launched: false,
       landed: false,
       hitHero: false,
@@ -12542,17 +12748,8 @@
       shadowEndY: landingCenterY,
     };
     rain.spears.push(spear);
+    rain.spawnedCount++;
     playBossSfx('phase2TileCharge');
-  }
-
-  function phaseTwoGravitySpearHitsHeroCore(x1, y1, x2, y2) {
-    const center = heroBodyCenterWorld();
-    return segmentIntersectsRect(x1, y1, x2, y2, {
-      left: center.x - 2.5,
-      right: center.x + 2.5,
-      top: center.y - 2.5,
-      bottom: center.y + 2.5,
-    });
   }
 
   function phaseTwoGravitySpearShadowTouchesHero(spear) {
@@ -12574,7 +12771,9 @@
   }
 
   function phaseTwoGravitySpearShadowSpan(spear) {
-    const progress = clamp01(spear.telegraphAge / Math.max(1, spear.telegraphDuration));
+    const progress = clamp01(
+      spear.telegraphAgeBeats / Math.max(0.001, spear.telegraphDurationBeats)
+    );
     const endT = 0.10 + progress * 0.78;
     return {
       startT: Math.max(0, endT - 0.18),
@@ -12582,95 +12781,114 @@
     };
   }
 
-  function settlePhaseTwoGravitySpear(rain, spear, bounds) {
-    const tipX = spear.x + spear.dx * spear.frontExtent;
-    const tipY = spear.y + spear.dy * spear.frontExtent;
-    const surface = phaseTwoGravityTerrainSurfaceAtX(rain, tipX, bounds);
-    const penetration = Math.max(0, tipY - surface);
-    const correction = penetration / Math.max(0.25, spear.dy);
-    spear.x -= spear.dx * correction;
-    spear.y -= spear.dy * correction;
+  function phaseTwoGravitySpearTelegraphFlashActive(spear) {
+    const progress = clamp01(
+      spear.telegraphAgeBeats / Math.max(0.001, spear.telegraphDurationBeats)
+    );
+    return progress < 0.18 || (progress >= 0.50 && progress < 0.68);
+  }
+
+  function phaseTwoGravitySpearTouchesTerrain(rain, spear, x, y) {
+    const polygon = phaseTwoGravitySpearPolygon(spear, x, y);
+    const polygonBounds = phaseTwoGravityPolygonBounds(polygon);
+    const content = phaseTwoGravityContentRect();
+    if (polygonBounds.bottom >= content.bottom) return true;
+    return rain.terrain.some((terrain) => (
+      phaseTwoGravityBoundsOverlap(polygonBounds, terrain) &&
+      phaseTwoGravityPolygonsOverlap(polygon, terrain.polygon)
+    ));
+  }
+
+  function settlePhaseTwoGravitySpear(rain, spear) {
     const sink = spear.length * 0.10;
     spear.x += spear.dx * sink;
     spear.y += spear.dy * sink;
     spear.landed = true;
     const polygon = phaseTwoGravitySpearPolygon(spear);
-    const xs = polygon.map((point) => point.x);
-    const ys = polygon.map((point) => point.y);
-    const visualLeft = Math.min(...xs);
-    const visualRight = Math.max(...xs);
-    const visualTop = Math.min(...ys);
-    const visualBottom = Math.max(...ys);
+    const polygonBounds = phaseTwoGravityPolygonBounds(polygon);
+    if (!spear.hitHero && phaseTwoGravityRectPolygonOverlap(phaseTwoGravityCoreRect(), polygon)) {
+      spear.hitHero = true;
+      damagePlayer(PHASE2_GRAVITY_SPEAR_DAMAGE * (bpm / PHASE2_BPM_MIN));
+      playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+      if (hp <= 0) die();
+    }
     rain.terrain.push({
       polygon,
-      left: visualLeft - PHASE2_GRAVITY_MASS_CONNECT_GAP,
-      right: visualRight + PHASE2_GRAVITY_MASS_CONNECT_GAP,
-      top: visualTop,
-      bottom: visualBottom,
-      visualLeft,
-      visualRight,
-      visualTop,
-      visualBottom,
+      ...polygonBounds,
       seed: spear.id * 1.73,
     });
+    rain.landedCount++;
     if (rain.terrain.length > PHASE2_GRAVITY_TERRAIN_MAX) rain.terrain.shift();
     playBossSfx('phase2ClawCut');
   }
 
   function updatePhaseTwoGravitySpearRain(pattern, dt, beatStep) {
-    const rain = pattern.spearRain;
+    const rain = pattern.subpattern;
     if (!rain) return;
-    const bounds = phaseTwoGravityBounds();
-    const sinkPerFrame = PHASE2_GRAVITY_MASS_SINK_PER_MS * dt;
+    const content = phaseTwoGravityContentRect();
+    const sinkPerFrame = PHASE2_GRAVITY_MASS_SINK_PER_BEAT * beatStep;
     let liveTerrainCount = 0;
     for (const terrain of rain.terrain) {
       for (const point of terrain.polygon) point.y += sinkPerFrame;
       terrain.top += sinkPerFrame;
       terrain.bottom += sinkPerFrame;
-      terrain.visualTop += sinkPerFrame;
-      terrain.visualBottom += sinkPerFrame;
-      if (terrain.top <= bounds.bottom + 14) rain.terrain[liveTerrainCount++] = terrain;
+      if (terrain.top <= content.bottom + 14) rain.terrain[liveTerrainCount++] = terrain;
     }
     rain.terrain.length = liveTerrainCount;
+    const terrainTouchesHero = rain.terrain.some((terrain) =>
+      heroBodyWorldRewardPoints().some((point) => pointInPoly(point.x, point.y, terrain.polygon)));
+    if (terrainTouchesHero) {
+      damagePlayer(DAMAGE_PER_BEAT * beatStep);
+      phaseTwoGravityPlayDamageSfx(rain);
+      if (hp <= 0) die();
+    } else {
+      rain.lastDamageStep = -1;
+    }
     rain.elapsedBeats += beatStep;
-    while (rain.elapsedBeats >= rain.nextDropBeat && rain.spears.length < PHASE2_GRAVITY_SPEAR_MAX_ACTIVE) {
+    while (rain.spawnedCount < PHASE2_GRAVITY_TETRIS_ATTACK_COUNT &&
+           rain.elapsedBeats >= rain.nextDropBeat &&
+           rain.spears.length < PHASE2_GRAVITY_SPEAR_MAX_ACTIVE) {
       spawnPhaseTwoGravitySpear(rain);
       rain.nextDropBeat += PHASE2_GRAVITY_SPEAR_INTERVAL_BEATS;
     }
     let shadowTouchesHero = false;
-    const travel = PHASE2_GRAVITY_SPEAR_SPEED_PER_BEAT * beatStep;
     for (const spear of rain.spears) {
       if (spear.landed) continue;
-      spear.age += dt;
+      spear.ageBeats += beatStep;
       if (!spear.launched) {
-        spear.telegraphAge += dt;
-        if (phaseTwoGravitySpearShadowTouchesHero(spear)) shadowTouchesHero = true;
-        if (spear.telegraphAge < spear.telegraphDuration) continue;
+        spear.telegraphAgeBeats += beatStep;
+        if (phaseTwoGravitySpearTelegraphFlashActive(spear) &&
+            phaseTwoGravitySpearShadowTouchesHero(spear)) shadowTouchesHero = true;
+        if (spear.telegraphAgeBeats < spear.telegraphDurationBeats) continue;
         spear.launched = true;
         continue;
       }
-      const previousX = spear.x;
-      const previousY = spear.y;
-      spear.x += spear.dx * travel;
-      spear.y += spear.dy * travel;
-      if (!spear.hitHero && phaseTwoGravitySpearHitsHeroCore(
-        previousX,
-        previousY,
-        spear.x,
-        spear.y
-      )) {
-        spear.hitHero = true;
-        damagePlayer(PHASE2_GRAVITY_SPEAR_DAMAGE * (bpm / PHASE2_BPM_MIN));
-        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
-        if (hp <= 0) die();
-      }
-      const tipY = spear.y + spear.dy * spear.frontExtent;
-      const surface = phaseTwoGravityTerrainSurfaceAtX(
-        rain,
-        spear.x + spear.dx * spear.frontExtent,
-        bounds
+      spear.speedPerBeat = Math.min(
+        PHASE2_GRAVITY_SPEAR_MAX_SPEED_PER_BEAT,
+        spear.speedPerBeat + PHASE2_GRAVITY_SPEAR_ACCELERATION_PER_BEAT * beatStep
       );
-      if (tipY >= surface) settlePhaseTwoGravitySpear(rain, spear, bounds);
+      const travel = spear.speedPerBeat * beatStep;
+      const stepCount = Math.max(1, Math.ceil(travel / 5));
+      const stepDistance = travel / stepCount;
+      for (let step = 0; step < stepCount; step++) {
+        const nextX = spear.x + spear.dx * stepDistance;
+        const nextY = spear.y + spear.dy * stepDistance;
+        if (phaseTwoGravitySpearTouchesTerrain(rain, spear, nextX, nextY)) {
+          settlePhaseTwoGravitySpear(rain, spear);
+          break;
+        }
+        spear.x = nextX;
+        spear.y = nextY;
+        if (!spear.hitHero && phaseTwoGravityRectPolygonOverlap(
+          phaseTwoGravityCoreRect(),
+          phaseTwoGravitySpearPolygon(spear)
+        )) {
+          spear.hitHero = true;
+          damagePlayer(PHASE2_GRAVITY_SPEAR_DAMAGE * (bpm / PHASE2_BPM_MIN));
+          playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
+          if (hp <= 0) die();
+        }
+      }
     }
     if (shadowTouchesHero) addVp(VP_PER_BEAT * beatStep, true);
     let liveSpearCount = 0;
@@ -12678,43 +12896,437 @@
       if (!spear.landed) rain.spears[liveSpearCount++] = spear;
     }
     rain.spears.length = liveSpearCount;
+    if (rain.spawnedCount >= PHASE2_GRAVITY_TETRIS_ATTACK_COUNT &&
+        rain.landedCount >= PHASE2_GRAVITY_TETRIS_ATTACK_COUNT &&
+        rain.spears.length === 0) {
+      beginPhaseTwoGravitySubpattern(pattern, 'terrainDrain', rain);
+    }
+  }
+
+  function createPhaseTwoGravityTicTacToe() {
+    return {
+      type: 'ticTacToe',
+      elapsedBeats: 0,
+      nextSpawnBeat: 0,
+      nextArrowId: 1,
+      arrows: [],
+      sideBag: [],
+      lastSide: null,
+      lastLane: -1,
+      lastDamageStep: -1,
+    };
+  }
+
+  function createPhaseTwoGravitySpikeDropper() {
+    return {
+      type: 'spikeDropper',
+      elapsedBeats: 0,
+      nextSpawnBeat: 0,
+      nextSpikeId: 1,
+      spawnedCount: 0,
+      spikes: [],
+      lastDamageStep: -1,
+    };
+  }
+
+  function beginPhaseTwoGravitySubpattern(pattern, type, carry = null) {
+    if (!pattern) return false;
+    pattern.terrainPassThrough = false;
+    if (type === 'weaponTetris') {
+      pattern.subpattern = createPhaseTwoGravitySpearRain();
+    } else if (type === 'terrainDrain') {
+      const rain = carry || pattern.subpattern || createPhaseTwoGravitySpearRain();
+      rain.type = 'terrainDrain';
+      rain.elapsedBeats = 0;
+      rain.spears.length = 0;
+      pattern.subpattern = rain;
+    } else if (type === 'ticTacToe') {
+      pattern.subpattern = createPhaseTwoGravityTicTacToe();
+    } else if (type === 'ticTacToeFade') {
+      pattern.subpattern = {
+        type: 'ticTacToeFade',
+        elapsedBeats: 0,
+        arrows: carry && carry.arrows ? carry.arrows : [],
+      };
+    } else if (type === 'spikeDropper') {
+      pattern.subpattern = createPhaseTwoGravitySpikeDropper();
+    } else {
+      pattern.subpattern = { type: 'idle', elapsedBeats: 0 };
+    }
+    if (type !== 'idle') {
+      playBossSfx(type === 'spikeDropper' ? 'phase2ClawCut' : 'phase2TileCharge');
+    }
+    return true;
+  }
+
+  function updatePhaseTwoGravityTerrainDrain(pattern, beatStep) {
+    const drain = pattern.subpattern;
+    if (!drain || drain.type !== 'terrainDrain') return;
+    drain.elapsedBeats += beatStep;
+    const content = phaseTwoGravityContentRect();
+    const sink = PHASE2_GRAVITY_MASS_DRAIN_PER_BEAT * beatStep;
+    let liveCount = 0;
+    for (const terrain of drain.terrain) {
+      for (const point of terrain.polygon) point.y += sink;
+      terrain.top += sink;
+      terrain.bottom += sink;
+      if (terrain.top <= content.bottom + 14) drain.terrain[liveCount++] = terrain;
+    }
+    drain.terrain.length = liveCount;
+    const touchesHero = drain.terrain.some((terrain) =>
+      heroBodyWorldRewardPoints().some((point) => pointInPoly(point.x, point.y, terrain.polygon)));
+    if (touchesHero) {
+      damagePlayer(DAMAGE_PER_BEAT * beatStep);
+      phaseTwoGravityPlayDamageSfx(drain);
+      if (hp <= 0) die();
+    } else {
+      drain.lastDamageStep = -1;
+    }
+    if (!drain.terrain.length) beginPhaseTwoGravitySubpattern(pattern, 'ticTacToe');
+  }
+
+  function phaseTwoGravityArrowActiveSides(elapsedBeats) {
+    const count = Math.min(
+      4,
+      1 + Math.floor(elapsedBeats / PHASE2_GRAVITY_TICTACTOE_SIDE_BEATS)
+    );
+    return ['left', 'top', 'right', 'bottom'].slice(0, count);
+  }
+
+  function phaseTwoGravityPickArrowSide(subpattern) {
+    const activeSides = phaseTwoGravityArrowActiveSides(subpattern.elapsedBeats);
+    subpattern.sideBag = subpattern.sideBag.filter((side) => activeSides.includes(side));
+    if (!subpattern.sideBag.length) {
+      subpattern.sideBag = activeSides.slice();
+      for (let index = subpattern.sideBag.length - 1; index > 0; index--) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [subpattern.sideBag[index], subpattern.sideBag[swapIndex]] =
+          [subpattern.sideBag[swapIndex], subpattern.sideBag[index]];
+      }
+      if (subpattern.sideBag.length > 1 &&
+          subpattern.sideBag[subpattern.sideBag.length - 1] === subpattern.lastSide) {
+        [subpattern.sideBag[0], subpattern.sideBag[subpattern.sideBag.length - 1]] =
+          [subpattern.sideBag[subpattern.sideBag.length - 1], subpattern.sideBag[0]];
+      }
+    }
+    const side = subpattern.sideBag.pop();
+    subpattern.lastSide = side;
+    return side;
+  }
+
+  function phaseTwoGravityArrowBodyPolygon(arrow) {
+    const halfLength = PHASE2_GRAVITY_TICTACTOE_BODY_LENGTH * 0.5;
+    const halfWidth = PHASE2_GRAVITY_TICTACTOE_BODY_WIDTH * 0.5;
+    const normalX = -arrow.dy;
+    const normalY = arrow.dx;
+    return [
+      { x: arrow.x - arrow.dx * halfLength + normalX * halfWidth,
+        y: arrow.y - arrow.dy * halfLength + normalY * halfWidth },
+      { x: arrow.x + arrow.dx * halfLength + normalX * halfWidth,
+        y: arrow.y + arrow.dy * halfLength + normalY * halfWidth },
+      { x: arrow.x + arrow.dx * halfLength - normalX * halfWidth,
+        y: arrow.y + arrow.dy * halfLength - normalY * halfWidth },
+      { x: arrow.x - arrow.dx * halfLength - normalX * halfWidth,
+        y: arrow.y - arrow.dy * halfLength - normalY * halfWidth },
+    ];
+  }
+
+  function phaseTwoGravityArrowHeadPolygon(arrow) {
+    const halfLength = PHASE2_GRAVITY_TICTACTOE_BODY_LENGTH * 0.5;
+    const halfHeadWidth = PHASE2_GRAVITY_TICTACTOE_HEAD_WIDTH * 0.5;
+    const normalX = -arrow.dy;
+    const normalY = arrow.dx;
+    const baseX = arrow.x + arrow.dx * halfLength;
+    const baseY = arrow.y + arrow.dy * halfLength;
+    return [
+      { x: baseX + normalX * halfHeadWidth, y: baseY + normalY * halfHeadWidth },
+      { x: baseX + arrow.dx * PHASE2_GRAVITY_TICTACTOE_HEAD_LENGTH,
+        y: baseY + arrow.dy * PHASE2_GRAVITY_TICTACTOE_HEAD_LENGTH },
+      { x: baseX - normalX * halfHeadWidth, y: baseY - normalY * halfHeadWidth },
+    ];
+  }
+
+  function spawnPhaseTwoGravityArrow(subpattern) {
+    const content = phaseTwoGravityContentRect();
+    const side = phaseTwoGravityPickArrowSide(subpattern);
+    let lane = Math.floor(Math.random() * PHASE2_GRAVITY_TICTACTOE_LANES);
+    if (lane === subpattern.lastLane) {
+      lane = (lane + 1 + Math.floor(Math.random() * (PHASE2_GRAVITY_TICTACTOE_LANES - 1))) %
+        PHASE2_GRAVITY_TICTACTOE_LANES;
+    }
+    subpattern.lastLane = lane;
+    const laneProgress = (lane + 0.5) / PHASE2_GRAVITY_TICTACTOE_LANES;
+    const margin = PHASE2_GRAVITY_TICTACTOE_BODY_LENGTH * 0.5 +
+      PHASE2_GRAVITY_TICTACTOE_HEAD_LENGTH + 2;
+    let x;
+    let y;
+    let dx;
+    let dy;
+    if (side === 'left' || side === 'right') {
+      y = content.top + (content.bottom - content.top) * laneProgress;
+      x = side === 'left' ? content.left - margin : content.right + margin;
+      dx = side === 'left' ? 1 : -1;
+      dy = 0;
+    } else {
+      x = content.left + (content.right - content.left) * laneProgress;
+      y = side === 'top' ? content.top - margin : content.bottom + margin;
+      dx = 0;
+      dy = side === 'top' ? 1 : -1;
+    }
+    subpattern.arrows.push({
+      id: subpattern.nextArrowId++,
+      side,
+      lane,
+      x,
+      y,
+      dx,
+      dy,
+      shadow: Math.random() < PHASE2_GRAVITY_TICTACTOE_SHADOW_CHANCE,
+    });
+    playBossSfx('phase2Orb');
+  }
+
+  function updatePhaseTwoGravityArrows(subpattern, beatStep, contactsEnabled) {
+    const content = phaseTwoGravityContentRect();
+    const travel = PHASE2_GRAVITY_TICTACTOE_SPEED_PER_BEAT * beatStep;
+    let damageContacts = 0;
+    let shadowContacts = 0;
+    const coreRect = phaseTwoGravityCoreRect();
+    const rewardPoints = heroBodyWorldRewardPoints();
+    for (const arrow of subpattern.arrows) {
+      arrow.x += arrow.dx * travel;
+      arrow.y += arrow.dy * travel;
+      if (!contactsEnabled) continue;
+      const head = phaseTwoGravityArrowHeadPolygon(arrow);
+      if (arrow.shadow) {
+        if (rewardPoints.some((point) => pointInPoly(point.x, point.y, head))) shadowContacts++;
+      } else if (phaseTwoGravityRectPolygonOverlap(coreRect, head)) {
+        damageContacts++;
+      }
+    }
+    if (damageContacts) {
+      damagePlayer(DAMAGE_PER_BEAT * damageContacts * beatStep);
+      phaseTwoGravityPlayDamageSfx(subpattern);
+      if (hp <= 0) die();
+    } else if (contactsEnabled) {
+      subpattern.lastDamageStep = -1;
+    }
+    if (shadowContacts) addVp(VP_PER_BEAT * shadowContacts * beatStep, true);
+    const cullMargin = PHASE2_GRAVITY_TICTACTOE_BODY_LENGTH + 30;
+    subpattern.arrows = subpattern.arrows.filter((arrow) =>
+      arrow.x >= content.left - cullMargin && arrow.x <= content.right + cullMargin &&
+      arrow.y >= content.top - cullMargin && arrow.y <= content.bottom + cullMargin);
+  }
+
+  function updatePhaseTwoGravityTicTacToe(pattern, beatStep) {
+    const subpattern = pattern.subpattern;
+    subpattern.elapsedBeats += beatStep;
+    while (subpattern.elapsedBeats >= subpattern.nextSpawnBeat &&
+           subpattern.elapsedBeats < PHASE2_GRAVITY_TICTACTOE_DURATION_BEATS) {
+      spawnPhaseTwoGravityArrow(subpattern);
+      subpattern.nextSpawnBeat += PHASE2_GRAVITY_TICTACTOE_SPAWN_BEATS;
+    }
+    updatePhaseTwoGravityArrows(subpattern, beatStep, true);
+    if (subpattern.elapsedBeats >= PHASE2_GRAVITY_TICTACTOE_DURATION_BEATS) {
+      beginPhaseTwoGravitySubpattern(pattern, 'ticTacToeFade', subpattern);
+    }
+  }
+
+  function updatePhaseTwoGravityTicTacToeFade(pattern, beatStep) {
+    const subpattern = pattern.subpattern;
+    subpattern.elapsedBeats += beatStep;
+    updatePhaseTwoGravityArrows(subpattern, beatStep, false);
+    if (subpattern.elapsedBeats >= PHASE2_GRAVITY_TICTACTOE_FADE_BEATS) {
+      beginPhaseTwoGravitySubpattern(pattern, 'spikeDropper');
+    }
+  }
+
+  function resolvePhaseTwoGravityArrowMovement(pattern, previousX, previousY) {
+    const subpattern = pattern.subpattern;
+    if (!subpattern || subpattern.type !== 'ticTacToe') return false;
+    for (const arrow of subpattern.arrows) {
+      const body = phaseTwoGravityArrowBodyPolygon(arrow);
+      if (arrow.dy !== 0 &&
+          phaseTwoGravityHeroBodyTouchesPolygon(body, hero.x, hero.y) &&
+          !phaseTwoGravityHeroBodyTouchesPolygon(body, previousX, previousY)) {
+        hero.x = previousX;
+        break;
+      }
+    }
+    if (pattern.vy < 0) return false;
+    const originX = Math.round(hero.x - HERO_W / 2);
+    const previousOriginY = Math.round(previousY - HERO_H / 2);
+    const currentOriginY = Math.round(hero.y - HERO_H / 2);
+    let landingCorrection = Infinity;
+    for (const arrow of subpattern.arrows) {
+      if (arrow.dy !== 0) continue;
+      const halfLength = PHASE2_GRAVITY_TICTACTOE_BODY_LENGTH * 0.5;
+      const platformTop = arrow.y - PHASE2_GRAVITY_TICTACTOE_BODY_WIDTH * 0.5;
+      for (const point of HERO_BODY_FOOT_PIXEL_OFFSETS) {
+        const footX = originX + point.x;
+        const previousFootY = previousOriginY + point.y;
+        const currentFootY = currentOriginY + point.y;
+        if (footX >= arrow.x - halfLength && footX <= arrow.x + halfLength &&
+            previousFootY <= platformTop + 1 && currentFootY >= platformTop) {
+          landingCorrection = Math.min(landingCorrection, platformTop - currentFootY);
+        }
+      }
+    }
+    if (!Number.isFinite(landingCorrection)) return false;
+    hero.y += landingCorrection;
+    pattern.vy = 0;
+    return true;
+  }
+
+  function phaseTwoGravitySpikePolygon(spike) {
+    const halfWidth = spike.width * 0.5;
+    const halfLength = spike.length * 0.5;
+    return [
+      { x: spike.x - halfWidth, y: spike.y - halfLength },
+      { x: spike.x + halfWidth, y: spike.y - halfLength },
+      { x: spike.x + halfWidth * 0.72, y: spike.y + halfLength * 0.24 },
+      { x: spike.x, y: spike.y + halfLength },
+      { x: spike.x - halfWidth * 0.72, y: spike.y + halfLength * 0.24 },
+    ];
+  }
+
+  function spawnPhaseTwoGravitySpike(subpattern) {
+    const content = phaseTwoGravityContentRect();
+    const length = PHASE2_GRAVITY_SPIKE_LENGTH_MIN + Math.random() *
+      (PHASE2_GRAVITY_SPIKE_LENGTH_MAX - PHASE2_GRAVITY_SPIKE_LENGTH_MIN);
+    const width = PHASE2_GRAVITY_SPIKE_WIDTH_MIN + Math.random() *
+      (PHASE2_GRAVITY_SPIKE_WIDTH_MAX - PHASE2_GRAVITY_SPIKE_WIDTH_MIN);
+    let x = content.left + width * 0.5 + Math.random() *
+      Math.max(1, content.right - content.left - width);
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const blocked = subpattern.spikes.some((spike) => spike.state === 'armed' &&
+        Math.abs(spike.x - x) < (spike.width + width) * 0.5 + 8);
+      if (!blocked) break;
+      x = content.left + width * 0.5 + Math.random() *
+        Math.max(1, content.right - content.left - width);
+    }
+    const visibleLength = Math.min(24, length * 0.28);
+    subpattern.spikes.push({
+      id: subpattern.nextSpikeId++,
+      x,
+      y: content.top - length * 0.5 + visibleLength,
+      targetX: x,
+      length,
+      width,
+      speedPerBeat: PHASE2_GRAVITY_SPIKE_SPEED_MIN_PER_BEAT + Math.random() *
+        (PHASE2_GRAVITY_SPIKE_SPEED_MAX_PER_BEAT - PHASE2_GRAVITY_SPIKE_SPEED_MIN_PER_BEAT),
+      state: 'armed',
+      ageBeats: 0,
+    });
+    subpattern.spawnedCount++;
+    playBossSfx('phase2TileCharge');
+  }
+
+  function phaseTwoGravitySpikeMarkerTouchesHero(spike, content) {
+    const left = spike.targetX - spike.width * 0.6;
+    const right = spike.targetX + spike.width * 0.6;
+    const top = content.bottom - 10;
+    return heroBodyWorldRewardPoints().some((point) =>
+      point.x >= left && point.x <= right && point.y >= top && point.y <= content.bottom + 1);
+  }
+
+  function updatePhaseTwoGravitySpikeDropper(pattern, beatStep) {
+    const subpattern = pattern.subpattern;
+    const content = phaseTwoGravityContentRect();
+    subpattern.elapsedBeats += beatStep;
+    while (subpattern.spawnedCount < PHASE2_GRAVITY_SPIKE_COUNT &&
+           subpattern.elapsedBeats >= subpattern.nextSpawnBeat) {
+      spawnPhaseTwoGravitySpike(subpattern);
+      subpattern.nextSpawnBeat += PHASE2_GRAVITY_SPIKE_SPAWN_BEATS;
+    }
+    let damageContacts = 0;
+    let markerContacts = 0;
+    const coreRect = phaseTwoGravityCoreRect();
+    for (const spike of subpattern.spikes) {
+      spike.ageBeats += beatStep;
+      if (spike.state === 'armed') {
+        if (spike.ageBeats >= PHASE2_GRAVITY_SPIKE_TELEGRAPH_BEATS) {
+          spike.state = 'falling';
+          spike.ageBeats = 0;
+          playBossSfx('phase2SwordStrike');
+        }
+        continue;
+      }
+      if (spike.state === 'falling') {
+        spike.y += spike.speedPerBeat * beatStep;
+        const polygon = phaseTwoGravitySpikePolygon(spike);
+        if (phaseTwoGravityRectPolygonOverlap(coreRect, polygon)) damageContacts++;
+        if (phaseTwoGravitySpikeMarkerTouchesHero(spike, content)) markerContacts++;
+        if (spike.y + spike.length * 0.5 >= content.bottom) {
+          spike.y = content.bottom - spike.length * 0.5 + spike.length * 0.10;
+          spike.state = 'impact';
+          spike.ageBeats = 0;
+          playBossSfx('phase2ClawCut');
+        }
+        continue;
+      }
+      if (spike.state === 'impact' && spike.ageBeats >= PHASE2_GRAVITY_SPIKE_HOLD_BEATS) {
+        spike.state = 'sinking';
+        spike.ageBeats = 0;
+      } else if (spike.state === 'sinking') {
+        spike.y += spike.length / PHASE2_GRAVITY_SPIKE_SINK_BEATS * beatStep;
+      }
+    }
+    if (damageContacts) {
+      damagePlayer(DAMAGE_PER_BEAT * damageContacts * beatStep);
+      phaseTwoGravityPlayDamageSfx(subpattern);
+      if (hp <= 0) die();
+    } else {
+      subpattern.lastDamageStep = -1;
+    }
+    if (markerContacts) addVp(VP_PER_BEAT * markerContacts * beatStep, true);
+    subpattern.spikes = subpattern.spikes.filter((spike) =>
+      spike.state !== 'sinking' || spike.ageBeats < PHASE2_GRAVITY_SPIKE_SINK_BEATS);
+    if (subpattern.spawnedCount >= PHASE2_GRAVITY_SPIKE_COUNT && !subpattern.spikes.length) {
+      beginPhaseTwoGravitySubpattern(pattern, 'idle');
+    }
   }
 
   function resolvePhaseTwoGravityTerrainMovement(pattern, previousX, previousY, bounds) {
-    const rain = pattern.spearRain;
-    if (!rain) return false;
-    const halfW = HERO_W / 2;
-    const halfH = HERO_H / 2;
-    const horizontalDelta = hero.x - previousX;
-    for (const terrain of rain.terrain) {
-      const verticalOverlap = hero.y + halfH > terrain.top + 1 &&
-        hero.y - halfH < terrain.bottom - 1;
-      if (!verticalOverlap || hero.x + halfW <= terrain.left || hero.x - halfW >= terrain.right) continue;
-      if (horizontalDelta > 0) hero.x = terrain.left - halfW;
-      else if (horizontalDelta < 0) hero.x = terrain.right + halfW;
+    const subpattern = pattern.subpattern;
+    const terrain = subpattern && (
+      subpattern.type === 'weaponTetris' || subpattern.type === 'terrainDrain'
+    ) ? subpattern.terrain : null;
+    if (!terrain || !terrain.length) {
+      pattern.terrainPassThrough = false;
+      return false;
     }
+    const touchesAt = (x, y) => {
+      const rect = phaseTwoGravityHeroBodyRectAt(x, y);
+      return terrain.some((piece) =>
+        phaseTwoGravityBoundsOverlap(rect, piece) &&
+        phaseTwoGravityHeroBodyTouchesPolygon(piece.polygon, x, y, piece));
+    };
+    const movingUp = pattern.vy < 0;
+    if (movingUp) {
+      pattern.terrainPassThrough = touchesAt(hero.x, hero.y);
+      return false;
+    }
+    if (pattern.terrainPassThrough) {
+      if (!touchesAt(hero.x, hero.y)) pattern.terrainPassThrough = false;
+      return false;
+    }
+
+    const horizontalEntered = touchesAt(hero.x, previousY) && !touchesAt(previousX, previousY);
+    if (horizontalEntered) hero.x = previousX;
     hero.x = clampRange(hero.x, bounds.left, bounds.right);
-    let grounded = false;
-    const previousBottom = previousY + halfH;
-    const previousTop = previousY - halfH;
-    const currentBottom = hero.y + halfH;
-    const currentTop = hero.y - halfH;
-    for (const terrain of rain.terrain) {
-      const horizontalOverlap = hero.x + halfW > terrain.left && hero.x - halfW < terrain.right;
-      if (!horizontalOverlap) continue;
-      if (pattern.vy >= 0 && previousBottom <= terrain.top + 2 && currentBottom >= terrain.top) {
-        hero.y = terrain.top - halfH;
-        pattern.vy = 0;
-        grounded = true;
-      } else if (pattern.vy < 0 && previousTop >= terrain.bottom - 2 && currentTop <= terrain.bottom &&
-                 pattern.elapsed - (terrain.lastCeilingHitAt || -Infinity) > 300) {
-        terrain.lastCeilingHitAt = pattern.elapsed;
-        damagePlayer(PHASE2_GRAVITY_CEILING_DAMAGE * (bpm / PHASE2_BPM_MIN));
-        playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
-        if (hp <= 0) die();
-      }
+
+    if (!touchesAt(hero.x, hero.y) || touchesAt(hero.x, previousY)) return false;
+    let clearY = previousY;
+    let blockedY = hero.y;
+    for (let iteration = 0; iteration < 9; iteration++) {
+      const midpoint = (clearY + blockedY) * 0.5;
+      if (touchesAt(hero.x, midpoint)) blockedY = midpoint;
+      else clearY = midpoint;
     }
-    return grounded;
+    hero.y = clearY;
+    pattern.vy = 0;
+    return true;
   }
 
   function updatePhaseTwoGravityMovement(dt) {
@@ -12768,12 +13380,14 @@
     } else {
       pattern.grounded = false;
     }
-    pattern.grounded = resolvePhaseTwoGravityTerrainMovement(
+    const terrainGrounded = resolvePhaseTwoGravityTerrainMovement(
       pattern,
       previousX,
       previousY,
       bounds
-    ) || pattern.grounded;
+    );
+    const arrowGrounded = resolvePhaseTwoGravityArrowMovement(pattern, previousX, previousY);
+    pattern.grounded = terrainGrounded || arrowGrounded || pattern.grounded;
     heroMove.x = horizontal || Math.sign(pattern.vx);
     heroMove.y = Math.sign(pattern.vy);
   }
@@ -12816,7 +13430,21 @@
       playBossSfx('phase2SwordStrike');
     }
     pattern.ripples.length = liveRippleCount;
-    updatePhaseTwoGravitySpearRain(pattern, dt, beatStep);
+    const subpattern = pattern.subpattern;
+    if (!subpattern) return;
+    if (subpattern.type === 'weaponTetris') {
+      updatePhaseTwoGravitySpearRain(pattern, dt, beatStep);
+    } else if (subpattern.type === 'terrainDrain') {
+      updatePhaseTwoGravityTerrainDrain(pattern, beatStep);
+    } else if (subpattern.type === 'ticTacToe') {
+      updatePhaseTwoGravityTicTacToe(pattern, beatStep);
+    } else if (subpattern.type === 'ticTacToeFade') {
+      updatePhaseTwoGravityTicTacToeFade(pattern, beatStep);
+    } else if (subpattern.type === 'spikeDropper') {
+      updatePhaseTwoGravitySpikeDropper(pattern, beatStep);
+    } else {
+      subpattern.elapsedBeats += beatStep;
+    }
   }
 
   function beginDebugPhaseTwoGravityPattern() {
@@ -12829,11 +13457,14 @@
     phase2RipplesDebugQueued = false;
     phase2TornadoDebugQueued = false;
     phase2GravityPattern = null;
-    return startPhaseTwoGravityPattern();
+    return startPhaseTwoGravityPattern(phase2GravityDebugSubpattern);
   }
 
-  function debugPhaseTwoGravityPattern() {
+  function debugPhaseTwoGravitySubpattern(type = 'weaponTetris') {
     if (!active) return;
+    phase2GravityDebugSubpattern = PHASE2_GRAVITY_SUBPATTERNS.includes(type)
+      ? type
+      : 'weaponTetris';
     if (phase !== PHASE.SECOND) {
       if (phase !== PHASE.ACTIVE) skipToActive();
       startSecondPhase();
@@ -12843,8 +13474,12 @@
     if (phase2CombatStarted && phase2GravityDebugQueued) beginDebugPhaseTwoGravityPattern();
   }
 
+  function debugPhaseTwoGravityPattern() {
+    debugPhaseTwoGravitySubpattern('weaponTetris');
+  }
+
   function debugPhaseTwoGravitySpears() {
-    debugPhaseTwoGravityPattern();
+    debugPhaseTwoGravitySubpattern('weaponTetris');
   }
 
   function spawnPhaseTwoRushEye() {
@@ -16214,62 +16849,9 @@
         tracePhaseTwoGravityPolygon(maskCtx, terrain.polygon);
         maskCtx.fill();
       }
-      // Join only genuinely close landed pieces. Stroking every weapon made
-      // each silhouette swell into a single oversized blob.
-      maskCtx.strokeStyle = '#fff';
-      maskCtx.lineWidth = 4;
-      maskCtx.lineCap = 'round';
-      for (let firstIndex = 0; firstIndex < rain.terrain.length; firstIndex++) {
-        const first = rain.terrain[firstIndex];
-        for (let secondIndex = firstIndex + 1; secondIndex < rain.terrain.length; secondIndex++) {
-          const second = rain.terrain[secondIndex];
-          const overlapX = Math.min(first.visualRight, second.visualRight) -
-            Math.max(first.visualLeft, second.visualLeft);
-          const overlapY = Math.min(first.visualBottom, second.visualBottom) -
-            Math.max(first.visualTop, second.visualTop);
-          if (overlapY > 0) {
-            if (first.visualRight < second.visualLeft &&
-                second.visualLeft - first.visualRight <= PHASE2_GRAVITY_MASS_CONNECT_GAP) {
-              const y = (Math.max(first.visualTop, second.visualTop) +
-                Math.min(first.visualBottom, second.visualBottom)) * 0.5;
-              maskCtx.beginPath();
-              maskCtx.moveTo(first.visualRight, y);
-              maskCtx.lineTo(second.visualLeft, y);
-              maskCtx.stroke();
-            } else if (second.visualRight < first.visualLeft &&
-                first.visualLeft - second.visualRight <= PHASE2_GRAVITY_MASS_CONNECT_GAP) {
-              const y = (Math.max(first.visualTop, second.visualTop) +
-                Math.min(first.visualBottom, second.visualBottom)) * 0.5;
-              maskCtx.beginPath();
-              maskCtx.moveTo(second.visualRight, y);
-              maskCtx.lineTo(first.visualLeft, y);
-              maskCtx.stroke();
-            }
-          }
-          if (overlapX > 0) {
-            if (first.visualBottom < second.visualTop &&
-                second.visualTop - first.visualBottom <= PHASE2_GRAVITY_MASS_CONNECT_GAP) {
-              const x = (Math.max(first.visualLeft, second.visualLeft) +
-                Math.min(first.visualRight, second.visualRight)) * 0.5;
-              maskCtx.beginPath();
-              maskCtx.moveTo(x, first.visualBottom);
-              maskCtx.lineTo(x, second.visualTop);
-              maskCtx.stroke();
-            } else if (second.visualBottom < first.visualTop &&
-                first.visualTop - second.visualBottom <= PHASE2_GRAVITY_MASS_CONNECT_GAP) {
-              const x = (Math.max(first.visualLeft, second.visualLeft) +
-                Math.min(first.visualRight, second.visualRight)) * 0.5;
-              maskCtx.beginPath();
-              maskCtx.moveTo(x, second.visualBottom);
-              maskCtx.lineTo(x, first.visualTop);
-              maskCtx.stroke();
-            }
-          }
-        }
-      }
       edgeCtx.clearRect(0, 0, width, height);
       edgeCtx.globalCompositeOperation = 'source-over';
-      for (const offset of [[-3, 0], [3, 0], [0, -3], [0, 3], [-2, -2], [2, 2], [-2, 2], [2, -2]]) {
+      for (const offset of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, 1], [-1, 1], [1, -1]]) {
         edgeCtx.drawImage(phase2GravityMassMaskCanvas, offset[0], offset[1]);
       }
       edgeCtx.globalCompositeOperation = 'destination-out';
@@ -16289,9 +16871,7 @@
     }
     for (const spear of rain.spears) {
       if (spear.landed || spear.launched) continue;
-      const flash = spear.telegraphAge < 64 ||
-        (spear.telegraphAge >= 164 && spear.telegraphAge < 228);
-      if (!flash) continue;
+      if (!phaseTwoGravitySpearTelegraphFlashActive(spear)) continue;
       actx.save();
       const shadowSpan = phaseTwoGravitySpearShadowSpan(spear);
       const normalX = -spear.dy;
@@ -16326,37 +16906,104 @@
       actx.fillStyle = '#000000';
       actx.fill();
       actx.strokeStyle = '#f01827';
-      actx.lineWidth = 2.4;
+      actx.lineWidth = 2;
       actx.stroke();
-      const normalX = -spear.dy;
-      const normalY = spear.dx;
-      const localPoint = (localX, localY) => ({
-        x: spear.x + normalX * localX + spear.dx * localY,
-        y: spear.y + normalY * localX + spear.dy * localY,
-      });
-      const tip = localPoint(0, spear.frontExtent * 0.72);
-      actx.beginPath();
-      actx.moveTo(spear.x - normalX * spear.width * 0.20, spear.y - normalY * spear.width * 0.20);
-      actx.lineTo(tip.x, tip.y);
-      actx.strokeStyle = 'rgba(255, 79, 81, 0.62)';
-      actx.lineWidth = 1;
-      actx.stroke();
-      if (spear.kind === 'sword') {
-        const guardA = localPoint(-spear.width * 0.62, -spear.length * 0.20);
-        const guardB = localPoint(spear.width * 0.62, -spear.length * 0.20);
-        actx.beginPath();
-        actx.moveTo(guardA.x, guardA.y);
-        actx.lineTo(guardB.x, guardB.y);
-        actx.strokeStyle = '#f01827';
-        actx.lineWidth = 2;
-        actx.stroke();
-      } else if (spear.kind === 'shuriken') {
-        actx.beginPath();
-        actx.arc(spear.x, spear.y, spear.width * 0.14, 0, Math.PI * 2);
-        actx.fillStyle = '#e51a28';
-        actx.fill();
-      }
     }
+  }
+
+  function renderPhaseTwoGravityArrows(subpattern, alpha = 1) {
+    if (!subpattern || !subpattern.arrows) return;
+    actx.save();
+    actx.globalAlpha = alpha;
+    actx.lineCap = 'round';
+    for (const arrow of subpattern.arrows) {
+      const halfLength = PHASE2_GRAVITY_TICTACTOE_BODY_LENGTH * 0.5;
+      actx.beginPath();
+      actx.moveTo(
+        arrow.x - arrow.dx * halfLength,
+        arrow.y - arrow.dy * halfLength
+      );
+      actx.lineTo(
+        arrow.x + arrow.dx * halfLength,
+        arrow.y + arrow.dy * halfLength
+      );
+      actx.strokeStyle = 'rgba(0, 0, 0, 0.86)';
+      actx.lineWidth = PHASE2_GRAVITY_TICTACTOE_BODY_WIDTH + 3;
+      actx.stroke();
+      actx.strokeStyle = '#ecebe2';
+      actx.lineWidth = PHASE2_GRAVITY_TICTACTOE_BODY_WIDTH;
+      actx.stroke();
+
+      const head = phaseTwoGravityArrowHeadPolygon(arrow);
+      tracePhaseTwoGravityPolygon(actx, head);
+      actx.fillStyle = arrow.shadow ? '#42105c' : '#bd0c1e';
+      actx.fill();
+      actx.strokeStyle = arrow.shadow ? '#bb62d8' : '#ff2835';
+      actx.lineWidth = 2;
+      actx.stroke();
+    }
+    actx.restore();
+  }
+
+  function renderPhaseTwoGravitySpikeDropper(subpattern) {
+    if (!subpattern || !subpattern.spikes) return;
+    const content = phaseTwoGravityContentRect();
+    actx.save();
+    actx.globalAlpha = 1;
+    actx.lineJoin = 'round';
+    for (const spike of subpattern.spikes) {
+      if (spike.state === 'falling') {
+        actx.save();
+        actx.strokeStyle = 'rgba(178, 83, 212, 0.86)';
+        actx.lineWidth = 2;
+        actx.shadowColor = 'rgba(117, 38, 151, 0.45)';
+        actx.shadowBlur = 7;
+        actx.strokeRect(
+          spike.targetX - spike.width * 0.6,
+          content.bottom - 7,
+          spike.width * 1.2,
+          6
+        );
+        actx.beginPath();
+        actx.moveTo(spike.targetX - 4, content.bottom - 7);
+        actx.lineTo(spike.targetX, content.bottom - 12);
+        actx.lineTo(spike.targetX + 4, content.bottom - 7);
+        actx.stroke();
+        actx.restore();
+      }
+
+      let alpha = 1;
+      if (spike.state === 'sinking') {
+        alpha = 1 - clamp01(spike.ageBeats / PHASE2_GRAVITY_SPIKE_SINK_BEATS);
+      }
+      const telegraphProgress = spike.state === 'armed'
+        ? spike.ageBeats / PHASE2_GRAVITY_SPIKE_TELEGRAPH_BEATS
+        : -1;
+      const whiteFlash = telegraphProgress >= 0 && (
+        (telegraphProgress >= 0.10 && telegraphProgress < 0.25) ||
+        (telegraphProgress >= 0.55 && telegraphProgress < 0.70)
+      );
+      actx.save();
+      actx.globalAlpha = alpha;
+      const polygon = phaseTwoGravitySpikePolygon(spike);
+      tracePhaseTwoGravityPolygon(actx, polygon);
+      actx.fillStyle = whiteFlash ? '#eeeade' : '#000';
+      actx.fill();
+      actx.strokeStyle = whiteFlash ? '#ffffff' : '#f01827';
+      actx.lineWidth = whiteFlash ? 3 : 2;
+      actx.stroke();
+      if (spike.state === 'impact') {
+        const impact = 1 - clamp01(spike.ageBeats / PHASE2_GRAVITY_SPIKE_HOLD_BEATS);
+        actx.globalAlpha = impact * 0.72;
+        actx.strokeStyle = '#ff2935';
+        actx.lineWidth = 2;
+        actx.beginPath();
+        actx.ellipse(spike.x, content.bottom - 1, spike.width * (1.2 + (1 - impact)), 4, 0, 0, Math.PI * 2);
+        actx.stroke();
+      }
+      actx.restore();
+    }
+    actx.restore();
   }
 
   function renderPhaseTwoGravityPattern() {
@@ -16394,7 +17041,19 @@
       actx.arc(ripple.x, ripple.y, Math.max(1, ripple.radius + tremor), 0, Math.PI * 2);
       actx.stroke();
     }
-    renderPhaseTwoGravitySpearRain(pattern.spearRain);
+    const subpattern = pattern.subpattern;
+    if (subpattern && (subpattern.type === 'weaponTetris' || subpattern.type === 'terrainDrain')) {
+      renderPhaseTwoGravitySpearRain(subpattern);
+    } else if (subpattern && subpattern.type === 'ticTacToe') {
+      renderPhaseTwoGravityArrows(subpattern);
+    } else if (subpattern && subpattern.type === 'ticTacToeFade') {
+      renderPhaseTwoGravityArrows(
+        subpattern,
+        1 - clamp01(subpattern.elapsedBeats / PHASE2_GRAVITY_TICTACTOE_FADE_BEATS)
+      );
+    } else if (subpattern && subpattern.type === 'spikeDropper') {
+      renderPhaseTwoGravitySpikeDropper(subpattern);
+    }
     if (pattern.elapsed < PHASE2_GRAVITY_ROAR_MS) {
       const pulse = 1 - clamp01(pattern.elapsed / PHASE2_GRAVITY_ROAR_MS);
       actx.globalAlpha = 0.2 + pulse * 0.32;
