@@ -51,7 +51,7 @@ function Get-EnumName {
 
 $existing = @()
 if (Test-Path -LiteralPath $OutputPath) {
-    $existing = @(Get-Content -LiteralPath $OutputPath -Raw | ConvertFrom-Json)
+    $existing = @((Get-Content -LiteralPath $OutputPath -Raw | ConvertFrom-Json) | Write-Output)
 }
 
 $existingById = @{}
