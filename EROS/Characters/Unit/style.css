@@ -62,6 +62,31 @@
 .panel-text table { border-collapse: collapse; margin-bottom: 1em; }
 .panel-text th, .panel-text td { border: 1px solid #2a2a33; padding: 8px 12px; }
 .panel-text hr { border: none; border-top: 1px solid #2a2a33; margin: 1.5em 0; }
+.manual-details { margin-top: 28px; padding-top: 22px; border-top: 1px solid #2a2a33; }
+
+.game-details h3 { margin: 26px 0 12px; font-size: 1rem; color: var(--accent); }
+.game-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.game-summary-grid > div {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 12px 14px;
+    background: #16161d;
+    border: 1px solid #2a2a33;
+    border-radius: 9px;
+}
+.game-summary-grid span { color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+.game-summary-grid strong { overflow-wrap: anywhere; font-size: 0.9rem; }
+.game-table-wrap { overflow-x: auto; }
+.game-data-table { width: 100%; border-collapse: collapse; }
+.game-data-table th { color: var(--accent); background: #16161d; text-align: left; }
+.game-data-table th, .game-data-table td { padding: 10px 12px; border-bottom: 1px solid #2a2a33; }
+.game-id-list { color: var(--text-dim); line-height: 1.7; overflow-wrap: anywhere; }
+.game-id-list strong { color: var(--text-main); }
 
 /* ---- RIGHT: character tile ---- */
 .char-tile {
@@ -127,4 +152,8 @@
 @media (max-width: 900px) {
     .char-layout { grid-template-columns: 1fr; }
     .char-tile { position: static; order: -1; }
+}
+
+@media (max-width: 600px) {
+    .game-summary-grid { grid-template-columns: 1fr; }
 }

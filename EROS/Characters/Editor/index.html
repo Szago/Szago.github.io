@@ -339,11 +339,12 @@
                 { key: 'id',        label: 'ID (used in the page URL — ?id=…)', type: 'text', placeholder: 'auto-filled from name' },
                 { key: 'name',      label: 'Name', type: 'text', placeholder: 'Character name' },
                 { key: 'image',     label: 'Image URL / path', type: 'text', placeholder: '/EROS/Characters/img/unit.png' },
-                { key: 'class',     label: 'Class', type: 'select', options: ['Fighter', 'Mage', 'Tank', 'Healer'] },
-                { key: 'race',      label: 'Race', type: 'select', options: ['Human', 'Beastfolk', 'Demon', 'Mermaid', 'Other'] },
-                { key: 'faction',   label: 'Faction', type: 'select', options: ['Guardians', 'Protectors', 'Phoenix', 'Outlaws', 'Succubus', 'Mermaids', 'Zephyrs', 'Dragonards', 'Celestials', 'Raiders', 'Blue coats', 'Sylphids'] },
-                { key: 'element',   label: 'Element', type: 'select', options: ['Water', 'Wind', 'Fire', 'Dark', 'Light', 'Special'] },
-                { key: 'rarity',    label: 'Rarity', type: 'select', options: ['common', 'rare', 'epic', 'legendary', 'mythic', 'divine'] },
+                { key: 'class',     label: 'Class', type: 'select', options: ['Fighter', 'Tank', 'Healer', 'Support', 'Mage'] },
+                { key: 'secondaryClass', label: 'Secondary class', type: 'select', options: ['Fighter', 'Tank', 'Healer', 'Support', 'Mage'] },
+                { key: 'race',      label: 'Race', type: 'select', options: ['Human', 'Beastfolk', 'Demon', 'Mermaid', 'NonHuman'] },
+                { key: 'faction',   label: 'Faction', type: 'select', options: ['Guardian', 'Outlaw', 'Phoenix', 'Protector', 'Succubus', 'Poseidon', 'Zephyr', 'Dragonard', 'Celestial', 'Raider', 'Bluecoat', 'Zodiac', 'Sylphid'] },
+                { key: 'element',   label: 'Element', type: 'select', options: ['None', 'Flame', 'Wind', 'Water', 'Light', 'Darkness'] },
+                { key: 'rarity',    label: 'Rarity', type: 'select', options: ['Common', 'Rare', 'Epic', 'Legendary', 'Mythic', 'Divine'] },
                 { key: 'details',   label: 'Details', type: 'textarea', placeholder: 'Shown in the Details tab…' },
                 { key: 'rating',    label: 'Rating', type: 'textarea', placeholder: 'Shown in the Rating tab…' },
                 { key: 'teams',     label: 'Teams', type: 'textarea', placeholder: 'Shown in the Teams tab…' },
@@ -351,7 +352,7 @@
             ];
 
             // Icons matching the unit-page tile rows.
-            const FIELD_ICONS = { class: 'fa-shield-halved', race: 'fa-dna', faction: 'fa-flag', element: 'fa-fire', rarity: 'fa-gem' };
+            const FIELD_ICONS = { class: 'fa-shield-halved', secondaryClass: 'fa-layer-group', race: 'fa-dna', faction: 'fa-flag', element: 'fa-fire', rarity: 'fa-gem' };
 
             let roster = [];
             let selected = null;
@@ -511,7 +512,12 @@
             }
 
             function clean() {
-                return roster.map(c => { const out = {}; FIELDS.forEach(f => out[f.key] = c[f.key] || ''); return out; });
+                return roster.map(c => {
+                    const out = { ...c };
+                    delete out._lastNameSlug;
+                    FIELDS.forEach(f => out[f.key] = c[f.key] || '');
+                    return out;
+                });
             }
 
             function renderOutput() {

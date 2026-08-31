@@ -31,6 +31,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
                     <li><a href="/EROS/Tools/Tool1_levelcost/tool.html" id="nav-level"><i class="fas fa-person-arrow-up-from-line"></i><span>Level cost calculator</span></a></li>
                     <li><a href="/EROS/Tools/Tool6_networth/tool.html" id="nav-networth"><i class="fas fa-building-columns"></i><span>Net worth calculator</span></a></li>
                     <li><a href="/EROS/Tools/Tool7_classstatue/tool.html" id="nav-statue"><i class="fas fa-monument"></i><span>Class statue calculator</span><span class="badge-new">New</span></a></li>
+                    <li><a href="/EROS/Tools/Tool8_unitstats/tool.html" id="nav-unitstats"><i class="fas fa-chart-simple"></i><span>Unit stats calculator</span><span class="badge-new">New</span></a></li>
                 </ul>
             </div>
 
@@ -116,6 +117,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
     if(path.includes('Tool1')) document.getElementById('nav-level').classList.add('active');
     if(path.includes('Tool6')) document.getElementById('nav-networth').classList.add('active');
     if(path.includes('Tool7')) document.getElementById('nav-statue').classList.add('active');
+    if(path.includes('Tool8')) document.getElementById('nav-unitstats').classList.add('active');
     if(path.includes('AllUnits')) document.getElementById('nav-allunits').classList.add('active');
     if(path.includes('Tierlist')) document.getElementById('nav-tierlist').classList.add('active');
     if(path.includes('/Data/Calendar')) document.getElementById('nav-calendar').classList.add('active');

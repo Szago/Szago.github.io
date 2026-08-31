@@ -9,7 +9,8 @@ const CLASS_ICONS = {
     Fighter: 'fa-khanda',
     Mage:    'fa-hat-wizard',
     Tank:    'fa-shield-halved',
-    Healer:  'fa-staff-snake'
+    Healer:  'fa-staff-snake',
+    Support: 'fa-hands-helping'
 };
 
 function getParam(name) {
@@ -52,6 +53,7 @@ function renderTile(char) {
     document.title = `Eros - ${char.name}`;
     setText('charName', char.name);
     setText('charClass', char.class);
+    setText('charSecondaryClass', char.secondaryClass);
     setText('charRace', char.race);
     setText('charFaction', char.faction);
     setText('charElement', char.element);
@@ -79,12 +81,71 @@ function renderTabs(char) {
     ['details', 'rating', 'teams', 'placement'].forEach(key => {
         const panel = document.getElementById('tab-' + key);
         const text = (char[key] || '').trim();
-        if (text) {
+        if (key === 'details' && char.gameData) {
+            const manual = text ? `<div class="panel-text manual-details">${renderMarkdown(text)}</div>` : '';
+            panel.innerHTML = renderGameDetails(char) + manual;
+        } else if (text) {
             panel.innerHTML = `<div class="panel-text">${renderMarkdown(text)}</div>`;
         } else {
             panel.innerHTML = `<div class="panel-empty">No ${key} info yet.</div>`;
         }
     });
+}
+
+function escapeHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function rawValue(data, key, fallback = 0) {
+    return data[key] == null ? fallback : data[key];
+}
+
+function renderGameDetails(char) {
+    const data = char.gameData;
+    const stats = [
+        ['Damage', 'damage'],
+        ['Health', 'health'],
+        ['Armor', 'armor'],
+        ['Magic resistance', 'magicRes']
+    ];
+    const skillIds = (data.skills || []).map(skill => skill.id).filter(Boolean);
+    const passiveIds = (data.passiveSkills || []).map(skill => skill.id).filter(Boolean);
+    const traits = Array.isArray(char.traits) ? char.traits.join(', ') : (data.traits || '');
+    const damageType = rawValue(data, 'damageType') === 1 ? 'Magical' : 'Physical';
+    const position = rawValue(data, 'formationPreferredPosition') === 1 ? 'Backline' : 'Frontline';
+
+    return `
+        <div class="game-details">
+            <div class="game-summary-grid">
+                <div><span>Game ID</span><strong>${escapeHtml(char.gameId || data.id)}</strong></div>
+                <div><span>Damage type</span><strong>${damageType}</strong></div>
+                <div><span>Preferred position</span><strong>${position}</strong></div>
+                <div><span>Traits</span><strong>${escapeHtml(traits || '-')}</strong></div>
+            </div>
+            <h3>Stat coefficients</h3>
+            <div class="game-table-wrap">
+                <table class="game-data-table">
+                    <thead><tr><th>Stat</th><th>Base</th><th>Multiplier</th><th>Exponent</th></tr></thead>
+                    <tbody>
+                        ${stats.map(([label, prefix]) => `<tr><td>${label}</td><td>${rawValue(data, `${prefix}Base`)}</td><td>${rawValue(data, `${prefix}Multiplier`)}</td><td>${rawValue(data, `${prefix}Exponential`)}</td></tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+            <h3>Base combat values</h3>
+            <div class="game-summary-grid">
+                <div><span>Critical chance</span><strong>${rawValue(data, 'criticalChance') * 100}%</strong></div>
+                <div><span>Critical damage</span><strong>${rawValue(data, 'criticalDamageMultiplier') * 100}%</strong></div>
+                <div><span>Tenacity</span><strong>${rawValue(data, 'tenacity') * 100}%</strong></div>
+                <div><span>Time energy</span><strong>${rawValue(data, 'timeEnergy')}</strong></div>
+                <div><span>Attack energy</span><strong>${rawValue(data, 'attackDoneEnergy')}</strong></div>
+                <div><span>Damage-received energy</span><strong>${rawValue(data, 'dmgReceivedEnergy')}</strong></div>
+            </div>
+            <h3>Skills</h3>
+            <p class="game-id-list"><strong>Active:</strong> ${escapeHtml(skillIds.join(', ') || 'None')}<br><strong>Passive:</strong> ${escapeHtml(passiveIds.join(', ') || 'None')}</p>
+        </div>`;
 }
 
 function setupTabs() {
