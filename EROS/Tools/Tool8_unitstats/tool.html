@@ -19,8 +19,12 @@
 
             <div class="setup-grid">
                 <div class="input-group character-picker">
-                    <label for="characterSelect">Character</label>
-                    <select id="characterSelect" disabled></select>
+                    <label for="characterSearch">Character</label>
+                    <div class="character-search" id="characterSearchBox">
+                        <input type="search" id="characterSearch" placeholder="Search characters..." autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="characterResults" aria-expanded="false" disabled>
+                        <i class="fas fa-chevron-down search-chevron"></i>
+                        <div id="characterResults" class="character-results" role="listbox" hidden></div>
+                    </div>
                 </div>
                 <div class="input-group">
                     <label for="levelInput">Level <span class="hint">(1 - 240)</span></label>
@@ -29,6 +33,10 @@
                 <div class="input-group">
                     <label for="rankInput">Rank <span class="hint">(1 - 21)</span></label>
                     <input type="number" id="rankInput" min="1" max="21" value="15">
+                </div>
+                <div class="input-group">
+                    <label for="affectionInput">Affection <span class="hint">(1 - 20)</span></label>
+                    <input type="number" id="affectionInput" min="1" max="20" value="1">
                 </div>
                 <label class="toggle-switch">
                     <input type="checkbox" id="abbreviateCheckbox">
@@ -40,16 +48,16 @@
             <div id="unitMeta" class="unit-meta" aria-live="polite"></div>
         </section>
 
-        <div class="split-grid">
-            <section class="card baseline-panel">
+        <div class="calculator-grid">
+            <section class="card calculated-panel">
                 <div class="card-header">
                     <i class="fas fa-chart-simple"></i>
                     <div>
-                        <h2>Baseline Stats</h2>
-                        <p>Level and rank only, without account bonuses.</p>
+                        <h2>Calculated Stats</h2>
+                        <p>Includes affection and both statue bonuses.</p>
                     </div>
                 </div>
-                <div id="baselineStats" class="stats-grid"></div>
+                <div id="calculatedStats" class="stats-grid"></div>
             </section>
 
             <section class="card account-panel">
@@ -57,47 +65,25 @@
                     <i class="fas fa-sliders"></i>
                     <div>
                         <h2>Account Modifiers</h2>
-                        <p>Enter your combined percentage and flat bonuses.</p>
+                        <p>Enter the flat bonuses shown by each statue.</p>
                     </div>
                     <button type="button" class="reset-btn" id="resetModifiers">
-                        <i class="fas fa-rotate-left"></i> Reset
+                        <i class="fas fa-rotate-left"></i> Reset statues
                     </button>
                 </div>
 
-                <div class="modifier-note">
-                    <i class="fas fa-circle-info"></i>
-                    Percentage includes affection, portal, or event modifiers. Flat values are normally supplied by statues. For critical stats and tenacity, flat values are percentage points.
+                <div class="statue-grid">
+                    <section class="statue-panel">
+                        <h3><i class="fas fa-landmark"></i> Main Temple Statue</h3>
+                        <div id="mainStatueRows" class="statue-fields"></div>
+                    </section>
+                    <section class="statue-panel">
+                        <h3><i class="fas fa-monument"></i> Class Statue</h3>
+                        <div id="classStatueRows" class="statue-fields"></div>
+                    </section>
                 </div>
-
-                <div class="modifier-table-wrap">
-                    <table class="modifier-table">
-                        <thead>
-                            <tr>
-                                <th>Stat</th>
-                                <th>Bonus %</th>
-                                <th>Flat bonus</th>
-                            </tr>
-                        </thead>
-                        <tbody id="modifierRows"></tbody>
-                    </table>
-                </div>
-
-                <div class="adjusted-heading">
-                    <span>Account-adjusted stats</span>
-                    <span id="modifierSummary">No modifiers</span>
-                </div>
-                <div id="adjustedStats" class="stats-grid compact"></div>
             </section>
         </div>
-
-        <section class="card formula-panel">
-            <div class="card-header">
-                <i class="fas fa-square-root-variable"></i>
-                <h2>How the Calculation Works</h2>
-            </div>
-            <p>The calculator reproduces the client formula with 32-bit float rounding. Class and rarity describe the unit but do not directly multiply core stats.</p>
-            <code>truncate((base + pow(level * multiplier / 100, exponent / 100 + rankModifier * level / 1000) - 1) * modifier + rank * 10 + flat)</code>
-        </section>
 
         <div id="loadError" class="load-error" hidden></div>
     </main>

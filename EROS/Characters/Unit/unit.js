@@ -111,8 +111,6 @@ function renderGameDetails(char) {
         ['Armor', 'armor'],
         ['Magic resistance', 'magicRes']
     ];
-    const skillIds = (data.skills || []).map(skill => skill.id).filter(Boolean);
-    const passiveIds = (data.passiveSkills || []).map(skill => skill.id).filter(Boolean);
     const traits = Array.isArray(char.traits) ? char.traits.join(', ') : (data.traits || '');
     const damageType = rawValue(data, 'damageType') === 1 ? 'Magical' : 'Physical';
     const position = rawValue(data, 'formationPreferredPosition') === 1 ? 'Backline' : 'Frontline';
@@ -120,17 +118,16 @@ function renderGameDetails(char) {
     return `
         <div class="game-details">
             <div class="game-summary-grid">
-                <div><span>Game ID</span><strong>${escapeHtml(char.gameId || data.id)}</strong></div>
                 <div><span>Damage type</span><strong>${damageType}</strong></div>
                 <div><span>Preferred position</span><strong>${position}</strong></div>
                 <div><span>Traits</span><strong>${escapeHtml(traits || '-')}</strong></div>
             </div>
-            <h3>Stat coefficients</h3>
+            <h3>Base stats</h3>
             <div class="game-table-wrap">
                 <table class="game-data-table">
-                    <thead><tr><th>Stat</th><th>Base</th><th>Multiplier</th><th>Exponent</th></tr></thead>
+                    <thead><tr><th>Stat</th><th>Base value</th></tr></thead>
                     <tbody>
-                        ${stats.map(([label, prefix]) => `<tr><td>${label}</td><td>${rawValue(data, `${prefix}Base`)}</td><td>${rawValue(data, `${prefix}Multiplier`)}</td><td>${rawValue(data, `${prefix}Exponential`)}</td></tr>`).join('')}
+                        ${stats.map(([label, prefix]) => `<tr><td>${label}</td><td>${rawValue(data, `${prefix}Base`)}</td></tr>`).join('')}
                     </tbody>
                 </table>
             </div>
@@ -139,12 +136,7 @@ function renderGameDetails(char) {
                 <div><span>Critical chance</span><strong>${rawValue(data, 'criticalChance') * 100}%</strong></div>
                 <div><span>Critical damage</span><strong>${rawValue(data, 'criticalDamageMultiplier') * 100}%</strong></div>
                 <div><span>Tenacity</span><strong>${rawValue(data, 'tenacity') * 100}%</strong></div>
-                <div><span>Time energy</span><strong>${rawValue(data, 'timeEnergy')}</strong></div>
-                <div><span>Attack energy</span><strong>${rawValue(data, 'attackDoneEnergy')}</strong></div>
-                <div><span>Damage-received energy</span><strong>${rawValue(data, 'dmgReceivedEnergy')}</strong></div>
             </div>
-            <h3>Skills</h3>
-            <p class="game-id-list"><strong>Active:</strong> ${escapeHtml(skillIds.join(', ') || 'None')}<br><strong>Passive:</strong> ${escapeHtml(passiveIds.join(', ') || 'None')}</p>
         </div>`;
 }
 

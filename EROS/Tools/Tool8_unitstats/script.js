@@ -1,26 +1,23 @@
 const CHARACTER_DATA_URL = '../../Characters/characters.json';
 const MAX_LEVEL = 240;
 const MAX_RANK = 21;
+const MAX_AFFECTION = 20;
 
 const CORE_STATS = [
     { key: 'damage', label: 'Damage', icon: 'fa-burst', rawPrefix: 'damage' },
-    { key: 'health', label: 'Health', icon: 'fa-heart', rawPrefix: 'health' },
     { key: 'armor', label: 'Armor', icon: 'fa-shield', rawPrefix: 'armor' },
-    { key: 'magicRes', label: 'Magic Resist', icon: 'fa-wand-magic-sparkles', rawPrefix: 'magicRes' }
+    { key: 'magicRes', label: 'Magic Resist', icon: 'fa-wand-magic-sparkles', rawPrefix: 'magicRes' },
+    { key: 'health', label: 'Health', icon: 'fa-heart', rawPrefix: 'health' }
 ];
 
-const SPECIAL_STATS = [
-    { key: 'criticalChance', label: 'Critical Chance', icon: 'fa-crosshairs', rawField: 'criticalChance' },
-    { key: 'criticalDamage', label: 'Critical Damage', icon: 'fa-bolt', rawField: 'criticalDamageMultiplier' },
-    { key: 'tenacity', label: 'Tenacity', icon: 'fa-hand-fist', rawField: 'tenacity' }
-];
-
-const ALL_STATS = [...CORE_STATS, ...SPECIAL_STATS];
+const AFFECTION_STEP_BONUSES = [0.5, 1, 1.5, 3, 4];
 const formatter = new Intl.NumberFormat('en-US');
 const f32 = Math.fround;
 
 let characters = [];
 let selectedCharacter = null;
+let filteredCharacters = [];
+let highlightedResult = -1;
 
 function clampInteger(value, minimum, maximum) {
     const parsed = Number.parseInt(value, 10);
@@ -36,6 +33,25 @@ function numberInput(id) {
 function gameValue(data, name, fallback = 0) {
     const value = data[name];
     return value === undefined || value === null ? fallback : value;
+}
+
+function escapeHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// Affection advances Damage -> Armor -> Magic Resist -> Health at every tier.
+function calculateAffectionBonuses(level) {
+    const bonuses = Object.fromEntries(CORE_STATS.map(stat => [stat.key, 0]));
+    for (let step = 1; step <= level; step += 1) {
+        const stat = CORE_STATS[(step - 1) % CORE_STATS.length];
+        const tier = Math.floor((step - 1) / CORE_STATS.length);
+        bonuses[stat.key] += AFFECTION_STEP_BONUSES[tier];
+    }
+    return bonuses;
 }
 
 // Mirrors Character_data.GetStatValue and Unity's float32 intermediates.
@@ -55,26 +71,21 @@ function calculateCoreStat(data, prefix, level, rank, percentBonus = 0, flatBonu
     return Math.trunc(f32(withRank + f32(flatBonus)));
 }
 
-function calculateSpecialStat(data, field, percentBonus = 0, flatPoints = 0) {
-    const base = f32(gameValue(data, field));
-    const modifier = f32(f32(1) + f32(percentBonus / 100));
-    return f32(f32(base * modifier) + f32(flatPoints / 100));
-}
-
-function calculateStats(character, level, rank, withModifiers) {
+function calculateStats(character, level, rank, affection) {
     const data = character.gameData;
+    const affectionBonuses = calculateAffectionBonuses(affection);
     const result = {};
 
     CORE_STATS.forEach(stat => {
-        const percent = withModifiers ? numberInput(`percent-${stat.key}`) : 0;
-        const flat = withModifiers ? numberInput(`flat-${stat.key}`) : 0;
-        result[stat.key] = calculateCoreStat(data, stat.rawPrefix, level, rank, percent, flat);
-    });
-
-    SPECIAL_STATS.forEach(stat => {
-        const percent = withModifiers ? numberInput(`percent-${stat.key}`) : 0;
-        const flat = withModifiers ? numberInput(`flat-${stat.key}`) : 0;
-        result[stat.key] = calculateSpecialStat(data, stat.rawField, percent, flat);
+        const flatBonus = numberInput(`main-${stat.key}`) + numberInput(`class-${stat.key}`);
+        result[stat.key] = calculateCoreStat(
+            data,
+            stat.rawPrefix,
+            level,
+            rank,
+            affectionBonuses[stat.key],
+            flatBonus
+        );
     });
 
     return result;
@@ -93,43 +104,20 @@ function formatCore(value) {
     return document.getElementById('abbreviateCheckbox').checked ? abbreviate(value) : formatter.format(value);
 }
 
-function formatPercent(value) {
-    const percentage = value * 100;
-    return `${Number(percentage.toFixed(3)).toLocaleString()}%`;
+function renderStatCards(values) {
+    document.getElementById('calculatedStats').innerHTML = CORE_STATS.map(stat => `
+        <div class="stat-card">
+            <div class="stat-label"><i class="fas ${stat.icon}"></i>${stat.label}</div>
+            <div class="stat-value">${formatCore(values[stat.key])}</div>
+        </div>`).join('');
 }
 
-function renderStatCards(targetId, values, baseline = null) {
-    document.getElementById(targetId).innerHTML = ALL_STATS.map(stat => {
-        const isSpecial = SPECIAL_STATS.some(item => item.key === stat.key);
-        const value = isSpecial ? formatPercent(values[stat.key]) : formatCore(values[stat.key]);
-        let delta = '';
-
-        if (baseline) {
-            const rawDelta = values[stat.key] - baseline[stat.key];
-            const deltaText = isSpecial ? formatPercent(rawDelta) : formatCore(rawDelta);
-            delta = `<div class="stat-delta ${rawDelta > 0 ? 'positive' : ''}">${rawDelta >= 0 ? '+' : ''}${deltaText} vs baseline</div>`;
-        }
-
-        return `
-            <div class="stat-card">
-                <div class="stat-label"><i class="fas ${stat.icon}"></i>${stat.label}</div>
-                <div class="stat-value">${value}</div>
-                ${delta}
-            </div>`;
-    }).join('');
-}
-
-function renderModifierRows() {
-    document.getElementById('modifierRows').innerHTML = ALL_STATS.map(stat => `
-        <tr>
-            <td><i class="fas ${stat.icon}"></i> ${stat.label}</td>
-            <td><input type="number" id="percent-${stat.key}" step="0.01" value="0" aria-label="${stat.label} percentage bonus"></td>
-            <td><input type="number" id="flat-${stat.key}" step="0.01" value="0" aria-label="${stat.label} flat bonus"></td>
-        </tr>`).join('');
-
-    document.querySelectorAll('#modifierRows input').forEach(input => {
-        input.addEventListener('input', recalculate);
-    });
+function renderStatueRows(targetId, prefix) {
+    document.getElementById(targetId).innerHTML = CORE_STATS.map(stat => `
+        <label class="statue-field" for="${prefix}-${stat.key}">
+            <span><i class="fas ${stat.icon}"></i>${stat.label}</span>
+            <input type="number" id="${prefix}-${stat.key}" step="1" value="0" aria-label="${stat.label} flat bonus">
+        </label>`).join('');
 }
 
 function renderMeta(character) {
@@ -150,13 +138,79 @@ function renderMeta(character) {
     ];
 
     document.getElementById('unitMeta').innerHTML = chips.map(([icon, label, value]) => `
-        <span class="meta-chip"><i class="fas ${icon}"></i>${label}: <strong>${value || '-'}</strong></span>`).join('');
+        <span class="meta-chip"><i class="fas ${icon}"></i>${label}: <strong>${escapeHtml(value || '-')}</strong></span>`).join('');
 }
 
-function modifierCount() {
-    return ALL_STATS.reduce((count, stat) => {
-        return count + (numberInput(`percent-${stat.key}`) !== 0 || numberInput(`flat-${stat.key}`) !== 0 ? 1 : 0);
-    }, 0);
+function characterSearchText(character) {
+    return [character.name, character.class, character.secondaryClass, character.rarity, character.element]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleLowerCase();
+}
+
+function openCharacterResults(query = '') {
+    const normalized = query.trim().toLocaleLowerCase();
+    filteredCharacters = normalized
+        ? characters.filter(character => characterSearchText(character).includes(normalized))
+        : characters;
+    highlightedResult = -1;
+    renderCharacterResults();
+}
+
+function renderCharacterResults() {
+    const results = document.getElementById('characterResults');
+    results.innerHTML = filteredCharacters.length
+        ? filteredCharacters.map((character, index) => `
+            <button type="button" class="character-result${index === highlightedResult ? ' highlighted' : ''}" role="option" data-character-id="${escapeHtml(character.id)}" aria-selected="${index === highlightedResult}">
+                <span>${escapeHtml(character.name)}</span>
+                <small>${escapeHtml(character.class)} · ${escapeHtml(character.rarity)}</small>
+            </button>`).join('')
+        : '<div class="no-results">No characters found</div>';
+    results.hidden = false;
+    document.getElementById('characterSearch').setAttribute('aria-expanded', 'true');
+
+    results.querySelectorAll('.character-result').forEach(button => {
+        button.addEventListener('mousedown', event => event.preventDefault());
+        button.addEventListener('click', () => chooseCharacter(button.dataset.characterId));
+    });
+}
+
+function closeCharacterResults() {
+    document.getElementById('characterResults').hidden = true;
+    document.getElementById('characterSearch').setAttribute('aria-expanded', 'false');
+    highlightedResult = -1;
+}
+
+function chooseCharacter(id) {
+    selectedCharacter = characters.find(character => character.id === id) || characters[0] || null;
+    if (!selectedCharacter) return;
+
+    document.getElementById('characterSearch').value = selectedCharacter.name;
+    closeCharacterResults();
+    renderMeta(selectedCharacter);
+    recalculate();
+}
+
+function moveCharacterHighlight(direction) {
+    if (!filteredCharacters.length) return;
+    highlightedResult = (highlightedResult + direction + filteredCharacters.length) % filteredCharacters.length;
+    renderCharacterResults();
+    document.querySelector('.character-result.highlighted')?.scrollIntoView({ block: 'nearest' });
+}
+
+function handleCharacterKeydown(event) {
+    const resultsOpen = !document.getElementById('characterResults').hidden;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (!resultsOpen) openCharacterResults(event.currentTarget.value);
+        moveCharacterHighlight(event.key === 'ArrowDown' ? 1 : -1);
+    } else if (event.key === 'Enter' && resultsOpen && highlightedResult >= 0) {
+        event.preventDefault();
+        chooseCharacter(filteredCharacters[highlightedResult].id);
+    } else if (event.key === 'Escape') {
+        closeCharacterResults();
+        event.currentTarget.value = selectedCharacter ? selectedCharacter.name : '';
+    }
 }
 
 function recalculate() {
@@ -164,47 +218,31 @@ function recalculate() {
 
     const levelInput = document.getElementById('levelInput');
     const rankInput = document.getElementById('rankInput');
+    const affectionInput = document.getElementById('affectionInput');
     const level = clampInteger(levelInput.value, 1, MAX_LEVEL);
     const rank = clampInteger(rankInput.value, 1, MAX_RANK);
+    const affection = clampInteger(affectionInput.value, 1, MAX_AFFECTION);
     levelInput.value = level;
     rankInput.value = rank;
+    affectionInput.value = affection;
 
-    const baseline = calculateStats(selectedCharacter, level, rank, false);
-    const adjusted = calculateStats(selectedCharacter, level, rank, true);
-
-    renderStatCards('baselineStats', baseline);
-    renderStatCards('adjustedStats', adjusted, baseline);
-
-    const count = modifierCount();
-    document.getElementById('modifierSummary').textContent = count
-        ? `${count} modified stat${count === 1 ? '' : 's'}`
-        : 'No modifiers';
-
+    renderStatCards(calculateStats(selectedCharacter, level, rank, affection));
     saveState();
 }
 
-function selectCharacter() {
-    const id = document.getElementById('characterSelect').value;
-    selectedCharacter = characters.find(character => character.id === id) || characters[0] || null;
-    if (!selectedCharacter) return;
-
-    renderMeta(selectedCharacter);
-    recalculate();
-}
-
 function resetModifiers() {
-    document.querySelectorAll('#modifierRows input').forEach(input => { input.value = 0; });
+    document.querySelectorAll('.statue-fields input').forEach(input => { input.value = 0; });
     recalculate();
 }
 
 function saveState() {
     if (!selectedCharacter) return;
 
-    const modifiers = {};
-    ALL_STATS.forEach(stat => {
-        modifiers[stat.key] = {
-            percent: numberInput(`percent-${stat.key}`),
-            flat: numberInput(`flat-${stat.key}`)
+    const statues = {};
+    CORE_STATS.forEach(stat => {
+        statues[stat.key] = {
+            main: numberInput(`main-${stat.key}`),
+            class: numberInput(`class-${stat.key}`)
         };
     });
 
@@ -212,8 +250,9 @@ function saveState() {
         characterId: selectedCharacter.id,
         level: clampInteger(document.getElementById('levelInput').value, 1, MAX_LEVEL),
         rank: clampInteger(document.getElementById('rankInput').value, 1, MAX_RANK),
+        affection: clampInteger(document.getElementById('affectionInput').value, 1, MAX_AFFECTION),
         abbreviate: document.getElementById('abbreviateCheckbox').checked,
-        modifiers
+        statues
     }));
 }
 
@@ -228,18 +267,21 @@ function loadState() {
 function restoreState(state) {
     document.getElementById('levelInput').value = clampInteger(state.level || 221, 1, MAX_LEVEL);
     document.getElementById('rankInput').value = clampInteger(state.rank || 15, 1, MAX_RANK);
+    document.getElementById('affectionInput').value = clampInteger(state.affection || 1, 1, MAX_AFFECTION);
     document.getElementById('abbreviateCheckbox').checked = Boolean(state.abbreviate);
 
-    ALL_STATS.forEach(stat => {
-        const saved = state.modifiers && state.modifiers[stat.key];
+    CORE_STATS.forEach(stat => {
+        const saved = state.statues && state.statues[stat.key];
         if (!saved) return;
-        document.getElementById(`percent-${stat.key}`).value = saved.percent || 0;
-        document.getElementById(`flat-${stat.key}`).value = saved.flat || 0;
+        document.getElementById(`main-${stat.key}`).value = saved.main || 0;
+        document.getElementById(`class-${stat.key}`).value = saved.class || 0;
     });
 }
 
 async function initialize() {
-    renderModifierRows();
+    renderStatueRows('mainStatueRows', 'main');
+    renderStatueRows('classStatueRows', 'class');
+    document.querySelectorAll('.statue-fields input').forEach(input => input.addEventListener('input', recalculate));
 
     const state = loadState();
     try {
@@ -253,23 +295,27 @@ async function initialize() {
         return;
     }
 
-    const select = document.getElementById('characterSelect');
-    select.innerHTML = characters.map(character => `
-        <option value="${character.id}">${character.name} - ${character.class}, ${character.rarity}</option>`).join('');
-    select.disabled = false;
+    const search = document.getElementById('characterSearch');
+    search.disabled = false;
+    restoreState(state);
 
     const initialId = characters.some(character => character.id === state.characterId)
         ? state.characterId
         : (characters.find(character => character.id === 'gabriela') || characters[0]).id;
-    select.value = initialId;
-
-    restoreState(state);
-    selectCharacter();
+    chooseCharacter(initialId);
 }
 
-document.getElementById('characterSelect').addEventListener('change', selectCharacter);
+const characterSearch = document.getElementById('characterSearch');
+characterSearch.addEventListener('focus', event => openCharacterResults(event.currentTarget.value === selectedCharacter?.name ? '' : event.currentTarget.value));
+characterSearch.addEventListener('input', event => openCharacterResults(event.currentTarget.value));
+characterSearch.addEventListener('keydown', handleCharacterKeydown);
+characterSearch.addEventListener('blur', () => {
+    closeCharacterResults();
+    characterSearch.value = selectedCharacter ? selectedCharacter.name : '';
+});
 document.getElementById('levelInput').addEventListener('input', recalculate);
 document.getElementById('rankInput').addEventListener('input', recalculate);
+document.getElementById('affectionInput').addEventListener('input', recalculate);
 document.getElementById('abbreviateCheckbox').addEventListener('change', recalculate);
 document.getElementById('resetModifiers').addEventListener('click', resetModifiers);
 

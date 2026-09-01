@@ -85,8 +85,6 @@
 .game-data-table { width: 100%; border-collapse: collapse; }
 .game-data-table th { color: var(--accent); background: #16161d; text-align: left; }
 .game-data-table th, .game-data-table td { padding: 10px 12px; border-bottom: 1px solid #2a2a33; }
-.game-id-list { color: var(--text-dim); line-height: 1.7; overflow-wrap: anywhere; }
-.game-id-list strong { color: var(--text-main); }
 
 /* ---- RIGHT: character tile ---- */
 .char-tile {
