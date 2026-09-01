@@ -8,21 +8,130 @@
     <link rel="stylesheet" href="../../shared-shell.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
     <style>
+        .filter-panel {
+            margin-bottom: 24px;
+            padding: 20px;
+            background: var(--card-bg);
+            border: 1px solid #2a2a33;
+            border-radius: 14px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+        }
+        .filter-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .filter-title, .filter-status { display: flex; align-items: center; gap: 10px; }
+        .filter-title i { color: var(--accent); }
+        .filter-title h2 { margin: 0; font-size: 1.05rem; }
+        .unit-count { color: var(--text-dim); font-size: 0.8rem; }
+        .reset-filters {
+            padding: 7px 11px;
+            color: var(--accent);
+            background: transparent;
+            border: 1px solid var(--accent);
+            border-radius: 7px;
+            cursor: pointer;
+            font: inherit;
+            font-size: 0.75rem;
+        }
+        .reset-filters:hover { background: rgba(168, 85, 247, 0.12); }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(120px, 1fr));
+            gap: 12px;
+        }
+        .filter-control { position: relative; min-width: 0; }
+        .filter-label { display: block; margin-bottom: 6px; color: var(--text-dim); font-size: 0.76rem; }
+        .filter-button {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 10px 11px;
+            color: var(--text-main);
+            background: #16161d;
+            border: 1px solid #33333d;
+            border-radius: 8px;
+            cursor: pointer;
+            font: inherit;
+            font-size: 0.8rem;
+            text-align: left;
+        }
+        .filter-button:hover, .filter-button[aria-expanded="true"] { border-color: var(--accent); }
+        .filter-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .filter-button i { color: var(--text-dim); font-size: 0.65rem; transition: transform 0.15s; }
+        .filter-button[aria-expanded="true"] i { transform: rotate(180deg); }
+
+        .filter-menu {
+            position: absolute;
+            z-index: 40;
+            top: calc(100% + 6px);
+            left: 0;
+            min-width: 100%;
+            width: max-content;
+            max-width: 240px;
+            max-height: 310px;
+            overflow-y: auto;
+            padding: 6px;
+            background: #15151c;
+            border: 1px solid #3b3b47;
+            border-radius: 9px;
+            box-shadow: 0 14px 35px rgba(0, 0, 0, 0.55);
+        }
+        .filter-menu-actions {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 4px;
+            padding: 3px 3px 7px;
+            border-bottom: 1px solid #2a2a33;
+        }
+        .filter-menu-actions button {
+            flex: 1;
+            padding: 5px 8px;
+            color: var(--accent);
+            background: transparent;
+            border: 0;
+            border-radius: 5px;
+            cursor: pointer;
+            font: inherit;
+            font-size: 0.7rem;
+        }
+        .filter-menu-actions button:hover { background: rgba(168, 85, 247, 0.12); }
+        .filter-option {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            min-width: 140px;
+            padding: 8px 9px;
+            color: var(--text-main);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+        .filter-option:hover { background: rgba(168, 85, 247, 0.12); }
+        .filter-option input { width: 15px; height: 15px; accent-color: var(--accent); }
+
         .unit-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
             gap: 18px;
         }
-
         .unit-tile {
             display: flex;
             flex-direction: column;
             align-items: center;
+            padding: 12px;
+            color: inherit;
             text-decoration: none;
             background: var(--card-bg);
             border: 1px solid #2a2a33;
             border-radius: 12px;
-            padding: 12px;
             transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
         }
         .unit-tile:hover {
@@ -30,52 +139,217 @@
             border-color: var(--accent);
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
         }
-
         .unit-tile .portrait {
             width: 100%;
             aspect-ratio: 1 / 1;
-            border-radius: 8px;
-            background: #16161d;
-            background-size: cover;
-            background-position: center;
             display: flex;
             align-items: center;
             justify-content: center;
             margin-bottom: 10px;
+            background: #16161d center / cover;
+            border-radius: 8px;
         }
-        .unit-tile .portrait i { font-size: 2.2rem; color: #3a3a44; }
+        .unit-tile .portrait i { color: #3a3a44; font-size: 2.2rem; }
+        .unit-tile .name { color: var(--text-main); font-size: 0.9rem; font-weight: 600; text-align: center; }
+        .unit-tile .role { margin-top: 2px; color: var(--text-dim); font-size: 0.75rem; }
+        .units-empty { grid-column: 1 / -1; padding: 40px; color: #5a5a66; font-style: italic; text-align: center; }
 
-        .unit-tile .name {
-            color: var(--text-main);
-            font-size: 0.9rem;
-            font-weight: 600;
-            text-align: center;
+        @media (max-width: 1200px) {
+            .filter-grid { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
         }
-        .unit-tile .role { color: var(--text-dim); font-size: 0.75rem; margin-top: 2px; }
-
-        .units-empty { color: #5a5a66; font-style: italic; padding: 40px; text-align: center; }
+        @media (max-width: 700px) {
+            .filter-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+            .filter-heading { align-items: flex-start; }
+            .filter-status { align-items: flex-end; flex-direction: column-reverse; gap: 7px; }
+        }
+        @media (max-width: 430px) {
+            .filter-grid { grid-template-columns: 1fr; }
+            .filter-menu { right: 0; max-width: none; }
+        }
     </style>
 </head>
 <body>
     <main class="main-content">
-        <div id="unitGrid" class="unit-grid">
-            <div class="units-empty">Loading units…</div>
-        </div>
+        <section class="filter-panel">
+            <div class="filter-heading">
+                <div class="filter-title"><i class="fas fa-filter"></i><h2>Filters</h2></div>
+                <div class="filter-status">
+                    <span id="unitCount" class="unit-count">Loading units...</span>
+                    <button type="button" id="resetFilters" class="reset-filters"><i class="fas fa-rotate-left"></i> Reset</button>
+                </div>
+            </div>
+            <div id="filterGrid" class="filter-grid"></div>
+        </section>
+
+        <div id="unitGrid" class="unit-grid"><div class="units-empty">Loading units...</div></div>
     </main>
 
     <script src="../../navigation.js"></script>
     <script>
-        loadShell("All Units", "none");
+        loadShell('All Units', 'none');
 
         const CHARACTERS_URL = '/EROS/Characters/characters.json';
+        const FILTERS = [
+            { key: 'class', label: 'Class' },
+            { key: 'secondaryClass', label: 'Subclass' },
+            { key: 'race', label: 'Race' },
+            { key: 'faction', label: 'Faction' },
+            { key: 'element', label: 'Element' },
+            { key: 'rarity', label: 'Rarity' }
+        ];
+        const FILTER_ORDERS = {
+            class: ['Fighter', 'Tank', 'Healer', 'Support', 'Mage'],
+            secondaryClass: ['Fighter', 'Tank', 'Healer', 'Support', 'Mage'],
+            race: ['Human', 'Beastfolk', 'Demon', 'Mermaid', 'NonHuman'],
+            faction: ['Guardian', 'Outlaw', 'Phoenix', 'Protector', 'Succubus', 'Poseidon', 'Zephyr', 'Dragonard', 'Celestial', 'Raider', 'Bluecoat', 'Zodiac', 'Sylphid'],
+            element: ['Flame', 'Wind', 'Water', 'Light', 'Darkness', 'None'],
+            rarity: ['Common', 'Rare', 'Epic', 'Legendary', 'Mythic', 'Divine']
+        };
+
+        let roster = [];
+        const filterOptions = new Map();
+        const selectedFilters = new Map();
+
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function sortedValues(key) {
+            const available = [...new Set(roster.map(unit => unit[key]).filter(Boolean))];
+            const order = FILTER_ORDERS[key] || [];
+            return available.sort((left, right) => {
+                const leftIndex = order.indexOf(left);
+                const rightIndex = order.indexOf(right);
+                if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+                if (leftIndex === -1) return 1;
+                if (rightIndex === -1) return -1;
+                return leftIndex - rightIndex;
+            });
+        }
+
+        function buildFilters() {
+            FILTERS.forEach(filter => {
+                const values = sortedValues(filter.key);
+                filterOptions.set(filter.key, values);
+                selectedFilters.set(filter.key, new Set(values));
+            });
+
+            document.getElementById('filterGrid').innerHTML = FILTERS.map(filter => `
+                <div class="filter-control" data-filter="${filter.key}">
+                    <span class="filter-label">${filter.label}</span>
+                    <button type="button" class="filter-button" aria-expanded="false" aria-controls="filter-menu-${filter.key}">
+                        <span id="filter-summary-${filter.key}">All</span><i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="filter-menu" id="filter-menu-${filter.key}" hidden>
+                        <div class="filter-menu-actions">
+                            <button type="button" data-action="all">Select all</button>
+                            <button type="button" data-action="none">Clear</button>
+                        </div>
+                        ${filterOptions.get(filter.key).map(value => `
+                            <label class="filter-option">
+                                <input type="checkbox" value="${escapeHtml(value)}" checked>
+                                <span>${escapeHtml(value)}</span>
+                            </label>`).join('')}
+                    </div>
+                </div>`).join('');
+
+            document.querySelectorAll('.filter-control').forEach(control => {
+                const key = control.dataset.filter;
+                control.querySelector('.filter-button').addEventListener('click', () => toggleFilterMenu(key));
+                control.querySelectorAll('.filter-option input').forEach(checkbox => {
+                    checkbox.addEventListener('change', () => {
+                        if (checkbox.checked) selectedFilters.get(key).add(checkbox.value);
+                        else selectedFilters.get(key).delete(checkbox.value);
+                        updateFilterSummary(key);
+                        applyFilters();
+                    });
+                });
+                control.querySelector('[data-action="all"]').addEventListener('click', () => setFilterSelection(key, true));
+                control.querySelector('[data-action="none"]').addEventListener('click', () => setFilterSelection(key, false));
+            });
+        }
+
+        function toggleFilterMenu(key) {
+            const target = document.querySelector(`.filter-control[data-filter="${key}"]`);
+            const targetMenu = target.querySelector('.filter-menu');
+            const willOpen = targetMenu.hidden;
+            closeFilterMenus();
+            if (willOpen) {
+                targetMenu.hidden = false;
+                target.querySelector('.filter-button').setAttribute('aria-expanded', 'true');
+            }
+        }
+
+        function closeFilterMenus() {
+            document.querySelectorAll('.filter-control').forEach(control => {
+                control.querySelector('.filter-menu').hidden = true;
+                control.querySelector('.filter-button').setAttribute('aria-expanded', 'false');
+            });
+        }
+
+        function setFilterSelection(key, checked) {
+            const selected = selectedFilters.get(key);
+            selected.clear();
+            if (checked) filterOptions.get(key).forEach(value => selected.add(value));
+            document.querySelectorAll(`.filter-control[data-filter="${key}"] .filter-option input`).forEach(input => {
+                input.checked = checked;
+            });
+            updateFilterSummary(key);
+            applyFilters();
+        }
+
+        function updateFilterSummary(key) {
+            const selected = selectedFilters.get(key);
+            const options = filterOptions.get(key);
+            let summary = 'None';
+            if (selected.size === options.length) summary = 'All';
+            else if (selected.size === 1) summary = [...selected][0];
+            else if (selected.size > 1) summary = `${selected.size} selected`;
+            document.getElementById(`filter-summary-${key}`).textContent = summary;
+        }
+
+        function unitMatchesFilters(unit) {
+            return FILTERS.every(filter => selectedFilters.get(filter.key).has(unit[filter.key]));
+        }
+
+        function renderUnits(units) {
+            const grid = document.getElementById('unitGrid');
+            document.getElementById('unitCount').textContent = `Showing ${units.length} of ${roster.length}`;
+            if (!units.length) {
+                grid.innerHTML = '<div class="units-empty">No units match the selected filters.</div>';
+                return;
+            }
+
+            grid.innerHTML = units.map(unit => `
+                <a class="unit-tile" href="/EROS/Characters/Unit/index.html?id=${encodeURIComponent(unit.id)}">
+                    <div class="portrait" ${unit.image ? `style="background-image:url('${unit.image}')"` : ''}>
+                        ${unit.image ? '' : '<i class="fas fa-user"></i>'}
+                    </div>
+                    <div class="name">${escapeHtml(unit.name)}</div>
+                    <div class="role">${escapeHtml(unit.class || '')}</div>
+                </a>`).join('');
+        }
+
+        function applyFilters() {
+            renderUnits(roster.filter(unitMatchesFilters));
+        }
+
+        function resetFilters() {
+            FILTERS.forEach(filter => setFilterSelection(filter.key, true));
+            closeFilterMenus();
+        }
 
         async function loadUnits() {
             const grid = document.getElementById('unitGrid');
-            let roster;
             try {
-                const res = await fetch(CHARACTERS_URL);
-                roster = await res.json();
-            } catch (e) {
+                const response = await fetch(CHARACTERS_URL);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                roster = await response.json();
+            } catch (error) {
                 grid.innerHTML = '<div class="units-empty">Could not load unit data.</div>';
                 return;
             }
@@ -85,15 +359,17 @@
                 return;
             }
 
-            grid.innerHTML = roster.map(c => `
-                <a class="unit-tile" href="/EROS/Characters/Unit/index.html?id=${encodeURIComponent(c.id)}">
-                    <div class="portrait" ${c.image ? `style="background-image:url('${c.image}')"` : ''}>
-                        ${c.image ? '' : '<i class="fas fa-user"></i>'}
-                    </div>
-                    <div class="name">${c.name}</div>
-                    <div class="role">${c.class || ''}</div>
-                </a>`).join('');
+            buildFilters();
+            applyFilters();
         }
+
+        document.getElementById('resetFilters').addEventListener('click', resetFilters);
+        document.addEventListener('click', event => {
+            if (!event.target.closest('.filter-control')) closeFilterMenus();
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') closeFilterMenus();
+        });
 
         loadUnits();
     </script>
