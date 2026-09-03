@@ -68,7 +68,7 @@ const EROS_TOOLS = [
         title: 'Unit Stats Calculator',
         navLabel: 'Unit stats calculator',
         icon: 'fas fa-chart-simple',
-        accent: '#a855f7',
+        accent: '#ec4899',
         path: '/Tools/Tool8_unitstats/tool.html',
         category: 'calculators',
         badge: 'new'
@@ -163,8 +163,9 @@ function sidebarHTML() {
     return `
         <nav class="sidebar ${isCollapsed ? 'collapsed' : ''}" id="sidebar" aria-label="EROS tools">
             <div class="sidebar-header">
+                <a class="sidebar-header-action" href="/index.html" aria-label="Back to main menu" title="Back to main menu"><i class="fas fa-arrow-left"></i></a>
                 <span class="logo">EROS TOOLS</span>
-                <button type="button" onclick="toggleSidebar()" aria-label="Toggle sidebar"><i class="fas fa-bars"></i></button>
+                <button class="sidebar-header-action" type="button" onclick="toggleSidebar()" aria-label="Toggle sidebar" title="Toggle sidebar"><i class="fas fa-bars"></i></button>
             </div>
 
             <div class="nav-scroll">

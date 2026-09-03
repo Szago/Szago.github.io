@@ -51,6 +51,18 @@ assert.equal((sidebar.match(/data-tool=/g) || []).length, 10);
 assert.match(sidebar, /href="\/index\.html"/);
 assert.doesNotMatch(sidebar, /href="\/eros\/Tools\//);
 assert.doesNotMatch(sidebar, /data-tool="leaderboard"/);
+assert.match(sidebar, /class="sidebar-header-action" href="\/index\.html"/);
+assert.match(sidebar, /class="sidebar-header-action" type="button" onclick="toggleSidebar\(\)"/);
+
+const unitStats = EROS_TOOLS.find(tool => tool.id === 'unitstats');
+assert.equal(unitStats.accent, '#ec4899');
+assert.match(fs.readFileSync(path.join(erosRoot, 'Tools', 'Tool8_unitstats', 'style.css'), 'utf8'), /--accent: #ec4899/);
+
+const sharedShell = fs.readFileSync(path.join(erosRoot, 'shared-shell.css'), 'utf8');
+assert.match(sharedShell, /--nav-icon-column: 34px/);
+assert.match(sharedShell, /grid-template-columns: var\(--nav-icon-column\) minmax\(0, 1fr\) auto/);
+assert.match(sharedShell, /\.sidebar\.collapsed \.nav-links li a[\s\S]*?grid-template-columns: 1fr/);
+assert.match(sharedShell, /\.sidebar\.collapsed \.nav-scroll::\-webkit-scrollbar[\s\S]*?width: 0/);
 
 for (const tool of EROS_TOOLS) {
     assert.ok(fs.existsSync(path.join(erosRoot, tool.path)), `Missing tool page: ${tool.path}`);

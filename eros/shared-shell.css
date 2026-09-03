@@ -16,6 +16,7 @@
     --text-dim: #a0a0a0;
     --sidebar-width: 270px;
     --sidebar-collapsed: 70px;
+    --nav-icon-column: 34px;
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -45,14 +46,47 @@ body {
 .sidebar.collapsed { width: var(--sidebar-collapsed); }
 
 .sidebar-header {
-    padding: 20px;
+    padding: 20px 14px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
 }
 
-.logo { font-weight: bold; letter-spacing: 1px; color: var(--accent); }
+.logo {
+    flex: 1;
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: var(--accent);
+    text-align: center;
+    white-space: nowrap;
+}
 .sidebar.collapsed .logo { display: none; }
+
+.sidebar-header-action {
+    box-sizing: border-box;
+    display: grid;
+    place-items: center;
+    flex: 0 0 32px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid #333;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-dim);
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.sidebar-header-action:hover,
+.sidebar-header-action:focus-visible {
+    border-color: var(--accent);
+    background: var(--accent-fade);
+    color: var(--accent);
+    outline: none;
+}
 
 /* Scrollable area holding the categories; bottom nav stays pinned below */
 .nav-scroll {
@@ -71,16 +105,23 @@ body {
 }
 
 .nav-links li a {
-    display: flex;
+    display: grid;
+    grid-template-columns: var(--nav-icon-column) minmax(0, 1fr) auto;
     align-items: center;
-    padding: 13px 25px;
+    column-gap: 8px;
+    padding: 13px 18px;
     color: var(--text-dim);
     text-decoration: none;
     transition: 0.2s;
     border-left: 3px solid transparent; /* reserve space so active state doesn't shift text */
+    border-right: 3px solid transparent; /* balance the icon column in collapsed mode */
 }
 
-.nav-links li a i { min-width: 30px; font-size: 1.2rem; }
+.nav-links li a > i {
+    width: var(--nav-icon-column);
+    font-size: 1.2rem;
+    text-align: center;
+}
 .nav-links li a:hover, .nav-links li a.active {
     background: rgba(255, 255, 255, 0.06);           /* fallback for old browsers */
     background: var(--accent-fade);                   /* accent-tinted highlight */
@@ -92,10 +133,12 @@ body {
 .nav-category { border-bottom: 1px solid #20202a; }
 
 .category-header {
-    display: flex;
+    display: grid;
+    grid-template-columns: var(--nav-icon-column) minmax(0, 1fr) auto;
     align-items: center;
+    column-gap: 8px;
     width: 100%;
-    padding: 14px 22px;
+    padding: 14px 18px 14px 21px;
     background: none;
     border: none;
     color: var(--text-main);
@@ -106,8 +149,13 @@ body {
     cursor: pointer;
     font-family: inherit;
 }
-.category-header .cat-icon { min-width: 30px; font-size: 1rem; color: var(--accent); }
-.category-header .cat-label { flex: 1; text-align: left; }
+.category-header .cat-icon {
+    width: var(--nav-icon-column);
+    font-size: 1rem;
+    color: var(--accent);
+    text-align: center;
+}
+.category-header .cat-label { min-width: 0; text-align: left; }
 .category-header .chevron { font-size: 0.8rem; color: var(--text-dim); transition: transform 0.25s ease; }
 .category-header:hover .chevron { color: var(--accent); }
 
@@ -119,15 +167,22 @@ body {
 
 /* "Coming soon" placeholder rows */
 .coming-soon {
-    display: flex;
+    display: grid;
+    grid-template-columns: var(--nav-icon-column) minmax(0, 1fr);
     align-items: center;
-    padding: 13px 25px;
+    column-gap: 8px;
+    padding: 13px 18px;
     color: #5a5a66;
     font-style: italic;
     font-size: 0.9rem;
     border-left: 3px solid transparent;
+    border-right: 3px solid transparent;
 }
-.coming-soon i { min-width: 30px; font-size: 1.1rem; }
+.coming-soon i {
+    width: var(--nav-icon-column);
+    font-size: 1.1rem;
+    text-align: center;
+}
 
 /* "New" badge */
 .badge-wip {
@@ -160,10 +215,38 @@ body {
 .bottom-nav { margin: 0; border-top: 1px solid #2a2a33; }
 
 /* --- COLLAPSED (icon-only) SIDEBAR --- */
+.sidebar.collapsed .sidebar-header {
+    justify-content: center;
+    gap: 2px;
+    padding: 20px 6px;
+}
+.sidebar.collapsed .sidebar-header-action {
+    flex-basis: 28px;
+    width: 28px;
+}
+.sidebar.collapsed .nav-scroll {
+    scrollbar-width: none;
+}
+.sidebar.collapsed .nav-scroll::-webkit-scrollbar {
+    width: 0;
+}
 .sidebar.collapsed span { display: none; }
 .sidebar.collapsed .cat-label,
 .sidebar.collapsed .chevron { display: none; }
-.sidebar.collapsed .category-header { justify-content: center; padding: 14px 0; }
+.sidebar.collapsed .category-header,
+.sidebar.collapsed .nav-links li a,
+.sidebar.collapsed .coming-soon {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    column-gap: 0;
+    padding-left: 0;
+    padding-right: 0;
+}
+.sidebar.collapsed .category-header .cat-icon,
+.sidebar.collapsed .nav-links li a > i,
+.sidebar.collapsed .coming-soon i {
+    width: 100%;
+}
 /* In icon mode always show the icons, ignoring per-category collapse */
 .sidebar.collapsed .category-links { display: block; }
 
