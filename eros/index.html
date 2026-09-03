@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EROS Tools</title>
+    <link rel="stylesheet" href="shared-shell.css">
+    <link rel="stylesheet" href="erosStyle.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
+</head>
+<body class="workspace-body">
+    <main class="workspace-main" id="workspaceMain">
+        <div class="workspace-loading" id="workspaceLoading" role="status">
+            <i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>
+            <span>Loading tool...</span>
+        </div>
+    </main>
+
+    <noscript>
+        <p class="workspace-noscript">EROS Tools requires JavaScript to switch between tools.</p>
+    </noscript>
+
+    <script src="navigation.js"></script>
+    <script>
+        loadWorkspace();
+    </script>
+</body>
+</html>

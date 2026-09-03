@@ -9,7 +9,7 @@ let currentDate;
 async function fetchLatestLeaderboardData() {
     const repo = 'Szago/Szago.github.io';
     const branch = 'main';
-    const folderPath = 'EROS/Data2';
+    const folderPath = 'eros/Data2';
     const apiUrl = `https://api.github.com/repos/${repo}/contents/${folderPath}?ref=${branch}`;
 
     try {
@@ -234,7 +234,7 @@ function handleNextDayClick() {
 async function fetchAndDisplayDataForDate(date) {
     const repo = 'Szago/Szago.github.io';
     const branch = 'main';
-    const folderPath = 'EROS/Data';
+    const folderPath = 'eros/Data';
     const apiUrl = `https://api.github.com/repos/${repo}/contents/${folderPath}/PlayerInfo_${date}?ref=${branch}`;
 
     try {
@@ -266,5 +266,5 @@ function getNextDate(dateStr) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 function goBack() {
-    window.location.href = "/EROS/index.html";
+    window.location.href = "/eros/";
 }

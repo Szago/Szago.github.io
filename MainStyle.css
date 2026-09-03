@@ -1,6 +1,6 @@
 /* ======================================================================
    LANDING PAGE — matches the dark/purple aesthetic of the EROS tools
-   (see EROS/shared-shell.css). Self-contained: no shell dependency.
+   (see eros/shared-shell.css). Self-contained: no shell dependency.
    ====================================================================== */
 :root {
     --bg-dark: #0f0f12;

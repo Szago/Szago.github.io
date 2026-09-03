@@ -68,8 +68,8 @@
     <script>
         loadShell("Tier List", "none");
 
-        const TIERLIST_URL = '/EROS/Characters/Tierlist/tierlist.json';
-        const CHARACTERS_URL = '/EROS/Characters/characters.json';
+        const TIERLIST_URL = '/eros/Characters/Tierlist/tierlist.json';
+        const CHARACTERS_URL = '/eros/Characters/characters.json';
 
         async function loadTierlist() {
             let placements, roster;
@@ -100,7 +100,7 @@
 
                 const card = document.createElement('a');
                 card.className = 'unit-card';
-                card.href = id ? `/EROS/Characters/Unit/index.html?id=${encodeURIComponent(id)}` : '#';
+                card.href = id ? `/eros/Characters/Unit/index.html?id=${encodeURIComponent(id)}` : '#';
                 if (image) card.style.backgroundImage = `url('${image}')`;
                 card.innerHTML =
                     (image ? '' : '<i class="fas fa-user card-ph"></i>') +

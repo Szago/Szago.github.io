@@ -177,6 +177,23 @@ body {
 
 .sidebar.collapsed ~ .main-content { margin-left: var(--sidebar-collapsed); }
 
+/* Tool documents loaded by the persistent /eros workspace keep their own
+   styles and top bar, but the outer workspace owns the only sidebar. */
+html.eros-embedded,
+html.eros-embedded body {
+    min-height: 100%;
+}
+
+body.eros-embedded-body {
+    display: block;
+}
+
+body.eros-embedded-body .main-content {
+    box-sizing: border-box;
+    margin-left: 0;
+    min-height: 100vh;
+}
+
 .top-bar {
     display: flex;
     justify-content: space-between;

@@ -158,5 +158,5 @@ function getRemainingEventMinutes() {
 }
 
 function goBack() {
-    window.location.href = "/EROS/index.html";
+    window.location.href = "/eros/?tool=playroom";
 }

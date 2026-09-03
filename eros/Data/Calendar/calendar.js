@@ -4,8 +4,8 @@
    line, each event drawn as a bar spanning its start→end duration.
 
    Used by BOTH:
-     - the public page  /EROS/Data/Calendar/index.html
-     - the internal editor preview  /EROS/Characters/Editor/index.html
+     - the public page  /eros/Data/Calendar/index.html
+     - the internal editor preview  /eros/Characters/Editor/index.html
    so the editor preview always matches what the live page will show.
 
    Data shape (calendar.json):

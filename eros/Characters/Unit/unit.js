@@ -2,7 +2,7 @@
    data from the shared characters.json, and fills in the tile.
    The Details/Rating/Teams/Placement tabs are placeholders for now. */
 
-const CHARACTERS_URL = '/EROS/Characters/characters.json';
+const CHARACTERS_URL = '/eros/Characters/characters.json';
 
 // Class -> icon, so the tile shows a matching glyph.
 const CLASS_ICONS = {

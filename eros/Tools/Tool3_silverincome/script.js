@@ -47,5 +47,5 @@ function abbreviateNumber(num) {
 }
 
 function goBack() {
-    window.location.href = "/EROS/index.html";
+    window.location.href = "/eros/?tool=silver";
 }

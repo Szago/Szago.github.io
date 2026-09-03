@@ -188,7 +188,7 @@
     <script>
         loadShell('All Units', 'none');
 
-        const CHARACTERS_URL = '/EROS/Characters/characters.json';
+        const CHARACTERS_URL = '/eros/Characters/characters.json';
         const FILTERS = [
             { key: 'class', label: 'Class' },
             { key: 'secondaryClass', label: 'Subclass' },
@@ -325,7 +325,7 @@
             }
 
             grid.innerHTML = units.map(unit => `
-                <a class="unit-tile" href="/EROS/Characters/Unit/index.html?id=${encodeURIComponent(unit.id)}">
+                <a class="unit-tile" href="/eros/Characters/Unit/index.html?id=${encodeURIComponent(unit.id)}">
                     <div class="portrait" ${unit.image ? `style="background-image:url('${unit.image}')"` : ''}>
                         ${unit.image ? '' : '<i class="fas fa-user"></i>'}
                     </div>

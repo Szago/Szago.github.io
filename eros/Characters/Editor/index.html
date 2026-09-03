@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Eros Content Editor (internal)</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
-    <link rel="stylesheet" href="/EROS/Data/Calendar/calendar.css">
+    <link rel="stylesheet" href="/eros/Data/Calendar/calendar.css">
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
-    <script src="/EROS/Data/Calendar/calendar.js"></script>
+    <script src="/eros/Data/Calendar/calendar.js"></script>
     <style>
         :root {
             --bg: #0f0f12;
@@ -305,9 +305,9 @@
     </section>
 
     <script>
-        const CHARACTERS_URL = '/EROS/Characters/characters.json';
-        const TIERLIST_URL   = '/EROS/Characters/Tierlist/tierlist.json';
-        const CALENDAR_URL   = '/EROS/Data/Calendar/calendar.json';
+        const CHARACTERS_URL = '/eros/Characters/characters.json';
+        const TIERLIST_URL   = '/eros/Characters/Tierlist/tierlist.json';
+        const CALENDAR_URL   = '/eros/Data/Calendar/calendar.json';
 
         // Render Markdown to HTML (used for the live previews & — same as
         // the character page — falls back to escaped text if the lib fails).
@@ -338,7 +338,7 @@
             const FIELDS = [
                 { key: 'id',        label: 'ID (used in the page URL — ?id=…)', type: 'text', placeholder: 'auto-filled from name' },
                 { key: 'name',      label: 'Name', type: 'text', placeholder: 'Character name' },
-                { key: 'image',     label: 'Image URL / path', type: 'text', placeholder: '/EROS/Characters/img/unit.png' },
+                { key: 'image',     label: 'Image URL / path', type: 'text', placeholder: '/eros/Characters/img/unit.png' },
                 { key: 'class',     label: 'Class', type: 'select', options: ['Fighter', 'Tank', 'Healer', 'Support', 'Mage'] },
                 { key: 'secondaryClass', label: 'Secondary class', type: 'select', options: ['Fighter', 'Tank', 'Healer', 'Support', 'Mage'] },
                 { key: 'race',      label: 'Race', type: 'select', options: ['Human', 'Beastfolk', 'Demon', 'Mermaid', 'NonHuman'] },

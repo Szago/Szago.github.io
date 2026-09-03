@@ -22,7 +22,7 @@
                 Line-styled timeline: each row is one line, and every event is
                 drawn as a bar spanning its start→end duration. The grid is
                 built from calendar.json — edit that file (or use the editor at
-                /EROS/Characters/Editor/index.html → Calendar tab) to change it.
+                /eros/Characters/Editor/index.html → Calendar tab) to change it.
             -->
             <p class="cal-note">Each line is an event drawn across its duration. Drag to pan, Ctrl + scroll to zoom.</p>
             <div id="calendar"></div>
@@ -34,7 +34,7 @@
     <script>
         loadShell("Calendar", "none");
 
-        const CALENDAR_URL = '/EROS/Data/Calendar/calendar.json';
+        const CALENDAR_URL = '/eros/Data/Calendar/calendar.json';
 
         async function loadCalendar() {
             const container = document.getElementById('calendar');
