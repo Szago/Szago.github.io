@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page not found</title>
+    <script>
+        (() => {
+            const url = new URL(window.location.href);
+            const segments = url.pathname.split('/');
+
+            if (segments[1]?.toLowerCase() === 'eros' && segments[1] !== 'eros') {
+                segments[1] = 'eros';
+                url.pathname = segments.join('/');
+                window.location.replace(url);
+            }
+        })();
+    </script>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: #0f0f12;
+            color: #fff;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+        }
+
+        main {
+            max-width: 560px;
+            padding: 40px;
+            text-align: center;
+        }
+
+        a { color: #8c35f7; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Page not found</h1>
+        <p>The requested page does not exist.</p>
+        <a href="/index.html">Return to the homepage</a>
+    </main>
+</body>
+</html>

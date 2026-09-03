@@ -104,6 +104,16 @@ const EROS_TOOLS = [
         path: '/Data/Calendar/index.html',
         category: 'data',
         badge: 'wip'
+    },
+    {
+        id: 'leaderboard',
+        navId: 'nav-leaderboard',
+        title: 'Leaderboard Monitoring',
+        accent: '#8c35f7',
+        path: '/Tools/Tool5_leaderboard/tool.html',
+        category: 'calculators',
+        showInSidebar: false,
+        preload: false
     }
 ];
 
@@ -120,8 +130,12 @@ function toolBadge(tool) {
 }
 
 function toolLink(tool) {
-    const href = tool.id === EROS_TOOLS[0].id ? `${EROS_BASE}/` : `${EROS_BASE}/?tool=${tool.id}`;
+    const href = workspaceHref(tool);
     return `<li><a href="${href}" id="${tool.navId}" data-tool="${tool.id}"><i class="${tool.icon}"></i><span>${tool.navLabel || tool.title}</span>${toolBadge(tool)}</a></li>`;
+}
+
+function workspaceHref(tool) {
+    return tool.id === EROS_TOOLS[0].id ? `${EROS_BASE}/` : `${EROS_BASE}/?tool=${tool.id}`;
 }
 
 function categoryHTML(id, icon, label, tools, extraContent = '') {
@@ -141,9 +155,10 @@ function categoryHTML(id, icon, label, tools, extraContent = '') {
 
 function sidebarHTML() {
     const isCollapsed = getCookie('sidebarStatus') === 'collapsed';
-    const calculators = EROS_TOOLS.filter(tool => tool.category === 'calculators');
-    const characters = EROS_TOOLS.filter(tool => tool.category === 'characters');
-    const data = EROS_TOOLS.filter(tool => tool.category === 'data');
+    const visibleTools = EROS_TOOLS.filter(tool => tool.showInSidebar !== false);
+    const calculators = visibleTools.filter(tool => tool.category === 'calculators');
+    const characters = visibleTools.filter(tool => tool.category === 'characters');
+    const data = visibleTools.filter(tool => tool.category === 'data');
 
     return `
         <nav class="sidebar ${isCollapsed ? 'collapsed' : ''}" id="sidebar" aria-label="EROS tools">
@@ -221,6 +236,12 @@ function setActiveTool(toolId) {
 
 function loadShell(pageTitle, alertType, alertMsg) {
     const embedded = isEmbeddedTool();
+    const currentTool = toolForCurrentPage();
+
+    if (!embedded && currentTool) {
+        window.location.replace(workspaceHref(currentTool));
+        return;
+    }
 
     if (embedded) {
         document.documentElement.classList.add('eros-embedded');
@@ -233,10 +254,6 @@ function loadShell(pageTitle, alertType, alertMsg) {
     if (mainContent) mainContent.insertAdjacentHTML('afterbegin', topBarHTML(pageTitle, alertType, alertMsg));
     startClock();
 
-    if (!embedded) {
-        const currentTool = toolForCurrentPage();
-        if (currentTool) setActiveTool(currentTool.id);
-    }
 }
 
 function selectedWorkspaceTool() {
@@ -273,6 +290,10 @@ function activateWorkspaceTool(toolId, options = {}) {
     });
 
     const activeFrame = document.querySelector(`.workspace-frame[data-tool="${tool.id}"]`);
+    if (activeFrame && !activeFrame.hasAttribute('src')) {
+        delete activeFrame.dataset.loaded;
+        activeFrame.src = activeFrame.dataset.src;
+    }
     if (loading) loading.classList.toggle('hidden', activeFrame && activeFrame.dataset.loaded === 'true');
 
     if (options.updateHistory !== false) {
@@ -291,11 +312,13 @@ function loadWorkspace() {
         frame.className = 'workspace-frame';
         frame.dataset.tool = tool.id;
         frame.title = tool.title;
-        frame.src = workspaceToolUrl(tool);
-        frame.loading = 'eager';
+        frame.dataset.src = workspaceToolUrl(tool);
+        if (tool.preload !== false) frame.src = frame.dataset.src;
+        frame.loading = tool.preload === false ? 'lazy' : 'eager';
         frame.setAttribute('aria-hidden', 'true');
         frame.tabIndex = -1;
         frame.addEventListener('load', () => {
+            if (!frame.hasAttribute('src')) return;
             frame.dataset.loaded = 'true';
             if (frame.classList.contains('active')) {
                 document.getElementById('workspaceLoading')?.classList.add('hidden');
