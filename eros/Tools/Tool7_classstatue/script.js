@@ -63,7 +63,7 @@ function abbreviate(num) {
 
 function fmt(num) {
     if (!isFinite(num)) return '∞';
-    return document.getElementById('abbreviateCheckbox').checked
+    return globalAbbreviationEnabled()
         ? abbreviate(num)
         : Math.floor(num).toLocaleString();
 }
@@ -273,3 +273,5 @@ window.addEventListener('DOMContentLoaded', () => {
     buildSimRows();
     recalc();
 });
+
+window.addEventListener('eros:abbreviation-change', recalc);

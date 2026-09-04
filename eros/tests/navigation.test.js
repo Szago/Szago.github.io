@@ -25,15 +25,18 @@ const context = {
 };
 
 vm.createContext(context);
-vm.runInContext(`${source}\nthis.__erosTest = { EROS_BASE, EROS_TOOLS, isEmbeddedTool, toolForCurrentPage, selectedWorkspaceTool, sidebarHTML, workspaceHref, workspaceToolUrl, workspaceHistoryUrl, loadShell };`, context);
+vm.runInContext(`${source}\nthis.__erosTest = { EROS_BASE, EROS_ABBREVIATION_KEY, EROS_TOOLS, isEmbeddedTool, toolForCurrentPage, selectedWorkspaceTool, sidebarHTML, topBarHTML, globalAbbreviationEnabled, workspaceHref, workspaceToolUrl, workspaceHistoryUrl, loadShell };`, context);
 
 const {
     EROS_BASE,
+    EROS_ABBREVIATION_KEY,
     EROS_TOOLS,
     isEmbeddedTool,
     toolForCurrentPage,
     selectedWorkspaceTool,
     sidebarHTML,
+    topBarHTML,
+    globalAbbreviationEnabled,
     workspaceHref,
     workspaceToolUrl,
     workspaceHistoryUrl,
@@ -41,6 +44,7 @@ const {
 } = context.__erosTest;
 
 assert.equal(EROS_BASE, '/eros');
+assert.equal(EROS_ABBREVIATION_KEY, 'eros-abbreviate-large-values');
 assert.equal(EROS_TOOLS.length, 11);
 assert.equal(new Set(EROS_TOOLS.map(tool => tool.id)).size, EROS_TOOLS.length);
 assert.equal(new Set(EROS_TOOLS.map(tool => tool.navId)).size, EROS_TOOLS.length);
@@ -53,6 +57,13 @@ assert.doesNotMatch(sidebar, /href="\/eros\/Tools\//);
 assert.doesNotMatch(sidebar, /data-tool="leaderboard"/);
 assert.match(sidebar, /class="sidebar-header-action" href="\/index\.html"/);
 assert.match(sidebar, /class="sidebar-header-action" type="button" onclick="toggleSidebar\(\)"/);
+
+const topBar = topBarHTML('Test Calculator', 'none');
+assert.match(topBar, /id="global-abbreviation-toggle"/);
+assert.match(topBar, /Abbreviate large values/);
+assert.equal(globalAbbreviationEnabled(), true);
+windowMock.localStorage = { getItem: () => 'false' };
+assert.equal(globalAbbreviationEnabled(), false);
 
 const unitStats = EROS_TOOLS.find(tool => tool.id === 'unitstats');
 assert.equal(unitStats.accent, '#ec4899');
@@ -82,6 +93,17 @@ const calculatorPages = [
 for (const page of calculatorPages) {
     const html = fs.readFileSync(path.join(erosRoot, page), 'utf8');
     assert.match(html, /style\.css[\s\S]*calculator-theme\.css/, `Shared calculator theme must load last: ${page}`);
+}
+
+for (const page of [
+    'Tools/Tool1_levelcost/tool.html',
+    'Tools/Tool3_silverincome/tool.html',
+    'Tools/Tool6_networth/tool.html',
+    'Tools/Tool7_classstatue/tool.html',
+    'Tools/Tool8_unitstats/tool.html'
+]) {
+    const html = fs.readFileSync(path.join(erosRoot, page), 'utf8');
+    assert.doesNotMatch(html, /id="(?:displayModeCheckbox|abbreviateCheckbox)"/, `Local abbreviation toggle remains: ${page}`);
 }
 
 for (const tool of EROS_TOOLS) {

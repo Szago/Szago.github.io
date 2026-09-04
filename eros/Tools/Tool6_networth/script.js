@@ -36,7 +36,7 @@ function calculateNetWorth() {
     const resultElement = document.getElementById('netWorthResult');
     const tableElement = document.getElementById('netWorthTable');
     const charCountElement = document.getElementById('characterCount');
-    const useAbbreviatedDisplay = document.getElementById('displayModeCheckbox').checked;
+    const useAbbreviatedDisplay = globalAbbreviationEnabled();
 
     // Parse levels: split by comma, remove whitespace, filter out non-numbers
     const levelsArray = levelInput.split(',')
@@ -74,3 +74,5 @@ function calculateNetWorth() {
     charCountElement.textContent = `${levelsArray.length} Character${levelsArray.length > 1 ? 's' : ''} Tracked`;
     tableElement.innerHTML = tableHTML;
 }
+
+window.addEventListener('eros:abbreviation-change', calculateNetWorth);

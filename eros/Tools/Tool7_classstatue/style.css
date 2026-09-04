@@ -33,10 +33,10 @@
    ==================================================================== */
 .top-panel { margin-bottom: 25px; }
 
-/* Income controls in a single row; toggle sits in the last column */
+/* Income controls in a single row */
 .controls-row {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr auto;
+    grid-template-columns: repeat(3, 1fr);
     gap: 24px;
     align-items: end;
 }
@@ -242,4 +242,5 @@ input:checked + .slider-toggle:before { transform: translateX(20px); }
 @media (max-width: 1000px) {
     .top-grid { grid-template-columns: 1fr; gap: 25px; }
     .split-grid { grid-template-columns: 1fr; }
+    .controls-row { grid-template-columns: 1fr; }
 }

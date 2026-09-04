@@ -3,8 +3,50 @@
 /* --- CARDS & GRID --- */
 .dashboard-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 25px;
+    width: 100%;
+    max-width: 725px;
+}
+
+.setup-card,
+.progress-card {
+    aspect-ratio: 1 / 1;
+}
+
+.card.setup-card,
+.card.progress-card {
+    min-height: 0;
+    padding: 20px;
+    overflow: hidden;
+}
+
+.setup-card .card-header,
+.progress-card .card-header {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+}
+
+.setup-card .input-group,
+.progress-card .input-group {
+    margin-bottom: 14px;
+}
+
+.setup-card label,
+.progress-card label {
+    margin-bottom: 6px;
+}
+
+.setup-card input,
+.setup-card select,
+.progress-card input {
+    padding: 10px;
+}
+
+.setup-card small {
+    margin-top: 3px;
+    font-size: 0.7rem;
+    line-height: 1.3;
 }
 
 .card {
@@ -29,6 +71,12 @@
 .input-group { margin-bottom: 20px; }
 .input-row { display: flex; gap: 15px; }
 
+.progress-card .input-row {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    gap: 12px;
+}
+
 label { color: var(--text-dim); font-size: 0.85rem; margin-bottom: 8px; display: block; }
 
 input, select {
@@ -49,15 +97,11 @@ small { color: #666; font-size: 0.75rem; margin-top: 5px; display: block; }
 
 /* --- RESULTS AREA --- */
 .results-grid {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    column-gap: 25px;
-    row-gap: 20px;
+    display: contents;
 }
 
 .results-grid > .card {
-    grid-column: 1 / span 2;
+    grid-column: 1 / -1;
 }
 
 .result-card-split {
@@ -106,9 +150,23 @@ small { color: #666; font-size: 0.75rem; margin-top: 5px; display: block; }
 }
 
 .leeway-content {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
     align-items: center;
+    margin-inline: -25px;
+}
+
+.leeway-text,
+.leeway-status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.leeway-content .result-divider-v {
+    margin: 0;
 }
 
 .status-badge {
@@ -127,8 +185,20 @@ small { color: #666; font-size: 0.75rem; margin-top: 5px; display: block; }
 
 .overdue { color: #f44336; opacity: 0.8; }
 
-@media (max-width: 804px) {
-    .results-grid > .card {
-        grid-column: 1;
+@media (max-width: 800px) {
+    .dashboard-grid {
+        grid-template-columns: minmax(0, 520px);
+        max-width: 520px;
     }
+
+    .setup-card,
+    .progress-card {
+        aspect-ratio: auto;
+    }
+
+    .results-grid > .card { grid-column: 1; }
+}
+
+@media (max-width: 600px) {
+    .leeway-content { margin-inline: -18px; }
 }

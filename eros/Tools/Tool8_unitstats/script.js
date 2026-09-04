@@ -101,7 +101,7 @@ function abbreviate(value) {
 }
 
 function formatCore(value) {
-    return document.getElementById('abbreviateCheckbox').checked ? abbreviate(value) : formatter.format(value);
+    return globalAbbreviationEnabled() ? abbreviate(value) : formatter.format(value);
 }
 
 function renderStatCards(values) {
@@ -251,7 +251,6 @@ function saveState() {
         level: clampInteger(document.getElementById('levelInput').value, 1, MAX_LEVEL),
         rank: clampInteger(document.getElementById('rankInput').value, 1, MAX_RANK),
         affection: clampInteger(document.getElementById('affectionInput').value, 1, MAX_AFFECTION),
-        abbreviate: document.getElementById('abbreviateCheckbox').checked,
         statues
     }));
 }
@@ -268,7 +267,6 @@ function restoreState(state) {
     document.getElementById('levelInput').value = clampInteger(state.level || 221, 1, MAX_LEVEL);
     document.getElementById('rankInput').value = clampInteger(state.rank || 15, 1, MAX_RANK);
     document.getElementById('affectionInput').value = clampInteger(state.affection || 1, 1, MAX_AFFECTION);
-    document.getElementById('abbreviateCheckbox').checked = Boolean(state.abbreviate);
 
     CORE_STATS.forEach(stat => {
         const saved = state.statues && state.statues[stat.key];
@@ -316,7 +314,7 @@ characterSearch.addEventListener('blur', () => {
 document.getElementById('levelInput').addEventListener('input', recalculate);
 document.getElementById('rankInput').addEventListener('input', recalculate);
 document.getElementById('affectionInput').addEventListener('input', recalculate);
-document.getElementById('abbreviateCheckbox').addEventListener('change', recalculate);
 document.getElementById('resetModifiers').addEventListener('click', resetModifiers);
+window.addEventListener('eros:abbreviation-change', recalculate);
 
 initialize();

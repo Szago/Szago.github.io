@@ -6,7 +6,7 @@ function toggleSidebar() {
 function calculateIncome() {
     const idleSilverPerMinute = parseFloat(document.getElementById('idleSilver').value) || 0;
     const rushes = parseInt(document.getElementById('rushes').value);
-    const abbreviateNumbers = document.getElementById('abbreviateCheckbox').checked;
+    const abbreviateNumbers = globalAbbreviationEnabled();
 
     const idleSilverPerDay = idleSilverPerMinute * 60 * 24; 
     const rushBonusPerDay = idleSilverPerMinute * 60 * 2 * rushes; 
@@ -49,3 +49,5 @@ function abbreviateNumber(num) {
 function goBack() {
     window.location.href = "/eros/?tool=silver";
 }
+
+window.addEventListener('eros:abbreviation-change', calculateIncome);

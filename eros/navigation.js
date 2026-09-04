@@ -1,4 +1,5 @@
 const EROS_BASE = '/eros';
+const EROS_ABBREVIATION_KEY = 'eros-abbreviate-large-values';
 
 const EROS_TOOLS = [
     {
@@ -197,12 +198,65 @@ function topBarHTML(pageTitle, alertType, alertMsg) {
             <div class="header-section"><h1>${pageTitle}</h1></div>
             ${alertHTML}
             <div class="header-section">
-                <div class="current-date-box">
-                    <i class="far fa-clock"></i>
-                    <input type="datetime-local" id="current-date" readonly>
+                <div class="header-tools">
+                    <div class="current-date-box">
+                        <i class="far fa-clock"></i>
+                        <input type="datetime-local" id="current-date" readonly>
+                    </div>
+                    <label class="global-abbreviation-toggle">
+                        <input type="checkbox" id="global-abbreviation-toggle">
+                        <span class="global-toggle-track" aria-hidden="true"></span>
+                        <span>Abbreviate large values</span>
+                    </label>
                 </div>
             </div>
         </header>`;
+}
+
+function globalAbbreviationEnabled() {
+    try {
+        const stored = window.localStorage.getItem(EROS_ABBREVIATION_KEY);
+        return stored === null ? true : stored === 'true';
+    } catch (error) {
+        return true;
+    }
+}
+
+function dispatchGlobalAbbreviationChange(enabled) {
+    window.dispatchEvent(new CustomEvent('eros:abbreviation-change', {
+        detail: { enabled }
+    }));
+}
+
+function syncGlobalAbbreviationControl(enabled) {
+    const control = document.getElementById('global-abbreviation-toggle');
+    if (control) control.checked = enabled;
+}
+
+function setGlobalAbbreviation(enabled) {
+    try {
+        window.localStorage.setItem(EROS_ABBREVIATION_KEY, String(enabled));
+    } catch (error) {
+        // The setting still applies to the current page if storage is blocked.
+    }
+
+    syncGlobalAbbreviationControl(enabled);
+    dispatchGlobalAbbreviationChange(enabled);
+}
+
+function bindGlobalAbbreviationControl() {
+    const control = document.getElementById('global-abbreviation-toggle');
+    if (!control) return;
+
+    control.checked = globalAbbreviationEnabled();
+    control.addEventListener('change', () => setGlobalAbbreviation(control.checked));
+
+    window.addEventListener('storage', event => {
+        if (event.key !== EROS_ABBREVIATION_KEY) return;
+        const enabled = globalAbbreviationEnabled();
+        syncGlobalAbbreviationControl(enabled);
+        dispatchGlobalAbbreviationChange(enabled);
+    });
 }
 
 function startClock() {
@@ -254,6 +308,7 @@ function loadShell(pageTitle, alertType, alertMsg) {
     const mainContent = document.querySelector('.main-content');
     if (mainContent) mainContent.insertAdjacentHTML('afterbegin', topBarHTML(pageTitle, alertType, alertMsg));
     startClock();
+    bindGlobalAbbreviationControl();
 
 }
 

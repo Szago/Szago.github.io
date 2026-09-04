@@ -1,6 +1,5 @@
 let levels = null;
 let isRangeMode = false;
-let useAbbreviatedDisplayMode = false;
 
 async function init() {
     try {
@@ -40,13 +39,9 @@ function calculateTotalCost(level) {
     return levels.slice(0, endIdx + 1).reduce((a, b) => a + b, 0);
 }
 
-function updateDisplayMode() {
-    useAbbreviatedDisplayMode = document.getElementById('displayModeCheckbox').checked;
-    retrieveCost();
-}
-
 function retrieveCost() {
     if (!levels) return;
+    const useAbbreviatedDisplayMode = globalAbbreviationEnabled();
     
     const resLeft = document.getElementById('resultLeft');
     const resRight = document.getElementById('resultRight');
@@ -100,3 +95,5 @@ function retrieveCost() {
         tableCont.innerHTML = `<div class="empty-state">Enter valid levels (1-240)</div>`;
     }
 }
+
+window.addEventListener('eros:abbreviation-change', retrieveCost);

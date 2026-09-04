@@ -30,7 +30,7 @@
 .setup-panel { margin-bottom: 25px; }
 .setup-grid {
     display: grid;
-    grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(110px, 0.65fr)) auto;
+    grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(110px, 0.65fr));
     gap: 20px;
     align-items: end;
 }
@@ -265,14 +265,12 @@ input:disabled { opacity: 0.55; }
 
 @media (max-width: 1200px) {
     .setup-grid { grid-template-columns: minmax(250px, 2fr) repeat(3, minmax(100px, 0.65fr)); }
-    .toggle-switch { grid-column: 1 / -1; }
     .calculator-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {
     .setup-grid { grid-template-columns: 1fr 1fr; }
     .character-picker { grid-column: 1 / -1; }
-    .toggle-switch { grid-column: auto; }
 }
 
 @media (max-width: 600px) {
