@@ -143,3 +143,14 @@
     min-width: 48px; text-align: center;
     font-variant-numeric: tabular-nums;
 }
+
+@media (max-width: 600px) {
+    .cal-wrap { grid-template-columns: minmax(72px, 92px) minmax(0, 1fr); }
+    .cal-rowlabel { padding-inline: 8px; font-size: 0.72rem; }
+    .cal-toolbar,
+    .cal-tools-left,
+    .cal-tools-right { width: 100%; }
+    .cal-tools-left,
+    .cal-tools-right { justify-content: space-between; }
+    .cal-btn { min-height: 40px; padding-inline: 10px; }
+}

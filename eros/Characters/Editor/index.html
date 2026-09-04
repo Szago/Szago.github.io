@@ -186,6 +186,34 @@
         .cal-edit .row-del { background: none; border: none; color: #ff6b6b; cursor: pointer; padding: 6px 8px; }
         .cal-edit .row-del:hover { color: #fff; }
         .cal-edit-empty { padding: 22px 16px; color: var(--dim); font-style: italic; }
+
+        @media (max-width: 700px) {
+            .topbar { align-items: stretch; padding: 14px; }
+            .topbar h1 { width: 100%; }
+            .topbar button { flex: 1 1 130px; justify-content: center; min-height: 44px; }
+            .tabbar { padding: 0 14px; }
+            .tabbar .tab { flex: 1 1 0; min-width: 0; min-height: 48px; padding-inline: 8px; font-size: 0.84rem; }
+            .tabview { padding: 16px 14px 28px; }
+            .view-actions > button { flex: 1 1 140px; justify-content: center; min-height: 44px; }
+            .form-panel { padding: 16px; }
+            .form-head { align-items: flex-start; }
+            .output-head { align-items: stretch; flex-wrap: wrap; }
+            .output-head h2 { width: 100%; }
+            .output-head button { flex: 1; justify-content: center; }
+            .ed-tabbar { overflow-x: auto; }
+            .ed-tab { flex: 0 0 auto; min-width: 100px; min-height: 48px; }
+            .ed-tabpanels { padding: 14px; }
+            .ed-tile { padding: 14px; }
+            .tierlist {
+                min-width: 520px;
+                grid-template-columns: 54px repeat(3, minmax(130px, 1fr));
+            }
+            #view-tierlist { overflow-x: auto; }
+            .cal-controls > button { flex: 1 1 140px; justify-content: center; min-height: 44px; }
+            .cal-rownames-grid { grid-template-columns: 1fr; }
+            .cal-edit-wrap { max-width: 100%; overflow-x: auto; }
+            .cal-edit { min-width: 680px; }
+        }
     </style>
 </head>
 <body>
@@ -279,19 +307,21 @@
 
         <div class="cal-preview" id="calPreview"></div>
 
-        <table class="cal-edit">
-            <thead>
-                <tr>
-                    <th class="col-name">Event</th>
-                    <th>Start</th>
-                    <th>End</th>
-                    <th>Row</th>
-                    <th>Color</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody id="calRowsBody"></tbody>
-        </table>
+        <div class="cal-edit-wrap">
+            <table class="cal-edit">
+                <thead>
+                    <tr>
+                        <th class="col-name">Event</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Row</th>
+                        <th>Color</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="calRowsBody"></tbody>
+            </table>
+        </div>
 
         <div class="output">
             <div class="output-head">

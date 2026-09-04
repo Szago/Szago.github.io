@@ -244,3 +244,31 @@ input:checked + .slider-toggle:before { transform: translateX(20px); }
     .split-grid { grid-template-columns: 1fr; }
     .controls-row { grid-template-columns: 1fr; }
 }
+
+@media (max-width: 700px) {
+    .statue-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .summary-top,
+    .budget-row,
+    .sim-head,
+    .sim-foot,
+    .total-row {
+        gap: 10px;
+    }
+    .summary-top > :last-child,
+    .budget-row > :last-child,
+    .sim-head > :last-child,
+    .sim-foot > :last-child,
+    .total-row > :last-child {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        text-align: right;
+    }
+}
+
+@media (max-width: 420px) {
+    .statue-inputs,
+    .income-readout { grid-template-columns: 1fr; }
+    .statue-row-label { align-items: flex-start; flex-wrap: wrap; }
+    .summary-stats { grid-template-columns: 1fr; gap: 10px; }
+    .summary-stats div { flex-direction: row; justify-content: space-between; gap: 12px; }
+}

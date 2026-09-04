@@ -213,6 +213,54 @@ input:focus { outline: none; border-color: var(--accent); }
     }
 }
 
+@media (max-width: 600px) {
+    .dashboard-grid,
+    .result-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .preset-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .btn-preset {
+        min-height: 44px;
+    }
+
+    .input-grid-mini {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .mode-toggle-group {
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .radio-container {
+        min-height: 32px;
+    }
+
+    .result-card-full {
+        padding: 24px 18px !important;
+    }
+
+    .large-value {
+        box-sizing: border-box;
+        max-width: 100%;
+        padding: 16px;
+        font-size: clamp(2rem, 13vw, 3.5rem);
+        overflow-wrap: anywhere;
+    }
+
+    .input-row-compact {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 0;
+    }
+}
+
 /* On 1080p displays the browser viewport is usually about 930px tall. The
    standard 100px bottom gutter made this otherwise fitting page one pixel
    taller than that viewport, which caused a redundant scrollbar. */

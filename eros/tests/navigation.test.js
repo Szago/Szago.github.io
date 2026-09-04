@@ -25,7 +25,7 @@ const context = {
 };
 
 vm.createContext(context);
-vm.runInContext(`${source}\nthis.__erosTest = { EROS_BASE, EROS_ABBREVIATION_KEY, EROS_TOOLS, isEmbeddedTool, toolForCurrentPage, selectedWorkspaceTool, sidebarHTML, topBarHTML, globalAbbreviationEnabled, workspaceHref, workspaceToolUrl, workspaceHistoryUrl, loadShell };`, context);
+vm.runInContext(`${source}\nthis.__erosTest = { EROS_BASE, EROS_ABBREVIATION_KEY, EROS_TOOLS, isEmbeddedTool, toolForCurrentPage, selectedWorkspaceTool, sidebarHTML, mobileNavigationHTML, topBarHTML, globalAbbreviationEnabled, workspaceHref, workspaceToolUrl, workspaceHistoryUrl, loadShell };`, context);
 
 const {
     EROS_BASE,
@@ -35,6 +35,7 @@ const {
     toolForCurrentPage,
     selectedWorkspaceTool,
     sidebarHTML,
+    mobileNavigationHTML,
     topBarHTML,
     globalAbbreviationEnabled,
     workspaceHref,
@@ -58,6 +59,11 @@ assert.doesNotMatch(sidebar, /data-tool="leaderboard"/);
 assert.match(sidebar, /class="sidebar-header-action" href="\/index\.html"/);
 assert.match(sidebar, /class="sidebar-header-action" type="button" onclick="toggleSidebar\(\)"/);
 
+const mobileNavigation = mobileNavigationHTML();
+assert.match(mobileNavigation, /class="mobile-nav-toggle"/);
+assert.match(mobileNavigation, /aria-controls="sidebar"/);
+assert.match(mobileNavigation, /class="sidebar-backdrop"/);
+
 const topBar = topBarHTML('Test Calculator', 'none');
 assert.match(topBar, /id="global-abbreviation-toggle"/);
 assert.match(topBar, /Abbreviate large values/);
@@ -75,6 +81,11 @@ assert.match(sharedShell, /grid-template-columns: var\(--nav-icon-column\) minma
 assert.match(sharedShell, /\.sidebar\.collapsed \.nav-links li a[\s\S]*?grid-template-columns: 1fr/);
 assert.match(sharedShell, /\.sidebar\.collapsed \.nav-scroll::\-webkit-scrollbar[\s\S]*?width: 0/);
 assert.match(sharedShell, /html\.eros-embedded \{[\s\S]*?scrollbar-gutter: stable/);
+assert.match(sharedShell, /@media \(max-width: 900px\)[\s\S]*?\.sidebar\.mobile-open/);
+assert.match(sharedShell, /html\.eros-embedded\.eros-mobile-shell \.top-bar/);
+
+const workspaceStyle = fs.readFileSync(path.join(erosRoot, 'erosStyle.css'), 'utf8');
+assert.match(workspaceStyle, /@media \(max-width: 900px\)[\s\S]*?\.workspace-main[\s\S]*?left: 0/);
 
 const calculatorTheme = fs.readFileSync(path.join(erosRoot, 'calculator-theme.css'), 'utf8');
 assert.match(calculatorTheme, /--card-bg: #1e1e26/);

@@ -202,3 +202,41 @@ small { color: #666; font-size: 0.75rem; margin-top: 5px; display: block; }
 @media (max-width: 600px) {
     .leeway-content { margin-inline: -18px; }
 }
+
+@media (max-width: 520px) {
+    .dashboard-grid { max-width: 100%; }
+
+    .result-card-split {
+        flex-direction: column;
+        gap: 20px;
+        padding: 22px 18px !important;
+    }
+
+    .result-card-split .result-divider-v {
+        width: 100%;
+        height: 1px;
+        margin: 0;
+    }
+
+    .time-display,
+    .time-display.primary {
+        flex-wrap: wrap;
+        font-size: clamp(1.65rem, 9vw, 2.2rem);
+    }
+
+    .leeway-content {
+        grid-template-columns: 1fr;
+        gap: 18px;
+        margin-inline: 0;
+    }
+
+    .leeway-content .result-divider-v {
+        width: 100%;
+        height: 1px;
+    }
+
+    .status-badge {
+        max-width: 100%;
+        overflow-wrap: anywhere;
+    }
+}

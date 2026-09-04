@@ -182,6 +182,76 @@ function sidebarHTML() {
         </nav>`;
 }
 
+function mobileNavigationHTML() {
+    return `
+        <button class="mobile-nav-toggle" type="button" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">
+            <i class="fas fa-bars" aria-hidden="true"></i>
+        </button>
+        <button class="sidebar-backdrop" type="button" aria-label="Close navigation" tabindex="-1"></button>`;
+}
+
+function isMobileNavigation() {
+    return window.matchMedia('(max-width: 900px)').matches;
+}
+
+function syncEmbeddedMobileShell() {
+    const mobile = isMobileNavigation();
+    document.querySelectorAll('.workspace-frame').forEach(frame => {
+        try {
+            frame.contentDocument?.documentElement.classList.toggle('eros-mobile-shell', mobile);
+        } catch (error) {
+            // Tool frames are same-origin in production; ignore transient load states.
+        }
+    });
+}
+
+function setMobileNavigation(open) {
+    const sidebar = document.getElementById('sidebar');
+    const toggle = document.querySelector('.mobile-nav-toggle');
+    const backdrop = document.querySelector('.sidebar-backdrop');
+    if (!sidebar || !toggle || !backdrop) return;
+
+    sidebar.classList.toggle('mobile-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+    toggle.querySelector('i')?.classList.toggle('fa-xmark', open);
+    toggle.querySelector('i')?.classList.toggle('fa-bars', !open);
+    backdrop.tabIndex = open ? 0 : -1;
+}
+
+function syncSidebarMode() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+
+    setMobileNavigation(false);
+    if (isMobileNavigation()) {
+        sidebar.classList.remove('collapsed');
+        syncEmbeddedMobileShell();
+        return;
+    }
+
+    sidebar.classList.toggle('collapsed', getCookie('sidebarStatus') === 'collapsed');
+    syncEmbeddedMobileShell();
+}
+
+function bindMobileNavigation() {
+    const sidebar = document.getElementById('sidebar');
+    const toggle = document.querySelector('.mobile-nav-toggle');
+    const backdrop = document.querySelector('.sidebar-backdrop');
+    if (!sidebar || !toggle || !backdrop) return;
+
+    toggle.addEventListener('click', () => setMobileNavigation(!sidebar.classList.contains('mobile-open')));
+    backdrop.addEventListener('click', () => setMobileNavigation(false));
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') setMobileNavigation(false);
+    });
+
+    const mobileQuery = window.matchMedia('(max-width: 900px)');
+    if (mobileQuery.addEventListener) mobileQuery.addEventListener('change', syncSidebarMode);
+    else mobileQuery.addListener?.(syncSidebarMode);
+    syncSidebarMode();
+}
+
 function topBarHTML(pageTitle, alertType, alertMsg) {
     const alertHTML = (alertType === 'none' || !alertType)
         ? '<div class="header-section"></div>'
@@ -361,7 +431,8 @@ function loadWorkspace() {
     const workspace = document.getElementById('workspaceMain');
     if (!workspace) return;
 
-    document.body.insertAdjacentHTML('afterbegin', sidebarHTML());
+    document.body.insertAdjacentHTML('afterbegin', `${sidebarHTML()}${mobileNavigationHTML()}`);
+    bindMobileNavigation();
 
     EROS_TOOLS.forEach(tool => {
         const frame = document.createElement('iframe');
@@ -376,6 +447,11 @@ function loadWorkspace() {
         frame.addEventListener('load', () => {
             if (!frame.hasAttribute('src')) return;
             frame.dataset.loaded = 'true';
+            try {
+                frame.contentDocument?.documentElement.classList.toggle('eros-mobile-shell', isMobileNavigation());
+            } catch (error) {
+                // Ignore a frame that navigated away from the same-origin tool document.
+            }
             if (frame.classList.contains('active')) {
                 document.getElementById('workspaceLoading')?.classList.add('hidden');
             }
@@ -387,6 +463,7 @@ function loadWorkspace() {
         link.addEventListener('click', event => {
             event.preventDefault();
             activateWorkspaceTool(link.dataset.tool);
+            if (isMobileNavigation()) setMobileNavigation(false);
         });
     });
 
@@ -413,6 +490,11 @@ document.cookie = 'collapsedCats=; path=/; max-age=0; SameSite=Lax';
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     if (!sidebar) return;
+
+    if (isMobileNavigation()) {
+        setMobileNavigation(!sidebar.classList.contains('mobile-open'));
+        return;
+    }
 
     sidebar.classList.toggle('collapsed');
 

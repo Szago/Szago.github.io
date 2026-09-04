@@ -54,6 +54,13 @@
     color: var(--text-main);
 }
 
+@media (max-width: 900px) {
+    .workspace-main,
+    .sidebar.collapsed ~ .workspace-main {
+        left: 0;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .workspace-main,
     .workspace-frame {

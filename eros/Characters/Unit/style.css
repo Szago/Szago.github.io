@@ -154,4 +154,20 @@
 
 @media (max-width: 600px) {
     .game-summary-grid { grid-template-columns: 1fr; }
+    .char-tile { padding: 18px; }
+    .tab-bar {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .tab-btn { flex: 0 0 auto; min-width: 104px; min-height: 48px; }
+    .tab-panels { padding: 20px 18px; }
+    .panel-empty { padding: 40px 10px; }
+    .panel-text table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    .meta-row { gap: 14px; }
+    .meta-label { min-width: 0; }
+    .meta-value { overflow-wrap: anywhere; text-align: right; }
 }

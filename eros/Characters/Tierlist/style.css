@@ -113,5 +113,48 @@
     transform: translateX(-50%) scale(1);
 }
 
+@media (max-width: 600px) {
+    .main-content > .card {
+        padding: 18px;
+    }
+
+    .tierlist {
+        grid-template-columns: 54px minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .corner,
+    .col-head { display: none; }
+
+    .tier-label {
+        grid-row: span 3;
+        min-height: 232px;
+    }
+
+    .tier-cell {
+        position: relative;
+        min-height: 72px;
+        padding: 26px 7px 7px;
+    }
+
+    .tier-cell::before {
+        content: attr(data-col);
+        position: absolute;
+        top: 7px;
+        left: 8px;
+        color: var(--text-dim);
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.7px;
+        text-transform: uppercase;
+    }
+
+    .unit-card { width: 64px; height: 64px; }
+
+    .unit-details {
+        display: none;
+    }
+}
+
 /* Card images & links come from characters.json (matched by name/id),
    placed into cells via tierlist.json — no per-card CSS needed. */

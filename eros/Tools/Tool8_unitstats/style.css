@@ -282,4 +282,7 @@ input:disabled { opacity: 0.55; }
     .card { padding: 18px; }
     .account-header { align-items: flex-start; flex-wrap: wrap; }
     .account-header .reset-btn { margin-left: 0; }
+    .character-result { align-items: flex-start; }
+    .character-result small { white-space: normal; text-align: right; }
+    .statue-field { grid-template-columns: minmax(0, 1fr); gap: 7px; }
 }

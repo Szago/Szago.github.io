@@ -108,5 +108,12 @@ td { padding: 10px 12px; border-bottom: 1px solid #222; font-size: 0.9rem; }
 }
 
 @media (max-width: 480px) {
-    .input-row-compact { gap: 15px; width: 100%; }
+    .dashboard-grid { max-width: 100%; }
+    .input-row-compact { gap: 12px; width: 100%; }
+    .mode-tabs { overflow-x: auto; }
+    .tab { min-width: max-content; }
+    .value-display {
+        font-size: clamp(1.55rem, 9vw, 2.2rem);
+        overflow-wrap: anywhere;
+    }
 }

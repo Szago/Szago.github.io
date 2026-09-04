@@ -131,3 +131,15 @@ td { padding: 12px 15px; border-bottom: 1px solid #222; }
 
     .table-card { grid-column: 1; }
 }
+
+@media (max-width: 480px) {
+    .dashboard-grid { max-width: 100%; }
+    .hero-result-card { border-right-width: 0; border-bottom: 4px solid var(--accent); }
+    .value-display { gap: 10px; }
+    .silver-icon { font-size: 2rem; }
+    #netWorthResult {
+        min-width: 0;
+        font-size: clamp(1.8rem, 11vw, 3.2rem);
+        overflow-wrap: anywhere;
+    }
+}

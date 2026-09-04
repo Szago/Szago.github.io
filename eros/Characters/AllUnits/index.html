@@ -161,10 +161,17 @@
             .filter-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
             .filter-heading { align-items: flex-start; }
             .filter-status { align-items: flex-end; flex-direction: column-reverse; gap: 7px; }
+            .unit-grid { gap: 12px; }
         }
         @media (max-width: 430px) {
             .filter-grid { grid-template-columns: 1fr; }
             .filter-menu { right: 0; max-width: none; }
+            .filter-panel { padding: 16px; }
+            .filter-heading { align-items: stretch; flex-direction: column; }
+            .filter-status { align-items: center; flex-direction: row; justify-content: space-between; }
+            .unit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .unit-tile { min-width: 0; padding: 9px; }
+            .unit-tile .name { overflow-wrap: anywhere; }
         }
     </style>
 </head>
