@@ -212,3 +212,12 @@ input:focus { outline: none; border-color: var(--accent); }
         grid-column: 1;
     }
 }
+
+/* On 1080p displays the browser viewport is usually about 930px tall. The
+   standard 100px bottom gutter made this otherwise fitting page one pixel
+   taller than that viewport, which caused a redundant scrollbar. */
+@media (min-width: 1200px) and (max-height: 1000px) {
+    .main-content {
+        padding-bottom: 50px;
+    }
+}

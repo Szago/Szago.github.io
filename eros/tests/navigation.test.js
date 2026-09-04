@@ -74,6 +74,7 @@ assert.match(sharedShell, /--nav-icon-column: 34px/);
 assert.match(sharedShell, /grid-template-columns: var\(--nav-icon-column\) minmax\(0, 1fr\) auto/);
 assert.match(sharedShell, /\.sidebar\.collapsed \.nav-links li a[\s\S]*?grid-template-columns: 1fr/);
 assert.match(sharedShell, /\.sidebar\.collapsed \.nav-scroll::\-webkit-scrollbar[\s\S]*?width: 0/);
+assert.match(sharedShell, /html\.eros-embedded \{[\s\S]*?scrollbar-gutter: stable/);
 
 const calculatorTheme = fs.readFileSync(path.join(erosRoot, 'calculator-theme.css'), 'utf8');
 assert.match(calculatorTheme, /--card-bg: #1e1e26/);

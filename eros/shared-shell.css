@@ -267,6 +267,10 @@ html.eros-embedded body {
     min-height: 100%;
 }
 
+html.eros-embedded {
+    scrollbar-gutter: stable;
+}
+
 body.eros-embedded-body {
     display: block;
 }
