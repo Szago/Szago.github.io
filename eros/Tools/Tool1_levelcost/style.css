@@ -3,6 +3,19 @@
     --input-bg: #16161d;
 }
 
+/* Keep this calculator to two compact dashboard columns instead of allowing
+   each section to stretch across the whole workspace. */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 430px) minmax(0, 600px);
+    gap: 25px;
+    width: 100%;
+    max-width: 1055px;
+}
+
+.control-panel { grid-column: 1; }
+.results-container { grid-column: 2; }
+
 /* Fix Overlapping Inputs */
 .input-row-compact {
     display: flex;
@@ -78,3 +91,22 @@ input[type="number"] { width: 100%; padding: 12px 12px 12px 40px; background: va
 table { width: 100%; border-collapse: collapse; }
 th { background: #16161d; color: var(--accent); padding: 12px; text-align: left; position: sticky; top: 0; font-size: 0.8rem; }
 td { padding: 10px 12px; border-bottom: 1px solid #222; font-size: 0.9rem; }
+
+@media (max-width: 1140px) {
+    .dashboard-grid {
+        grid-template-columns: minmax(0, 430px);
+        max-width: 430px;
+    }
+
+    .control-panel,
+    .results-container,
+    .table-card {
+        grid-column: 1;
+    }
+
+    .results-container { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+    .input-row-compact { gap: 15px; width: 100%; }
+}

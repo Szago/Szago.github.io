@@ -3,6 +3,16 @@
     --input-bg: #16161d;
 }
 
+/* The overview and total form a compact pair; the breakdown spans that pair,
+   not the full page. */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 430px));
+    gap: 25px;
+    width: 100%;
+    max-width: 885px;
+}
+
 /* Hero Result Card */
 .hero-result-card {
     background: linear-gradient(135deg, #1e1e26 0%, #064e3b 100%);
@@ -112,3 +122,12 @@ table { width: 100%; border-collapse: collapse; }
 th { background: #16161d; color: var(--accent); padding: 15px; text-align: left; position: sticky; top: 0; font-size: 0.8rem; text-transform: uppercase; }
 td { padding: 12px 15px; border-bottom: 1px solid #222; }
 .empty-state { padding: 40px; text-align: center; color: #555; font-style: italic; }
+
+@media (max-width: 970px) {
+    .dashboard-grid {
+        grid-template-columns: minmax(0, 430px);
+        max-width: 430px;
+    }
+
+    .table-card { grid-column: 1; }
+}
