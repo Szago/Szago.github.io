@@ -149,8 +149,15 @@ input:focus { outline: none; border-color: var(--accent); }
 .btn-simulate:active { transform: translateY(0); }
 
 /* --- RESULT PANEL (The "Big Reveal" Look) --- */
-.result-card-full {
+.result-row {
     grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 25px;
+}
+
+.result-card-full {
+    grid-column: 1 / span 2;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -198,4 +205,10 @@ input:focus { outline: none; border-color: var(--accent); }
 .input-row-compact > div {
     flex: 1; /* Makes them share the width equally */
     margin-bottom: 10px; /* Reduces spacing slightly for compactness */
+}
+
+@media (max-width: 904px) {
+    .result-card-full {
+        grid-column: 1;
+    }
 }
