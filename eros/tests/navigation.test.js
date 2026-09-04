@@ -64,6 +64,26 @@ assert.match(sharedShell, /grid-template-columns: var\(--nav-icon-column\) minma
 assert.match(sharedShell, /\.sidebar\.collapsed \.nav-links li a[\s\S]*?grid-template-columns: 1fr/);
 assert.match(sharedShell, /\.sidebar\.collapsed \.nav-scroll::\-webkit-scrollbar[\s\S]*?width: 0/);
 
+const calculatorTheme = fs.readFileSync(path.join(erosRoot, 'calculator-theme.css'), 'utf8');
+assert.match(calculatorTheme, /--card-bg: #1e1e26/);
+assert.match(calculatorTheme, /\.card \{[\s\S]*?border-radius: 16px/);
+assert.match(calculatorTheme, /\.card-header \{[\s\S]*?border-bottom: 1px solid var\(--panel-border\)/);
+
+const calculatorPages = [
+    'Tools/Tool1_levelcost/tool.html',
+    'Tools/Tool2_sharddrop/tool.html',
+    'Tools/Tool3_silverincome/tool.html',
+    'Tools/Tool4_playroom/tool.html',
+    'Tools/Tool6_networth/tool.html',
+    'Tools/Tool7_classstatue/tool.html',
+    'Tools/Tool8_unitstats/tool.html'
+];
+
+for (const page of calculatorPages) {
+    const html = fs.readFileSync(path.join(erosRoot, page), 'utf8');
+    assert.match(html, /style\.css[\s\S]*calculator-theme\.css/, `Shared calculator theme must load last: ${page}`);
+}
+
 for (const tool of EROS_TOOLS) {
     assert.ok(fs.existsSync(path.join(erosRoot, tool.path)), `Missing tool page: ${tool.path}`);
     assert.equal(workspaceToolUrl(tool), `/eros${tool.path}?embedded=1`);

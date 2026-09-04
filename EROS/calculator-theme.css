@@ -1,0 +1,105 @@
+/*
+ * Shared visual language for EROS calculators.
+ *
+ * Tool stylesheets own layout and --accent. This file intentionally loads
+ * after them so common surfaces cannot drift away from the Class Statue
+ * calculator baseline.
+ */
+:root {
+    --card-bg: #1e1e26;
+    --input-bg: #16161d;
+    --panel-border: #2a2a33;
+    --control-border: #333;
+    --accent-soft: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.card {
+    box-sizing: border-box;
+    padding: 25px;
+    background: var(--card-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 22px;
+    padding-bottom: 15px;
+    color: var(--text-main);
+    border-bottom: 1px solid var(--panel-border);
+}
+
+.card-header > i {
+    color: var(--accent);
+    font-size: 1.3rem;
+}
+
+.card-header h2 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.input-group label,
+.card label {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+}
+
+input[type="number"],
+input[type="text"],
+input[type="search"],
+select {
+    box-sizing: border-box;
+    color: var(--text-main);
+    background: var(--input-bg);
+    border: 1px solid var(--control-border);
+    border-radius: 8px;
+    font-family: inherit;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input[type="number"]:focus,
+input[type="text"]:focus,
+input[type="search"]:focus,
+select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 12px var(--accent-soft);
+}
+
+.slider,
+.slider-toggle {
+    background: var(--control-border);
+}
+
+.table-container {
+    box-sizing: border-box;
+    background: var(--input-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    overflow: auto;
+}
+
+.empty-state {
+    padding: 40px 24px;
+    color: var(--text-dim);
+    text-align: center;
+    font-style: italic;
+}
+
+@media (max-width: 600px) {
+    .main-content {
+        padding: 20px;
+    }
+
+    .card {
+        padding: 18px;
+    }
+
+    .card-header {
+        margin-bottom: 18px;
+    }
+}
