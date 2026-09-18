@@ -97,6 +97,28 @@ const EROS_TOOLS = [
         badge: 'wip'
     },
     {
+        id: 'mod-installation',
+        navId: 'nav-mod-installation',
+        title: 'Mod Installation',
+        navLabel: 'Installation',
+        icon: 'fas fa-screwdriver-wrench',
+        accent: '#a855f7',
+        path: '/Modding/Installation/index.html',
+        category: 'modding',
+        badge: 'wip'
+    },
+    {
+        id: 'mod-list',
+        navId: 'nav-mod-list',
+        title: 'Mod List',
+        navLabel: 'Mod list',
+        icon: 'fas fa-puzzle-piece',
+        accent: '#a855f7',
+        path: '/Modding/ModList/index.html',
+        category: 'modding',
+        badge: 'wip'
+    },
+    {
         id: 'calendar',
         navId: 'nav-calendar',
         title: 'Calendar',
@@ -159,6 +181,7 @@ function sidebarHTML() {
     const visibleTools = EROS_TOOLS.filter(tool => tool.showInSidebar !== false);
     const calculators = visibleTools.filter(tool => tool.category === 'calculators');
     const characters = visibleTools.filter(tool => tool.category === 'characters');
+    const modding = visibleTools.filter(tool => tool.category === 'modding');
     const data = visibleTools.filter(tool => tool.category === 'data');
 
     return `
@@ -174,6 +197,7 @@ function sidebarHTML() {
                 ${categoryHTML('characters', 'fas fa-users', 'Characters', characters)}
                 ${categoryHTML('guides', 'fas fa-book-open', 'Guides', [], '<li class="coming-soon"><i class="fas fa-hourglass-half"></i><span>Coming soon</span></li>')}
                 ${categoryHTML('data', 'fas fa-database', 'Data', data)}
+                ${categoryHTML('modding', 'fas fa-code', 'Modding', modding)}
             </div>
 
             <ul class="nav-links bottom-nav">

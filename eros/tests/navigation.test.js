@@ -46,18 +46,22 @@ const {
 
 assert.equal(EROS_BASE, '/eros');
 assert.equal(EROS_ABBREVIATION_KEY, 'eros-abbreviate-large-values');
-assert.equal(EROS_TOOLS.length, 11);
+assert.equal(EROS_TOOLS.length, 13);
 assert.equal(new Set(EROS_TOOLS.map(tool => tool.id)).size, EROS_TOOLS.length);
 assert.equal(new Set(EROS_TOOLS.map(tool => tool.navId)).size, EROS_TOOLS.length);
 assert.equal(new Set(EROS_TOOLS.map(tool => tool.path)).size, EROS_TOOLS.length);
 
 const sidebar = sidebarHTML();
-assert.equal((sidebar.match(/data-tool=/g) || []).length, 10);
+assert.equal((sidebar.match(/data-tool=/g) || []).length, 12);
 assert.match(sidebar, /href="\/index\.html"/);
 assert.doesNotMatch(sidebar, /href="\/eros\/Tools\//);
 assert.doesNotMatch(sidebar, /data-tool="leaderboard"/);
 assert.match(sidebar, /class="sidebar-header-action" href="\/index\.html"/);
 assert.match(sidebar, /class="sidebar-header-action" type="button" onclick="toggleSidebar\(\)"/);
+assert.match(sidebar, /id="cat-modding"/);
+assert.match(sidebar, /data-tool="mod-installation"[\s\S]*?badge-wip/);
+assert.match(sidebar, /data-tool="mod-list"[\s\S]*?badge-wip/);
+assert.ok(sidebar.indexOf('id="cat-data"') < sidebar.indexOf('id="cat-modding"'));
 
 const mobileNavigation = mobileNavigationHTML();
 assert.match(mobileNavigation, /class="mobile-nav-toggle"/);
@@ -74,6 +78,36 @@ assert.equal(globalAbbreviationEnabled(), false);
 const unitStats = EROS_TOOLS.find(tool => tool.id === 'unitstats');
 assert.equal(unitStats.accent, '#ec4899');
 assert.match(fs.readFileSync(path.join(erosRoot, 'Tools', 'Tool8_unitstats', 'style.css'), 'utf8'), /--accent: #ec4899/);
+
+const modInstallation = EROS_TOOLS.find(tool => tool.id === 'mod-installation');
+const modList = EROS_TOOLS.find(tool => tool.id === 'mod-list');
+assert.equal(modInstallation.badge, 'wip');
+assert.equal(modList.badge, 'wip');
+assert.equal(modInstallation.category, 'modding');
+assert.equal(modList.category, 'modding');
+
+const modListScript = fs.readFileSync(path.join(erosRoot, 'Modding', 'ModList', 'script.js'), 'utf8');
+const modListPage = fs.readFileSync(path.join(erosRoot, 'Modding', 'ModList', 'index.html'), 'utf8');
+const modListStyle = fs.readFileSync(path.join(erosRoot, 'Modding', 'ModList', 'style.css'), 'utf8');
+assert.match(modListScript, /const MOD_TILE_COUNT = 20/);
+assert.match(modListScript, /screenshotSlots: 3/);
+assert.match(modListScript, /version: 'v0\.0\.0'/);
+assert.match(modListScript, /function updateViewer/);
+assert.match(modListScript, /function setCardExpanded/);
+assert.doesNotMatch(modListPage, /Mod slots/i);
+assert.match(modListPage, /class="expand-footer"/);
+assert.match(modListPage, /<span>Mod details<\/span>/);
+assert.match(modListPage, /loadShell\("Mod List", "none"\)/);
+assert.match(modListStyle, /grid-template-rows: 0fr/);
+assert.match(modListStyle, /\.expanded \.mod-details \{ grid-template-rows: 1fr; \}/);
+assert.doesNotMatch(modListStyle, /grid-column: 1 \/ -1/);
+
+const installationPage = fs.readFileSync(path.join(erosRoot, 'Modding', 'Installation', 'index.html'), 'utf8');
+assert.match(installationPage, /https:\/\/github\.com\/Szago\/ModManager\/releases\/latest/);
+assert.match(installationPage, /https:\/\/github\.com\/BepInEx\/BepInEx/);
+assert.match(installationPage, /https:\/\/docs\.bepinex\.dev\/articles\/user_guide\/installation\/index\.html/);
+assert.equal((installationPage.match(/class="step-card"/g) || []).length, 6);
+assert.match(installationPage, /loadShell\("Mod Installation", "none"\)/);
 
 const sharedShell = fs.readFileSync(path.join(erosRoot, 'shared-shell.css'), 'utf8');
 assert.match(sharedShell, /--nav-icon-column: 34px/);

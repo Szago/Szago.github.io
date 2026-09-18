@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EROS Tools - Mod List</title>
+
+    <link rel="stylesheet" href="../../shared-shell.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.0/css/all.min.css">
+</head>
+<body>
+    <main class="main-content mod-list-page">
+        <section class="catalog-intro" aria-labelledby="catalog-heading">
+            <div>
+                <span class="eyebrow"><i class="fas fa-flask" aria-hidden="true"></i> Work in progress</span>
+                <h2 id="catalog-heading">Eros Fantasy mods</h2>
+                <p>A home for community plugins, utilities, and quality-of-life additions. Select a tile to open its details and screenshot viewer.</p>
+            </div>
+            <div class="catalog-stats" aria-label="Catalog status">
+                <div><strong id="modCount">20</strong><span>Mods</span></div>
+                <div><strong>0</strong><span>Published</span></div>
+            </div>
+        </section>
+
+        <div class="catalog-toolbar">
+            <div class="toolbar-copy">
+                <i class="fas fa-puzzle-piece" aria-hidden="true"></i>
+                <span>Mod catalog</span>
+            </div>
+            <a class="installation-link" href="/eros/?tool=mod-installation" target="_top">
+                <i class="fas fa-screwdriver-wrench" aria-hidden="true"></i>
+                Installation guide
+            </a>
+        </div>
+
+        <section class="mod-grid" id="modGrid" aria-label="Available mods"></section>
+    </main>
+
+    <template id="modCardTemplate">
+        <article class="mod-card">
+            <div class="mod-card-summary">
+                <div class="mod-identity">
+                    <div class="mod-icon"><i class="fas fa-cube" aria-hidden="true"></i></div>
+                    <div>
+                        <span class="slot-label"></span>
+                        <h3 class="mod-title"></h3>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mod-actions">
+                <button class="download-button" type="button" disabled>
+                    <i class="fas fa-download" aria-hidden="true"></i> Download
+                </button>
+                <button class="repo-button" type="button" disabled>
+                    <i class="fab fa-github" aria-hidden="true"></i> Check repo
+                </button>
+            </div>
+
+            <div class="mod-details" aria-hidden="true">
+                <div class="mod-details-inner">
+                    <div class="mod-details-content">
+                        <div class="description-panel">
+                            <span class="details-label">About this mod</span>
+                            <p class="mod-description"></p>
+                            <dl class="mod-meta">
+                                <div><dt>Version</dt><dd class="mod-version"></dd></div>
+                                <div><dt>Author</dt><dd class="mod-author"></dd></div>
+                            </dl>
+                        </div>
+
+                        <div class="screenshot-viewer">
+                            <div class="viewer-heading">
+                                <span class="details-label">Screenshots</span>
+                                <span class="screenshot-counter" aria-live="polite">0 / 0</span>
+                            </div>
+                            <button class="screenshot-stage" type="button" disabled aria-label="Show next screenshot">
+                                <img alt="" hidden>
+                                <span class="screenshot-placeholder">
+                                    <i class="far fa-image" aria-hidden="true"></i>
+                                    <span>Screenshots coming soon</span>
+                                </span>
+                            </button>
+                            <div class="viewer-controls">
+                                <button class="viewer-button previous-shot" type="button" disabled aria-label="Previous screenshot">
+                                    <i class="fas fa-arrow-left" aria-hidden="true"></i>
+                                </button>
+                                <div class="viewer-dots" aria-hidden="true"></div>
+                                <button class="viewer-button next-shot" type="button" disabled aria-label="Next screenshot">
+                                    <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button class="expand-footer" type="button" aria-label="Show mod details" aria-expanded="false">
+                <span>Mod details</span>
+                <i class="fas fa-chevron-down" aria-hidden="true"></i>
+            </button>
+        </article>
+    </template>
+
+    <script src="../../navigation.js"></script>
+    <script src="script.js"></script>
+    <script>
+        loadShell("Mod List", "none");
+    </script>
+</body>
+</html>
