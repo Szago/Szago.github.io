@@ -62,6 +62,9 @@ assert.match(sidebar, /id="cat-modding"/);
 assert.match(sidebar, /data-tool="mod-installation"[\s\S]*?badge-wip/);
 assert.match(sidebar, /data-tool="mod-list"[\s\S]*?badge-wip/);
 assert.ok(sidebar.indexOf('id="cat-data"') < sidebar.indexOf('id="cat-modding"'));
+assert.match(sidebar, /class="nav-category locked collapsed" id="cat-modding"/);
+assert.match(sidebar, /disabled aria-expanded="false" aria-label="Modding locked"/);
+assert.match(sidebar, /fas fa-lock category-lock/);
 
 const mobileNavigation = mobileNavigationHTML();
 assert.match(mobileNavigation, /class="mobile-nav-toggle"/);
@@ -114,6 +117,8 @@ assert.match(sharedShell, /--nav-icon-column: 34px/);
 assert.match(sharedShell, /grid-template-columns: var\(--nav-icon-column\) minmax\(0, 1fr\) auto/);
 assert.match(sharedShell, /\.sidebar\.collapsed \.nav-links li a[\s\S]*?grid-template-columns: 1fr/);
 assert.match(sharedShell, /\.sidebar\.collapsed \.nav-scroll::\-webkit-scrollbar[\s\S]*?width: 0/);
+assert.match(sharedShell, /\.nav-category\.locked \.category-header[\s\S]*?cursor: not-allowed/);
+assert.match(sharedShell, /\.sidebar\.collapsed \.nav-category\.locked \.category-links \{ display: none; \}/);
 assert.match(sharedShell, /html\.eros-embedded \{[\s\S]*?scrollbar-gutter: stable/);
 assert.match(sharedShell, /@media \(max-width: 900px\)[\s\S]*?\.sidebar\.mobile-open/);
 assert.match(sharedShell, /html\.eros-embedded\.eros-mobile-shell \.top-bar/);

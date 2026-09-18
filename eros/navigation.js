@@ -161,13 +161,19 @@ function workspaceHref(tool) {
     return tool.id === EROS_TOOLS[0].id ? `${EROS_BASE}/` : `${EROS_BASE}/?tool=${tool.id}`;
 }
 
-function categoryHTML(id, icon, label, tools, extraContent = '') {
+function categoryHTML(id, icon, label, tools, extraContent = '', options = {}) {
+    const locked = options.locked === true;
+    const categoryClasses = `nav-category${locked ? ' locked collapsed' : ''}`;
+    const buttonAction = locked ? 'disabled' : `onclick="toggleCategory('cat-${id}')"`;
+    const stateIcon = locked ? 'fas fa-lock' : 'fas fa-chevron-down';
+    const stateClass = locked ? 'category-lock' : 'chevron';
+
     return `
-        <div class="nav-category" id="cat-${id}">
-            <button class="category-header" type="button" onclick="toggleCategory('cat-${id}')" aria-expanded="true">
+        <div class="${categoryClasses}" id="cat-${id}">
+            <button class="category-header" type="button" ${buttonAction} aria-expanded="${String(!locked)}"${locked ? ' aria-label="Modding locked"' : ''}>
                 <i class="${icon} cat-icon"></i>
                 <span class="cat-label">${label}</span>
-                <i class="fas fa-chevron-down chevron"></i>
+                <i class="${stateIcon} ${stateClass}"></i>
             </button>
             <ul class="nav-links category-links">
                 ${tools.map(toolLink).join('')}
@@ -197,7 +203,7 @@ function sidebarHTML() {
                 ${categoryHTML('characters', 'fas fa-users', 'Characters', characters)}
                 ${categoryHTML('guides', 'fas fa-book-open', 'Guides', [], '<li class="coming-soon"><i class="fas fa-hourglass-half"></i><span>Coming soon</span></li>')}
                 ${categoryHTML('data', 'fas fa-database', 'Data', data)}
-                ${categoryHTML('modding', 'fas fa-code', 'Modding', modding)}
+                ${categoryHTML('modding', 'fas fa-code', 'Modding', modding, '', { locked: true })}
             </div>
 
             <ul class="nav-links bottom-nav">
@@ -502,7 +508,7 @@ function loadWorkspace() {
 
 function toggleCategory(id) {
     const category = document.getElementById(id);
-    if (!category) return;
+    if (!category || category.classList.contains('locked')) return;
 
     category.classList.toggle('collapsed');
     const button = category.querySelector('.category-header');

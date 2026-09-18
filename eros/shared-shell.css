@@ -164,6 +164,21 @@ body {
 .category-header .chevron { font-size: 0.8rem; color: var(--text-dim); transition: transform 0.25s ease; }
 .category-header:hover .chevron { color: var(--accent); }
 
+.nav-category.locked .category-header {
+    color: #555561;
+    cursor: not-allowed;
+}
+
+.nav-category.locked .category-header .cat-icon,
+.nav-category.locked .category-lock {
+    color: #555561;
+}
+
+.category-lock {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+}
+
 .category-links { margin: 0 0 8px; overflow: hidden; }
 
 /* Collapsed category: hide its links, rotate the chevron */
@@ -254,6 +269,7 @@ body {
 }
 /* In icon mode always show the icons, ignoring per-category collapse */
 .sidebar.collapsed .category-links { display: block; }
+.sidebar.collapsed .nav-category.locked .category-links { display: none; }
 
 .mobile-nav-toggle,
 .sidebar-backdrop {
