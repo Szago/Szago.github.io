@@ -56,6 +56,16 @@
   z-index: 12;
 }
 
+/* Gravity weapons need to cross the arena frame and HUD cleanly. They use a
+   dedicated layer so raising them never changes the depth of other attacks. */
+.aether-boss2d-weapons {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+
 /* Temporary standalone performance readout for the boss scene. */
 .aether-boss2d-fps {
   position: absolute;
