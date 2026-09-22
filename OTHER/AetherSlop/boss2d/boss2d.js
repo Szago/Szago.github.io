@@ -907,21 +907,40 @@
   const PHASE2_GRAVITY_DIVE_ACCELERATION = 0.0024;
   const PHASE2_GRAVITY_JUMP_SPEED = 0.82;
   const PHASE2_GRAVITY_JUMP_RELEASE_SPEED = 0.58;
+  const PHASE2_GRAVITY_JUMP_BUFFER_MS = 140;
+  const PHASE2_GRAVITY_GROUNDED_GRACE_MS = 110;
   const PHASE2_GRAVITY_KNOCKBACK_DRAG = 0.00155;
-  const PHASE2_GRAVITY_SPEAR_INTERVAL_BEATS = 3;
+  const PHASE2_GRAVITY_SPEAR_INTERVAL_BEATS = 2;
   const PHASE2_GRAVITY_SPEAR_INITIAL_SPEED_PER_BEAT = 45;
   const PHASE2_GRAVITY_SPEAR_ACCELERATION_PER_BEAT = 85;
   const PHASE2_GRAVITY_SPEAR_MAX_SPEED_PER_BEAT = 190;
   const PHASE2_GRAVITY_SPEAR_TELEGRAPH_BEATS = 1;
   const PHASE2_GRAVITY_TETRIS_ATTACK_COUNT = 20;
-  const PHASE2_GRAVITY_SPEAR_LENGTH_MIN = 72;
-  const PHASE2_GRAVITY_SPEAR_LENGTH_MAX = 132;
-  const PHASE2_GRAVITY_SPEAR_WIDTH_MIN = 13;
-  const PHASE2_GRAVITY_SPEAR_WIDTH_MAX = 23;
   const PHASE2_GRAVITY_SPEAR_SHADOW_WIDTH = 20;
   const PHASE2_GRAVITY_SPEAR_DAMAGE = 75;
   const PHASE2_GRAVITY_SPEAR_MAX_ACTIVE = 20;
   const PHASE2_GRAVITY_TERRAIN_MAX = 20;
+  const PHASE2_GRAVITY_WEAPON_AIM_RADIUS = 92;
+  const PHASE2_GRAVITY_WEAPON_PROFILES = Object.freeze({
+    sword: { length: [72, 132], width: [13, 23] },
+    spear: { length: [86, 142], width: [12, 21] },
+    claw: { length: [68, 112], width: [18, 28] },
+    scythe: { length: [90, 142], width: [20, 31] },
+    shuriken: { length: [42, 58], width: [28, 40] },
+    axe: { length: [76, 122], width: [24, 38] },
+    hammer: { length: [72, 116], width: [26, 40] },
+    trident: { length: [92, 146], width: [22, 34] },
+    dagger: { length: [58, 92], width: [13, 22] },
+    halberd: { length: [102, 154], width: [24, 38] },
+    mace: { length: [68, 108], width: [24, 38] },
+    chakram: { length: [44, 62], width: [30, 44] },
+    cleaver: { length: [68, 106], width: [24, 38] },
+    warpick: { length: [78, 120], width: [22, 36] },
+    lance: { length: [108, 164], width: [11, 19] },
+  });
+  const PHASE2_GRAVITY_WEAPON_KINDS = Object.freeze(
+    Object.keys(PHASE2_GRAVITY_WEAPON_PROFILES)
+  );
   const PHASE2_GRAVITY_MASS_SINK_PER_BEAT = 5;
   const PHASE2_GRAVITY_MASS_DRAIN_PER_BEAT = 30;
   const PHASE2_GRAVITY_TICTACTOE_LANES = 7;
@@ -937,7 +956,9 @@
   const PHASE2_GRAVITY_TICTACTOE_DURATION_BEATS =
     PHASE2_GRAVITY_TICTACTOE_SIDE_BEATS * 4 + PHASE2_GRAVITY_TICTACTOE_ALL_SIDE_BEATS;
   const PHASE2_GRAVITY_TICTACTOE_FADE_BEATS = 1;
-  const PHASE2_GRAVITY_SPIKE_COUNT = 30;
+  // Keep the cadence and individual spike behavior unchanged, but let the
+  // complete dropper sequence run for twice as many waves.
+  const PHASE2_GRAVITY_SPIKE_COUNT = 60;
   const PHASE2_GRAVITY_SPIKE_SPAWN_BEATS = 0.5;
   const PHASE2_GRAVITY_SPIKE_TELEGRAPH_BEATS = 1;
   const PHASE2_GRAVITY_SPIKE_SPEED_MIN_PER_BEAT = 120;
@@ -1810,6 +1831,22 @@
     // solo. Right-click a button to arm it, then left-click another to play the
     // two combined (as they will once wrath crosses COMBINE_WRATH).
     const debugPanel = document.getElementById('aether-boss2d-debug');
+    const createDebugGroup = (label) => {
+      const group = document.createElement('details');
+      group.className = 'aether-boss2d-debug-group';
+      const summary = document.createElement('summary');
+      summary.className = 'aether-boss2d-debug-group-title';
+      summary.textContent = label;
+      const controls = document.createElement('div');
+      controls.className = 'aether-boss2d-debug-group-controls';
+      group.append(summary, controls);
+      debugPanel.appendChild(group);
+      return controls;
+    };
+    const phaseOneDebugControls = createDebugGroup('PHASE 1');
+    const phaseTwoDebugControls = createDebugGroup('PHASE 2');
+    const phaseThreeDebugControls = createDebugGroup('PHASE 3: GRAVITY');
+    const utilityDebugControls = createDebugGroup('UTILITIES');
     let pairFirst = null;
     let pairFirstBtn = null;
     const clearPair = () => {
@@ -1817,7 +1854,11 @@
       pairFirst = null;
       pairFirstBtn = null;
     };
-    MOVEMENT_SEQUENCE.forEach((name) => {
+    const phaseOneDebugMovements = [
+      MOVEMENT_SEQUENCE[0],
+      ...MOVEMENT_SEQUENCE.slice(1).sort((first, second) => first.localeCompare(second)),
+    ];
+    phaseOneDebugMovements.forEach((name) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'aether-boss2d-debug-btn';
@@ -1835,7 +1876,7 @@
         clearPair();
       btn.blur();
       });
-      debugPanel.appendChild(btn);
+      phaseOneDebugControls.appendChild(btn);
     });
     const phaseTwoBtn = document.createElement('button');
     phaseTwoBtn.type = 'button';
@@ -1847,7 +1888,7 @@
       startSecondPhase();
       phaseTwoBtn.blur();
     });
-    debugPanel.appendChild(phaseTwoBtn);
+    phaseTwoDebugControls.appendChild(phaseTwoBtn);
 
     const avatarPhaseTwoBtn = document.createElement('button');
     avatarPhaseTwoBtn.type = 'button';
@@ -1868,7 +1909,7 @@
       startAvatarPhaseTwo();
       avatarPhaseTwoBtn.blur();
     });
-    debugPanel.appendChild(avatarPhaseTwoBtn);
+    phaseTwoDebugControls.appendChild(avatarPhaseTwoBtn);
 
     const shadowClawBtn = document.createElement('button');
     shadowClawBtn.type = 'button';
@@ -1878,7 +1919,7 @@
       debugPhaseTwoClaw();
       shadowClawBtn.blur();
     });
-    debugPanel.appendChild(shadowClawBtn);
+    phaseTwoDebugControls.appendChild(shadowClawBtn);
 
     const eyeRushBtn = document.createElement('button');
     eyeRushBtn.type = 'button';
@@ -1888,7 +1929,7 @@
       debugPhaseTwoRush();
       eyeRushBtn.blur();
     });
-    debugPanel.appendChild(eyeRushBtn);
+    phaseTwoDebugControls.appendChild(eyeRushBtn);
 
     const towerClimbBtn = document.createElement('button');
     towerClimbBtn.type = 'button';
@@ -1898,7 +1939,7 @@
       debugPhaseTwoTowerClimb();
       towerClimbBtn.blur();
     });
-    debugPanel.appendChild(towerClimbBtn);
+    phaseTwoDebugControls.appendChild(towerClimbBtn);
 
     const doomGridBtn = document.createElement('button');
     doomGridBtn.type = 'button';
@@ -1908,7 +1949,7 @@
       debugPhaseTwoDoomPattern();
       doomGridBtn.blur();
     });
-    debugPanel.appendChild(doomGridBtn);
+    phaseTwoDebugControls.appendChild(doomGridBtn);
 
     const mayhemBtn = document.createElement('button');
     mayhemBtn.type = 'button';
@@ -1918,7 +1959,7 @@
       debugPhaseTwoMayhem();
       mayhemBtn.blur();
     });
-    debugPanel.appendChild(mayhemBtn);
+    phaseTwoDebugControls.appendChild(mayhemBtn);
 
     const spearRainBtn = document.createElement('button');
     spearRainBtn.type = 'button';
@@ -1928,7 +1969,7 @@
       debugPhaseTwoSpearRain();
       spearRainBtn.blur();
     });
-    debugPanel.appendChild(spearRainBtn);
+    phaseTwoDebugControls.appendChild(spearRainBtn);
 
     const chevronBtn = document.createElement('button');
     chevronBtn.type = 'button';
@@ -1938,7 +1979,7 @@
       debugPhaseTwoChevron();
       chevronBtn.blur();
     });
-    debugPanel.appendChild(chevronBtn);
+    phaseTwoDebugControls.appendChild(chevronBtn);
 
     const trianglesBtn = document.createElement('button');
     trianglesBtn.type = 'button';
@@ -1948,7 +1989,7 @@
       debugPhaseTwoTriangles();
       trianglesBtn.blur();
     });
-    debugPanel.appendChild(trianglesBtn);
+    phaseTwoDebugControls.appendChild(trianglesBtn);
 
     const waveformBtn = document.createElement('button');
     waveformBtn.type = 'button';
@@ -1958,7 +1999,7 @@
       debugPhaseTwoWaveform();
       waveformBtn.blur();
     });
-    debugPanel.appendChild(waveformBtn);
+    phaseTwoDebugControls.appendChild(waveformBtn);
 
     const ripplesBtn = document.createElement('button');
     ripplesBtn.type = 'button';
@@ -1968,7 +2009,7 @@
       debugPhaseTwoCornerRipples();
       ripplesBtn.blur();
     });
-    debugPanel.appendChild(ripplesBtn);
+    phaseTwoDebugControls.appendChild(ripplesBtn);
 
     const tornadoBtn = document.createElement('button');
     tornadoBtn.type = 'button';
@@ -1978,7 +2019,7 @@
       debugPhaseTwoTornadoRumble();
       tornadoBtn.blur();
     });
-    debugPanel.appendChild(tornadoBtn);
+    phaseTwoDebugControls.appendChild(tornadoBtn);
 
     const gravityBtn = document.createElement('button');
     gravityBtn.type = 'button';
@@ -1988,7 +2029,7 @@
       debugPhaseTwoGravityPattern();
       gravityBtn.blur();
     });
-    debugPanel.appendChild(gravityBtn);
+    phaseThreeDebugControls.appendChild(gravityBtn);
 
     const gravitySpearsBtn = document.createElement('button');
     gravitySpearsBtn.type = 'button';
@@ -1999,7 +2040,7 @@
       debugPhaseTwoGravitySpears();
       gravitySpearsBtn.blur();
     });
-    debugPanel.appendChild(gravitySpearsBtn);
+    phaseThreeDebugControls.appendChild(gravitySpearsBtn);
 
     const gravityTicTacToeBtn = document.createElement('button');
     gravityTicTacToeBtn.type = 'button';
@@ -2010,7 +2051,7 @@
       debugPhaseTwoGravitySubpattern('ticTacToe');
       gravityTicTacToeBtn.blur();
     });
-    debugPanel.appendChild(gravityTicTacToeBtn);
+    phaseThreeDebugControls.appendChild(gravityTicTacToeBtn);
 
     const gravitySpikeBtn = document.createElement('button');
     gravitySpikeBtn.type = 'button';
@@ -2021,7 +2062,7 @@
       debugPhaseTwoGravitySubpattern('spikeDropper');
       gravitySpikeBtn.blur();
     });
-    debugPanel.appendChild(gravitySpikeBtn);
+    phaseThreeDebugControls.appendChild(gravitySpikeBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -2031,7 +2072,7 @@
       debugPhaseTwoGridSpecial();
       gridSpecialBtn.blur();
     });
-    debugPanel.appendChild(gridSpecialBtn);
+    phaseTwoDebugControls.appendChild(gridSpecialBtn);
 
     const tileRuinBtn = document.createElement('button');
     tileRuinBtn.type = 'button';
@@ -2042,7 +2083,7 @@
       tileRuinBtn.classList.toggle('is-selected', !!phase2TileRuinPattern || phase2TileRuinDebugQueued);
       tileRuinBtn.blur();
     });
-    debugPanel.appendChild(tileRuinBtn);
+    phaseTwoDebugControls.appendChild(tileRuinBtn);
 
     const swordRingBtn = document.createElement('button');
     swordRingBtn.type = 'button';
@@ -2052,7 +2093,7 @@
       debugPhaseTwoSwordRing();
       swordRingBtn.blur();
     });
-    debugPanel.appendChild(swordRingBtn);
+    phaseTwoDebugControls.appendChild(swordRingBtn);
 
     const pitfallBtn = document.createElement('button');
     pitfallBtn.type = 'button';
@@ -2062,7 +2103,7 @@
       debugPhaseTwoPitfall();
       pitfallBtn.blur();
     });
-    debugPanel.appendChild(pitfallBtn);
+    phaseTwoDebugControls.appendChild(pitfallBtn);
 
     const hexFallBtn = document.createElement('button');
     hexFallBtn.type = 'button';
@@ -2072,7 +2113,36 @@
       debugPhaseTwoHexFall();
       hexFallBtn.blur();
     });
-    debugPanel.appendChild(hexFallBtn);
+    phaseTwoDebugControls.appendChild(hexFallBtn);
+
+    // Phase two is scripted rather than shuffled. Re-append the controls in
+    // encounter order so the debug panel doubles as a readable fight map.
+    phaseTwoDebugControls.append(
+      phaseTwoBtn,
+      avatarPhaseTwoBtn,
+      shadowClawBtn,
+      gridSpecialBtn,
+      tileRuinBtn,
+      swordRingBtn,
+      pitfallBtn,
+      hexFallBtn,
+      eyeRushBtn,
+      towerClimbBtn,
+      doomGridBtn,
+      mayhemBtn,
+      spearRainBtn,
+      chevronBtn,
+      trianglesBtn,
+      waveformBtn,
+      ripplesBtn,
+      tornadoBtn
+    );
+    phaseThreeDebugControls.append(
+      gravityBtn,
+      gravitySpearsBtn,
+      gravityTicTacToeBtn,
+      gravitySpikeBtn
+    );
 
     const tempoControls = document.createElement('div');
     tempoControls.className = 'aether-boss2d-debug-tempo';
@@ -2087,7 +2157,7 @@
       });
       tempoControls.appendChild(btn);
     }
-    debugPanel.appendChild(tempoControls);
+    utilityDebugControls.appendChild(tempoControls);
 
     const primePhaseTwoBtn = document.createElement('button');
     primePhaseTwoBtn.type = 'button';
@@ -2098,7 +2168,7 @@
       primePhaseTwoCombat();
       primePhaseTwoBtn.blur();
     });
-    debugPanel.appendChild(primePhaseTwoBtn);
+    utilityDebugControls.appendChild(primePhaseTwoBtn);
 
     const mayhemAdvanceControls = document.createElement('div');
     mayhemAdvanceControls.className = 'aether-boss2d-mayhem-advance';
@@ -12438,7 +12508,8 @@
     pattern.vx = 0;
     pattern.vy = 0;
     pattern.grounded = false;
-    pattern.jumpQueued = false;
+    pattern.jumpBufferMs = 0;
+    pattern.groundedGraceMs = 0;
     pattern.terrainPassThrough = false;
     pattern.ripples = [];
     beginPhaseTwoGravitySubpattern(pattern, pattern.initialSubpattern || 'weaponTetris');
@@ -12475,7 +12546,8 @@
       vx: 0,
       vy: 0,
       grounded: false,
-      jumpQueued: false,
+      jumpBufferMs: 0,
+      groundedGraceMs: 0,
       terrainPassThrough: false,
       initialSubpattern,
       subpattern: null,
@@ -12518,6 +12590,7 @@
       spawnedCount: 0,
       landedCount: 0,
       lastDamageStep: -1,
+      spawnEdgeBag: [],
       spears: [],
       terrain: [],
     };
@@ -12645,12 +12718,15 @@
   }
 
   function phaseTwoGravityWeaponPoints(kind, length, width) {
-    if (kind === 'shuriken') {
+    if (kind === 'shuriken' || kind === 'chakram') {
       const radius = width * 0.78;
       const points = [];
-      for (let index = 0; index < 8; index++) {
-        const angle = -Math.PI / 2 + index * Math.PI / 4;
-        const pointRadius = index % 2 === 0 ? radius : radius * 0.32;
+      const pointCount = kind === 'chakram' ? 16 : 8;
+      for (let index = 0; index < pointCount; index++) {
+        const angle = -Math.PI / 2 + index * Math.PI * 2 / pointCount;
+        const pointRadius = index % 2 === 0
+          ? radius
+          : radius * (kind === 'chakram' ? 0.66 : 0.32);
         points.push({ x: Math.cos(angle) * pointRadius, y: Math.sin(angle) * pointRadius });
       }
       return points;
@@ -12693,6 +12769,142 @@
         { x: -width * 0.27, y: length * 0.23 },
       ];
     }
+    if (kind === 'dagger') {
+      return [
+        { x: -width * 0.12, y: -length * 0.50 },
+        { x: width * 0.12, y: -length * 0.50 },
+        { x: width * 0.15, y: length * 0.02 },
+        { x: width * 0.42, y: length * 0.08 },
+        { x: width * 0.42, y: length * 0.18 },
+        { x: width * 0.15, y: length * 0.16 },
+        { x: 0, y: length * 0.50 },
+        { x: -width * 0.15, y: length * 0.16 },
+        { x: -width * 0.42, y: length * 0.18 },
+        { x: -width * 0.42, y: length * 0.08 },
+        { x: -width * 0.15, y: length * 0.02 },
+      ];
+    }
+    if (kind === 'axe') {
+      return [
+        { x: -width * 0.10, y: -length * 0.50 },
+        { x: width * 0.10, y: -length * 0.50 },
+        { x: width * 0.12, y: length * 0.04 },
+        { x: width * 0.48, y: -length * 0.01 },
+        { x: width * 0.64, y: length * 0.18 },
+        { x: width * 0.45, y: length * 0.42 },
+        { x: width * 0.12, y: length * 0.28 },
+        { x: 0, y: length * 0.50 },
+        { x: -width * 0.12, y: length * 0.28 },
+        { x: -width * 0.16, y: length * 0.04 },
+      ];
+    }
+    if (kind === 'hammer') {
+      return [
+        { x: -width * 0.12, y: -length * 0.50 },
+        { x: width * 0.12, y: -length * 0.50 },
+        { x: width * 0.14, y: length * 0.18 },
+        { x: width * 0.55, y: length * 0.18 },
+        { x: width * 0.55, y: length * 0.42 },
+        { x: width * 0.15, y: length * 0.42 },
+        { x: 0, y: length * 0.50 },
+        { x: -width * 0.15, y: length * 0.42 },
+        { x: -width * 0.55, y: length * 0.42 },
+        { x: -width * 0.55, y: length * 0.18 },
+        { x: -width * 0.14, y: length * 0.18 },
+      ];
+    }
+    if (kind === 'trident') {
+      return [
+        { x: -width * 0.10, y: -length * 0.50 },
+        { x: width * 0.10, y: -length * 0.50 },
+        { x: width * 0.10, y: length * 0.18 },
+        { x: width * 0.32, y: length * 0.12 },
+        { x: width * 0.38, y: length * 0.46 },
+        { x: width * 0.20, y: length * 0.32 },
+        { x: width * 0.12, y: length * 0.50 },
+        { x: 0, y: length * 0.34 },
+        { x: -width * 0.12, y: length * 0.50 },
+        { x: -width * 0.20, y: length * 0.32 },
+        { x: -width * 0.38, y: length * 0.46 },
+        { x: -width * 0.32, y: length * 0.12 },
+        { x: -width * 0.10, y: length * 0.18 },
+      ];
+    }
+    if (kind === 'halberd') {
+      return [
+        { x: -width * 0.10, y: -length * 0.50 },
+        { x: width * 0.10, y: -length * 0.50 },
+        { x: width * 0.12, y: length * 0.12 },
+        { x: width * 0.48, y: length * 0.02 },
+        { x: width * 0.65, y: length * 0.18 },
+        { x: width * 0.42, y: length * 0.34 },
+        { x: width * 0.16, y: length * 0.26 },
+        { x: 0, y: length * 0.50 },
+        { x: -width * 0.12, y: length * 0.28 },
+        { x: -width * 0.12, y: length * 0.08 },
+      ];
+    }
+    if (kind === 'mace') {
+      return [
+        { x: -width * 0.10, y: -length * 0.50 },
+        { x: width * 0.10, y: -length * 0.50 },
+        { x: width * 0.10, y: length * 0.10 },
+        { x: width * 0.28, y: length * 0.16 },
+        { x: width * 0.50, y: length * 0.18 },
+        { x: width * 0.35, y: length * 0.32 },
+        { x: width * 0.40, y: length * 0.50 },
+        { x: width * 0.16, y: length * 0.42 },
+        { x: 0, y: length * 0.50 },
+        { x: -width * 0.16, y: length * 0.42 },
+        { x: -width * 0.40, y: length * 0.50 },
+        { x: -width * 0.35, y: length * 0.32 },
+        { x: -width * 0.50, y: length * 0.18 },
+        { x: -width * 0.28, y: length * 0.16 },
+        { x: -width * 0.10, y: length * 0.10 },
+      ];
+    }
+    if (kind === 'cleaver') {
+      return [
+        { x: -width * 0.12, y: -length * 0.50 },
+        { x: width * 0.12, y: -length * 0.50 },
+        { x: width * 0.15, y: -length * 0.05 },
+        { x: width * 0.45, y: -length * 0.02 },
+        { x: width * 0.60, y: length * 0.18 },
+        { x: width * 0.50, y: length * 0.44 },
+        { x: 0, y: length * 0.50 },
+        { x: -width * 0.28, y: length * 0.34 },
+        { x: -width * 0.35, y: length * 0.05 },
+        { x: -width * 0.15, y: -length * 0.05 },
+      ];
+    }
+    if (kind === 'warpick') {
+      return [
+        { x: -width * 0.10, y: -length * 0.50 },
+        { x: width * 0.10, y: -length * 0.50 },
+        { x: width * 0.10, y: length * 0.14 },
+        { x: width * 0.55, y: length * 0.12 },
+        { x: width * 0.66, y: length * 0.22 },
+        { x: width * 0.12, y: length * 0.30 },
+        { x: 0, y: length * 0.50 },
+        { x: -width * 0.12, y: length * 0.30 },
+        { x: -width * 0.50, y: length * 0.22 },
+        { x: -width * 0.42, y: length * 0.14 },
+        { x: -width * 0.10, y: length * 0.14 },
+      ];
+    }
+    if (kind === 'lance') {
+      return [
+        { x: -width * 0.12, y: -length * 0.50 },
+        { x: width * 0.12, y: -length * 0.50 },
+        { x: width * 0.18, y: length * 0.12 },
+        { x: width * 0.42, y: length * 0.18 },
+        { x: width * 0.17, y: length * 0.25 },
+        { x: 0, y: length * 0.50 },
+        { x: -width * 0.17, y: length * 0.25 },
+        { x: -width * 0.42, y: length * 0.18 },
+        { x: -width * 0.18, y: length * 0.12 },
+      ];
+    }
     return [
       { x: -width * 0.44, y: -length * 0.50 },
       { x: width * 0.38, y: -length * 0.50 },
@@ -12704,34 +12916,84 @@
     ];
   }
 
+  function phaseTwoGravityPickSpawnEdge(rain) {
+    if (!rain.spawnEdgeBag.length) {
+      rain.spawnEdgeBag = ['top', 'right', 'bottom', 'left'];
+      for (let index = rain.spawnEdgeBag.length - 1; index > 0; index--) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [rain.spawnEdgeBag[index], rain.spawnEdgeBag[swapIndex]] =
+          [rain.spawnEdgeBag[swapIndex], rain.spawnEdgeBag[index]];
+      }
+    }
+    return rain.spawnEdgeBag.pop();
+  }
+
+  function phaseTwoGravityRayExitDistance(x, y, dx, dy, content) {
+    const candidates = [];
+    if (dx > 0.0001) candidates.push((content.right - x) / dx);
+    else if (dx < -0.0001) candidates.push((content.left - x) / dx);
+    if (dy > 0.0001) candidates.push((content.bottom - y) / dy);
+    else if (dy < -0.0001) candidates.push((content.top - y) / dy);
+    const positive = candidates.filter((distance) => distance > 0);
+    return positive.length ? Math.min(...positive) : 1;
+  }
+
   function spawnPhaseTwoGravitySpear(rain) {
-    const bounds = phaseTwoGravityBounds();
     const content = phaseTwoGravityContentRect();
-    const kinds = ['sword', 'spear', 'claw', 'scythe', 'shuriken'];
-    const kind = kinds[Math.floor(Math.random() * kinds.length)];
-    const length = (kind === 'shuriken' ? 48 : PHASE2_GRAVITY_SPEAR_LENGTH_MIN) +
-      Math.random() * (PHASE2_GRAVITY_SPEAR_LENGTH_MAX - PHASE2_GRAVITY_SPEAR_LENGTH_MIN);
-    const width = (kind === 'shuriken' ? 26 : PHASE2_GRAVITY_SPEAR_WIDTH_MIN) +
-      Math.random() * (PHASE2_GRAVITY_SPEAR_WIDTH_MAX - PHASE2_GRAVITY_SPEAR_WIDTH_MIN);
-    const angle = (Math.random() - 0.5) * 1.55;
-    const dx = Math.sin(angle);
-    const dy = Math.cos(angle);
-    const targetX = clampRange(
-      hero.x + (Math.random() - 0.5) * Math.min(112, canvas.width * 0.28),
-      bounds.left + width,
-      bounds.right - width
-    );
-    const frontExtent = kind === 'shuriken' ? width * 0.78 : length * 0.5;
-    const spawnY = bounds.top - length - 48;
-    const landingCenterY = content.bottom - dy * frontExtent;
-    const travel = Math.max(1, (landingCenterY - spawnY) / Math.max(0.25, dy));
+    const kind = PHASE2_GRAVITY_WEAPON_KINDS[
+      Math.floor(Math.random() * PHASE2_GRAVITY_WEAPON_KINDS.length)
+    ];
+    const profile = PHASE2_GRAVITY_WEAPON_PROFILES[kind];
+    const length = profile.length[0] + Math.random() * (profile.length[1] - profile.length[0]);
+    const width = profile.width[0] + Math.random() * (profile.width[1] - profile.width[0]);
     const points = phaseTwoGravityWeaponPoints(kind, length, width);
+    if (Math.random() < 0.5) {
+      for (const point of points) point.x *= -1;
+    }
+    const frontExtent = Math.max(...points.map((point) => point.y));
+    const spawnMargin = Math.max(length, width) + 52;
+    const edge = phaseTwoGravityPickSpawnEdge(rain);
+    let spawnX;
+    let spawnY;
+    if (edge === 'top' || edge === 'bottom') {
+      spawnX = content.left + Math.random() * (content.right - content.left);
+      spawnY = edge === 'top' ? content.top - spawnMargin : content.bottom + spawnMargin;
+    } else {
+      spawnX = edge === 'left' ? content.left - spawnMargin : content.right + spawnMargin;
+      spawnY = content.top + Math.random() * (content.bottom - content.top);
+    }
+    const aimAngle = Math.random() * Math.PI * 2;
+    const aimRadius = Math.sqrt(Math.random()) * Math.min(
+      PHASE2_GRAVITY_WEAPON_AIM_RADIUS,
+      canvas.width * 0.20,
+      canvas.height * 0.20
+    );
+    const aimX = clampRange(
+      hero.x + Math.cos(aimAngle) * aimRadius,
+      content.left + 12,
+      content.right - 12
+    );
+    const aimY = clampRange(
+      hero.y + Math.sin(aimAngle) * aimRadius,
+      content.top + 12,
+      content.bottom - 12
+    );
+    const aimDx = aimX - spawnX;
+    const aimDy = aimY - spawnY;
+    const aimLength = Math.max(1, Math.hypot(aimDx, aimDy));
+    const dx = aimDx / aimLength;
+    const dy = aimDy / aimLength;
+    const exitDistance = phaseTwoGravityRayExitDistance(spawnX, spawnY, dx, dy, content);
+    const travelDistance = Math.max(1, exitDistance - frontExtent * 0.82);
+    const impactX = spawnX + dx * travelDistance;
+    const impactY = spawnY + dy * travelDistance;
     const spear = {
       id: rain.nextSpearId++,
-      x: targetX - dx * travel,
+      x: spawnX,
       y: spawnY,
       dx,
       dy,
+      edge,
       kind,
       length,
       width,
@@ -12744,8 +13006,12 @@
       launched: false,
       landed: false,
       hitHero: false,
-      shadowEndX: targetX,
-      shadowEndY: landingCenterY,
+      aimX,
+      aimY,
+      distanceTravelled: 0,
+      travelDistance,
+      shadowEndX: impactX,
+      shadowEndY: impactY,
     };
     rain.spears.push(spear);
     rain.spawnedCount++;
@@ -12791,8 +13057,6 @@
   function phaseTwoGravitySpearTouchesTerrain(rain, spear, x, y) {
     const polygon = phaseTwoGravitySpearPolygon(spear, x, y);
     const polygonBounds = phaseTwoGravityPolygonBounds(polygon);
-    const content = phaseTwoGravityContentRect();
-    if (polygonBounds.bottom >= content.bottom) return true;
     return rain.terrain.some((terrain) => (
       phaseTwoGravityBoundsOverlap(polygonBounds, terrain) &&
       phaseTwoGravityPolygonsOverlap(polygon, terrain.polygon)
@@ -12871,14 +13135,17 @@
       const stepCount = Math.max(1, Math.ceil(travel / 5));
       const stepDistance = travel / stepCount;
       for (let step = 0; step < stepCount; step++) {
-        const nextX = spear.x + spear.dx * stepDistance;
-        const nextY = spear.y + spear.dy * stepDistance;
+        const remainingDistance = Math.max(0, spear.travelDistance - spear.distanceTravelled);
+        const currentStepDistance = Math.min(stepDistance, remainingDistance);
+        const nextX = spear.x + spear.dx * currentStepDistance;
+        const nextY = spear.y + spear.dy * currentStepDistance;
         if (phaseTwoGravitySpearTouchesTerrain(rain, spear, nextX, nextY)) {
           settlePhaseTwoGravitySpear(rain, spear);
           break;
         }
         spear.x = nextX;
         spear.y = nextY;
+        spear.distanceTravelled += currentStepDistance;
         if (!spear.hitHero && phaseTwoGravityRectPolygonOverlap(
           phaseTwoGravityCoreRect(),
           phaseTwoGravitySpearPolygon(spear)
@@ -12887,6 +13154,10 @@
           damagePlayer(PHASE2_GRAVITY_SPEAR_DAMAGE * (bpm / PHASE2_BPM_MIN));
           playBossSfx('damage', { step: phaseOneDamageSfxCount++ });
           if (hp <= 0) die();
+        }
+        if (spear.distanceTravelled >= spear.travelDistance - 0.001) {
+          settlePhaseTwoGravitySpear(rain, spear);
+          break;
         }
       }
     }
@@ -13346,13 +13617,17 @@
       Math.abs(pattern.vx),
       PHASE2_GRAVITY_KNOCKBACK_DRAG * dt
     );
-    if (pattern.jumpQueued) {
-      if (pattern.grounded) {
-        pattern.vy = -PHASE2_GRAVITY_JUMP_SPEED;
-        pattern.grounded = false;
-        playBossSfx('phase2SwordStrike');
-      }
-      pattern.jumpQueued = false;
+    // Sinking weapons and moving arrows can create a one-frame contact gap.
+    // Buffer early taps and retain a brief grounded grace window so those
+    // platform seams never eat a deliberate jump.
+    pattern.jumpBufferMs = Math.max(0, pattern.jumpBufferMs - dt);
+    pattern.groundedGraceMs = Math.max(0, pattern.groundedGraceMs - dt);
+    if (pattern.jumpBufferMs > 0 && (pattern.grounded || pattern.groundedGraceMs > 0)) {
+      pattern.vy = -PHASE2_GRAVITY_JUMP_SPEED;
+      pattern.grounded = false;
+      pattern.jumpBufferMs = 0;
+      pattern.groundedGraceMs = 0;
+      playBossSfx('phase2SwordStrike');
     }
     const jumpHeld = keys.has('KeyW') || keys.has('ArrowUp');
     if (!jumpHeld && pattern.vy < -PHASE2_GRAVITY_JUMP_RELEASE_SPEED) {
@@ -13388,6 +13663,7 @@
     );
     const arrowGrounded = resolvePhaseTwoGravityArrowMovement(pattern, previousX, previousY);
     pattern.grounded = terrainGrounded || arrowGrounded || pattern.grounded;
+    if (pattern.grounded) pattern.groundedGraceMs = PHASE2_GRAVITY_GROUNDED_GRACE_MS;
     heroMove.x = horizontal || Math.sign(pattern.vx);
     heroMove.y = Math.sign(pattern.vy);
   }
@@ -19195,7 +19471,7 @@
         keys.add(event.code);
         if (!event.repeat && phase2GravityPattern.mode === 'active' &&
             (event.code === 'KeyW' || event.code === 'ArrowUp')) {
-          phase2GravityPattern.jumpQueued = true;
+          phase2GravityPattern.jumpBufferMs = PHASE2_GRAVITY_JUMP_BUFFER_MS;
         }
         event.preventDefault();
         return;

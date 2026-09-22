@@ -94,8 +94,85 @@
   z-index: 5;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  gap: 6px;
+  width: min(218px, calc(100vw - 24px));
+  max-height: calc(100vh - 88px);
+  padding: 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+  scrollbar-color: #6f248f rgba(9, 0, 12, 0.84);
+  scrollbar-width: thin;
+  background: rgba(9, 0, 12, 0.84);
+  border: 1px solid #4a1064;
+  box-shadow: 0 0 0 2px rgba(22, 3, 29, 0.78), 0 0 18px rgba(78, 16, 100, 0.24);
+}
+
+.aether-boss2d-debug::-webkit-scrollbar {
+  width: 7px;
+}
+
+.aether-boss2d-debug::-webkit-scrollbar-track {
+  background: rgba(9, 0, 12, 0.84);
+}
+
+.aether-boss2d-debug::-webkit-scrollbar-thumb {
+  background: #6f248f;
+  border: 1px solid #16031d;
+}
+
+.aether-boss2d-debug-group {
+  width: 100%;
+  border: 1px solid rgba(111, 36, 143, 0.72);
+  background: rgba(10, 0, 14, 0.68);
+}
+
+.aether-boss2d-debug-group-title {
+  position: relative;
+  padding: 8px 25px 8px 9px;
+  color: #e8ccff;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  line-height: 1.2;
+  letter-spacing: 1px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.aether-boss2d-debug-group-title::-webkit-details-marker {
+  display: none;
+}
+
+.aether-boss2d-debug-group-title::after {
+  content: '+';
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  color: #b56cf0;
+  transform: translateY(-50%);
+}
+
+.aether-boss2d-debug-group[open] > .aether-boss2d-debug-group-title {
+  color: #fff;
+  background: rgba(64, 12, 84, 0.64);
+  border-bottom: 1px solid rgba(111, 36, 143, 0.72);
+}
+
+.aether-boss2d-debug-group[open] > .aether-boss2d-debug-group-title::after {
+  content: '-';
+}
+
+.aether-boss2d-debug-group-controls {
+  display: flex;
+  flex-direction: column;
   gap: 5px;
+  padding: 6px;
+}
+
+.aether-boss2d-debug-group-controls > .aether-boss2d-debug-btn {
+  width: 100%;
+  text-align: left;
 }
 
 /* Fixed pattern stepper for moving through the Mayhem sequence without
@@ -258,8 +335,15 @@
 }
 
 .aether-boss2d-debug-tempo {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 5px;
+}
+
+.aether-boss2d-debug-tempo .aether-boss2d-debug-btn {
+  width: 100%;
+  padding-right: 5px;
+  padding-left: 5px;
 }
 
 .aether-boss2d-debug-btn-danger {
