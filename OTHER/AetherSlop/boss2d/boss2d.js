@@ -391,7 +391,10 @@
   const BOSS_MUSIC_PATTERNS_PER_LAYER = 2;
   // Motif Lab-style one-shots share the music context and pulse-wave palette,
   // but have their own crunchy bus so stopping the score never cuts off an SFX.
-  const BOSS_SFX_MASTER_GAIN = 1.12;
+  const BOSS_SFX_MASTER_GAIN = 1;
+  const BOSS_SFX_MAX_ACTIVE_EVENTS = 10;
+  const BOSS_SFX_MIN_EVENT_GAIN = 0.32;
+  const BOSS_AUDIO_OUTPUT_GAIN = 0.86;
   const BOSS_SFX_VP_STEPS_PER_BEAT = 4;
   const BOSS_SFX_DAMAGE_STEPS_PER_BEAT = 2;
   const BOSS_SFX_DEBUG_CUES = [
@@ -7127,6 +7130,8 @@
     const musicUserGain = context.createGain();
     const effectsUserGain = context.createGain();
     const overallMaster = context.createGain();
+    const finalLimiter = context.createDynamicsCompressor();
+    const outputGain = context.createGain();
     const analyser = context.createAnalyser();
 
     crusher.curve = makeBossMusicCrusherCurve(BOSS_MOTIF.synth.bitDepth);
@@ -7147,19 +7152,29 @@
     compressor.release.value = 0.12;
     // Keep headroom before voices sum. Pulse/noise sources already provide the
     // pixel texture; a shared crusher here turned dense combo waves into clips.
-    sfxInput.gain.value = 0.62;
+    sfxInput.gain.value = 0.58;
     sfxFilter.type = 'lowpass';
     sfxFilter.frequency.value = 5200;
     sfxFilter.Q.value = 0.55;
     sfxMaster.gain.value = BOSS_SFX_MASTER_GAIN;
-    sfxLimiter.threshold.value = -5;
-    sfxLimiter.knee.value = 2;
-    sfxLimiter.ratio.value = 12;
-    sfxLimiter.attack.value = 0.003;
-    sfxLimiter.release.value = 0.14;
+    sfxLimiter.threshold.value = -10;
+    sfxLimiter.knee.value = 8;
+    sfxLimiter.ratio.value = 6;
+    sfxLimiter.attack.value = 0.002;
+    sfxLimiter.release.value = 0.16;
     musicUserGain.gain.value = bossAudioMix.music;
     effectsUserGain.gain.value = bossAudioMix.effects;
     overallMaster.gain.value = bossAudioMix.overall;
+    // Music and effects were previously summed after their individual
+    // compressors, leaving the actual output unprotected. This final stage is
+    // deliberately clean (no waveshaping): it catches combined peaks, then
+    // leaves a little device-output headroom.
+    finalLimiter.threshold.value = -6;
+    finalLimiter.knee.value = 4;
+    finalLimiter.ratio.value = 20;
+    finalLimiter.attack.value = 0.001;
+    finalLimiter.release.value = 0.18;
+    outputGain.gain.value = BOSS_AUDIO_OUTPUT_GAIN;
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.58;
 
@@ -7174,7 +7189,7 @@
     master.connect(compressor).connect(musicUserGain).connect(overallMaster);
     sfxInput.connect(sfxFilter).connect(sfxMaster).connect(sfxLimiter);
     sfxLimiter.connect(effectsUserGain).connect(overallMaster);
-    overallMaster.connect(analyser).connect(context.destination);
+    overallMaster.connect(finalLimiter).connect(outputGain).connect(analyser).connect(context.destination);
 
     bossMusic = {
       context,
@@ -7184,6 +7199,9 @@
       musicUserGain,
       effectsUserGain,
       overallMaster,
+      sfxLimiter,
+      finalLimiter,
+      outputGain,
       analyser,
       analyserTimeData: new Uint8Array(analyser.fftSize),
       sfxInput,
@@ -7192,6 +7210,7 @@
       sfxSamples: makeBossSfxSampleBank(context),
       sfxLastAt: Object.create(null),
       sfxEventTimes: [],
+      activeSfxEvents: [],
       vpSfx: null,
       spiralSfx: null,
       phase2MassSfx: null,
@@ -7229,6 +7248,10 @@
       envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
     }
     oscillator.connect(envelope).connect(destination);
+    oscillator.onended = () => {
+      try { oscillator.disconnect(); } catch (_) {}
+      try { envelope.disconnect(); } catch (_) {}
+    };
     oscillator.start(time);
     oscillator.stop(time + duration + 0.02);
     return { oscillator, envelope };
@@ -7314,11 +7337,17 @@
       envelope.gain.linearRampToValueAtTime(amount, time + duration * 0.88);
       envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
     } else {
-      envelope.gain.setValueAtTime(amount, time);
+      envelope.gain.setValueAtTime(0.0001, time);
+      envelope.gain.linearRampToValueAtTime(amount, time + Math.min(0.003, duration * 0.18));
       const cleanEnd = time + duration * 0.72;
       envelope.gain.exponentialRampToValueAtTime(0.0001, cleanEnd);
     }
     source.connect(filter).connect(envelope).connect(destination);
+    source.onended = () => {
+      try { source.disconnect(); } catch (_) {}
+      try { filter.disconnect(); } catch (_) {}
+      try { envelope.disconnect(); } catch (_) {}
+    };
     const maxOffset = Math.max(0, bossMusic.sfxNoise.duration - duration);
     source.start(time, Math.random() * maxOffset);
     source.stop(time + (build ? duration : duration * 0.72) + 0.01);
@@ -7486,17 +7515,30 @@
 
   function scheduleBossSfxSample(destination, buffer, time, amount, options) {
     if (!bossMusic || !buffer) return;
-    const source = bossMusic.context.createBufferSource();
-    const gain = bossMusic.context.createGain();
+    const context = bossMusic.context;
+    const source = context.createBufferSource();
+    const gain = context.createGain();
     const config = options || {};
+    const offset = Math.max(0, Math.min(buffer.duration, config.offset || 0));
+    const available = Math.max(0.001, buffer.duration - offset);
+    const duration = Number.isFinite(config.duration)
+      ? Math.max(0.001, Math.min(available, config.duration))
+      : available;
+    const end = time + duration;
+    const fadeIn = Math.min(0.006, duration * 0.22);
+    const fadeOut = Math.min(0.020, duration * 0.28);
     source.buffer = buffer;
-    gain.gain.setValueAtTime(amount, time);
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.linearRampToValueAtTime(Math.max(0.0001, amount), time + fadeIn);
+    gain.gain.setValueAtTime(Math.max(0.0001, amount), Math.max(time + fadeIn, end - fadeOut));
+    gain.gain.exponentialRampToValueAtTime(0.0001, end);
     source.connect(gain).connect(destination);
-    if (Number.isFinite(config.duration)) {
-      source.start(time, Math.max(0, config.offset || 0), config.duration);
-    } else {
-      source.start(time, Math.max(0, config.offset || 0));
-    }
+    source.onended = () => {
+      try { source.disconnect(); } catch (_) {}
+      try { gain.disconnect(); } catch (_) {}
+    };
+    source.start(time, offset, duration);
+    source.stop(end + 0.01);
   }
 
   function movementForAttackType(type) {
@@ -7599,6 +7641,140 @@
     }
   }
 
+  function holdBossAudioParam(param, time) {
+    if (typeof param.cancelAndHoldAtTime === 'function') {
+      param.cancelAndHoldAtTime(time);
+      return;
+    }
+    const value = Math.max(0.0001, param.value);
+    param.cancelScheduledValues(time);
+    param.setValueAtTime(value, time);
+  }
+
+  function bossSfxPriority(name) {
+    if (name === 'death' || name === 'deathImpact' || name === 'deathCrack' ||
+        name === 'persist' || name === 'playerAttack' || name === 'playerTravel' ||
+        name === 'playerImpact' || name === 'vpFull' || name === 'phase2Parry') return 3;
+    if (name === 'damage' || name === 'shadowCharge' || name === 'phase2Feed' ||
+        name === 'phase2Orb' || name === 'phase2TileCharge' || name === 'phase2HexOrb' ||
+        name === 'phase2HexWall' || name === 'phase2Plane' || name === 'phase2Dash' ||
+        name === 'phase2ClawCharge') return 1;
+    return 2;
+  }
+
+  function bossSfxExpectedDuration(name, data) {
+    if (name === 'shadowCharge') {
+      const beats = Number.isFinite(data.beats) ? data.beats : 1;
+      return Math.max(0.8, Math.min(2.35, (60 / Math.max(1, bpm)) * beats + 0.28));
+    }
+    if (name === 'introPentagram') return 5.1;
+    if (name === 'introSeal') return 1.25;
+    if (name === 'death' || name === 'introTentacles' || name === 'phase2Mass' ||
+        name === 'phase2Emerge' || name === 'phase2Whirlpool' || name === 'phase2Pitfall' ||
+        name === 'phase2Ram') return 1.75;
+    if (name === 'cultistAttack' || name === 'phase2Slam' || name === 'phase2GridImpact' ||
+        name === 'phase2TileBreak' || name === 'playerImpact') return 1.55;
+    if (name === 'vp' || name === 'vpFull' || name === 'damage' || name === 'phase2Feed' ||
+        name === 'phase2ClawCut' || name === 'phase2Dash' || name === 'phase2Eye' ||
+        name === 'phase2Orb' || name === 'phase2TileCharge' || name === 'phase2SwordStrike' ||
+        name === 'phase2Parry' || name === 'phase2Plane' || name === 'phase2HexWall' ||
+        name === 'phase2HexOrb') return 0.62;
+    return 1.35;
+  }
+
+  function bossSfxCueLimit(name) {
+    if (name === 'vp') return 1;
+    if (name === 'damage' || name === 'phase2Feed' || name === 'phase2Orb' ||
+        name === 'phase2TileCharge' || name === 'phase2HexOrb' || name === 'phase2HexWall' ||
+        name === 'phase2Plane' || name === 'phase2Dash' || name === 'phase2ClawCut') return 2;
+    return 3;
+  }
+
+  function rebalanceBossSfxEvents(music, at) {
+    const events = music.activeSfxEvents.filter((event) => !event.ended);
+    music.activeSfxEvents = events;
+    if (!events.length) return;
+    const sharedGain = Math.max(BOSS_SFX_MIN_EVENT_GAIN, 1 / Math.sqrt(events.length));
+    for (const event of events) {
+      const priorityScale = event.priority === 3 ? 1.08 : event.priority === 1 ? 0.88 : 1;
+      const target = Math.min(1, sharedGain * priorityScale);
+      const changeAt = Math.max(at, event.startAt);
+      holdBossAudioParam(event.gain.gain, changeAt);
+      event.gain.gain.setTargetAtTime(target, changeAt, 0.004);
+    }
+  }
+
+  function finishBossSfxEvent(music, event) {
+    if (!event || event.ended) return;
+    event.ended = true;
+    if (event.cleanupTimer) window.clearTimeout(event.cleanupTimer);
+    try { event.gain.disconnect(); } catch (_) {}
+    music.activeSfxEvents = music.activeSfxEvents.filter((entry) => entry !== event && !entry.ended);
+    rebalanceBossSfxEvents(music, music.context.currentTime);
+  }
+
+  function retireBossSfxEvent(music, event, now) {
+    if (!event || event.ended) return;
+    event.ended = true;
+    if (event.cleanupTimer) window.clearTimeout(event.cleanupTimer);
+    holdBossAudioParam(event.gain.gain, now);
+    event.gain.gain.setTargetAtTime(0.0001, now, 0.004);
+    music.activeSfxEvents = music.activeSfxEvents.filter((entry) => entry !== event && !entry.ended);
+    window.setTimeout(() => {
+      try { event.gain.disconnect(); } catch (_) {}
+    }, 32);
+  }
+
+  function createBossSfxEventBus(music, name, startAt, data) {
+    const now = music.context.currentTime;
+    const active = music.activeSfxEvents.filter((event) => {
+      if (event.ended) return false;
+      if (event.endAt <= now) {
+        finishBossSfxEvent(music, event);
+        return false;
+      }
+      return true;
+    });
+    music.activeSfxEvents = active;
+    const priority = bossSfxPriority(name);
+    const sameCue = active.filter((event) => event.name === name);
+    while (sameCue.length >= bossSfxCueLimit(name)) {
+      const victim = sameCue.shift();
+      retireBossSfxEvent(music, victim, now);
+      const index = active.indexOf(victim);
+      if (index >= 0) active.splice(index, 1);
+    }
+    while (active.length >= BOSS_SFX_MAX_ACTIVE_EVENTS) {
+      const victim = [...active].sort((first, second) =>
+        first.priority - second.priority || first.startAt - second.startAt)[0];
+      if (!victim || victim.priority > priority) return null;
+      retireBossSfxEvent(music, victim, now);
+      const index = active.indexOf(victim);
+      if (index >= 0) active.splice(index, 1);
+    }
+
+    const gain = music.context.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.connect(music.sfxInput);
+    const event = {
+      name,
+      priority,
+      gain,
+      startAt,
+      endAt: startAt + bossSfxExpectedDuration(name, data),
+      ended: false,
+      cleanupTimer: 0,
+    };
+    active.push(event);
+    music.activeSfxEvents = active;
+    rebalanceBossSfxEvents(music, now);
+    event.cleanupTimer = window.setTimeout(
+      () => finishBossSfxEvent(music, event),
+      Math.max(40, Math.ceil((event.endAt - now + 0.18) * 1000))
+    );
+    return gain;
+  }
+
   function playBossSfx(name, detail) {
     const music = createBossMusic();
     if (!music) return false;
@@ -7629,8 +7805,9 @@
         now - (music.sfxLastAt[throttleKey] == null ? -Infinity : music.sfxLastAt[throttleKey]) < throttle) {
       return false;
     }
-    // VP owns a monophonic interruptible voice, so it neither waits on nor
-    // pollutes the shared SFX concurrency limiter.
+    // A short burst guard avoids creating a large graph in one rendering
+    // quantum. The active-event manager below handles longer overlap, voice
+    // stealing, and shared headroom.
     if (!data.debug && name !== 'vp') {
       music.sfxEventTimes = music.sfxEventTimes.filter((eventTime) => now - eventTime < 0.10);
       const expendable = name === 'damage' || name === 'shadowCharge';
@@ -7645,7 +7822,8 @@
     music.sfxLastAt[throttleKey] = now;
     const requestedTime = Number.isFinite(data.at) ? data.at : now + 0.006;
     const time = Math.max(now + 0.003, requestedTime);
-    const out = music.sfxInput;
+    const out = createBossSfxEventBus(music, name, time, data);
+    if (!out) return false;
 
     if (name === 'shadowCharge') {
       scheduleMovementCharge(out, movement, data, time);
@@ -7918,6 +8096,9 @@
   function updateBossAudioMix() {
     if (!bossMusic) return;
     const now = bossMusic.context.currentTime;
+    holdBossAudioParam(bossMusic.overallMaster.gain, now);
+    holdBossAudioParam(bossMusic.effectsUserGain.gain, now);
+    holdBossAudioParam(bossMusic.musicUserGain.gain, now);
     bossMusic.overallMaster.gain.setTargetAtTime(bossAudioMix.overall, now, 0.012);
     bossMusic.effectsUserGain.gain.setTargetAtTime(bossAudioMix.effects, now, 0.012);
     bossMusic.musicUserGain.gain.setTargetAtTime(bossAudioMix.music, now, 0.012);
@@ -8301,6 +8482,10 @@
     envelope.gain.setValueAtTime(amount, Math.max(time + 0.005, time + duration * 0.64));
     envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
     oscillator.connect(envelope).connect(destination);
+    oscillator.onended = () => {
+      try { oscillator.disconnect(); } catch (_) {}
+      try { envelope.disconnect(); } catch (_) {}
+    };
     oscillator.start(time);
     oscillator.stop(time + duration + 0.02);
   }
@@ -8341,6 +8526,10 @@
     envelope.gain.exponentialRampToValueAtTime(amount, time + 0.003);
     envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
     oscillator.connect(envelope).connect(destination);
+    oscillator.onended = () => {
+      try { oscillator.disconnect(); } catch (_) {}
+      try { envelope.disconnect(); } catch (_) {}
+    };
     oscillator.start(time);
     oscillator.stop(time + duration + 0.02);
   }
@@ -8360,9 +8549,14 @@
       oscillator.type = 'sine';
       oscillator.frequency.setValueAtTime(165, time);
       oscillator.frequency.exponentialRampToValueAtTime(43, time + 0.13);
-      gain.gain.setValueAtTime(0.58 * strength, time);
+      gain.gain.setValueAtTime(0.0001, time);
+      gain.gain.exponentialRampToValueAtTime(0.58 * strength, time + 0.003);
       gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.2);
       oscillator.connect(gain).connect(destination);
+      oscillator.onended = () => {
+        try { oscillator.disconnect(); } catch (_) {}
+        try { gain.disconnect(); } catch (_) {}
+      };
       oscillator.start(time);
       oscillator.stop(time + 0.22);
     } else if (drum === 'SNARE') {
@@ -8376,25 +8570,25 @@
   function scheduleBossMusicNoise(destination, time, duration, amount, type, frequency, q) {
     if (amount <= 0) return;
     const context = bossMusic.context;
-    const frames = Math.max(1, Math.ceil(context.sampleRate * duration));
-    const buffer = context.createBuffer(1, frames, context.sampleRate);
-    const data = buffer.getChannelData(0);
-    let held = 0;
-    for (let i = 0; i < frames; i++) {
-      if (i % 3 === 0) held = Math.random() * 2 - 1;
-      data[i] = held;
-    }
     const source = context.createBufferSource();
     const filter = context.createBiquadFilter();
     const gain = context.createGain();
-    source.buffer = buffer;
+    source.buffer = bossMusic.sfxNoise;
     filter.type = type;
     filter.frequency.value = frequency;
     filter.Q.value = q;
-    gain.gain.setValueAtTime(amount, time);
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.linearRampToValueAtTime(amount, time + Math.min(0.003, duration * 0.15));
     gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
     source.connect(filter).connect(gain).connect(destination);
-    source.start(time);
+    source.onended = () => {
+      try { source.disconnect(); } catch (_) {}
+      try { filter.disconnect(); } catch (_) {}
+      try { gain.disconnect(); } catch (_) {}
+    };
+    const maxOffset = Math.max(0, bossMusic.sfxNoise.duration - duration);
+    source.start(time, Math.random() * maxOffset, duration);
+    source.stop(time + duration + 0.01);
   }
 
   function startFight() {
