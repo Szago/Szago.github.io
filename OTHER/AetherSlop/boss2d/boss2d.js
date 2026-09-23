@@ -185,6 +185,9 @@
   let cultistFallenImg = null; // fallen form used for the second-phase ritual
   let bpmElement = null;       // debug BPM readout, top-right
   let soundDebugOverlay = null;
+  let soundLogDisplay = null;
+  let soundLogButton = null;
+  const soundLogEntries = [];
   let active = false;
   let animationFrame = 0;
   let previousTime = 0;
@@ -394,6 +397,7 @@
   const BOSS_SFX_MASTER_GAIN = 1;
   const BOSS_SFX_MAX_ACTIVE_EVENTS = 10;
   const BOSS_SFX_MIN_EVENT_GAIN = 0.32;
+  const BOSS_SFX_SCHEDULE_LEAD = 0.03;
   const BOSS_AUDIO_OUTPUT_GAIN = 0.86;
   const BOSS_SFX_VP_STEPS_PER_BEAT = 4;
   const BOSS_SFX_DAMAGE_STEPS_PER_BEAT = 2;
@@ -452,6 +456,7 @@
     { label: 'HEX WALL', cue: 'phase2HexWall', stepsPerBeat: 1 },
     { label: 'HEX ORB', cue: 'phase2HexOrb', stepsPerBeat: 2 },
     { label: 'WHIRLPOOL', cue: 'phase2Whirlpool', stepsPerBeat: 0.5 },
+    { label: 'GRAVITY WAVE', cue: 'gravityRipple', stepsPerBeat: 0.25 },
   ];
   let bossMusic = null;
   let bossMusicTimer = 0;
@@ -470,6 +475,7 @@
   let phaseOneDamageSfxCount = 0;
   let heroDamageFlashAge = Infinity;
   let heroVpFlashAge = Infinity;
+  let heroGravityWaveFlashAge = Infinity;
   let heroVpFlashSerial = 0;
   let soundDebugHold = null;
   let combatPaused = false;
@@ -907,11 +913,13 @@
   const PHASE2_GRAVITY_RIPPLE_INTERVAL_BEATS = 4;
   const PHASE2_GRAVITY_RIPPLE_SPEED_PER_BEAT = 75;
   const PHASE2_GRAVITY_RIPPLE_HALF_WIDTH = 0.75;
-  const PHASE2_GRAVITY_RIPPLE_PUSH_SPEED = 0.13;
+  const PHASE2_GRAVITY_RIPPLE_PUSH_SPEED = 0.20;
   const PHASE2_GRAVITY_ACCELERATION = 0.0016;
   const PHASE2_GRAVITY_DIVE_ACCELERATION = 0.0024;
-  const PHASE2_GRAVITY_JUMP_SPEED = 0.82;
-  const PHASE2_GRAVITY_JUMP_RELEASE_SPEED = 0.58;
+  const PHASE2_GRAVITY_JUMP_SPEED = 0.63;
+  const PHASE2_GRAVITY_JUMP_HOLD_MS = 350;
+  const PHASE2_GRAVITY_JUMP_HELD_GRAVITY_SCALE = 0.5;
+  const PHASE2_GRAVITY_JUMP_EARLY_RELEASE_GRAVITY = 0.0065;
   const PHASE2_GRAVITY_JUMP_BUFFER_MS = 140;
   const PHASE2_GRAVITY_GROUNDED_GRACE_MS = 110;
   const PHASE2_GRAVITY_KNOCKBACK_DRAG = 0.00155;
@@ -1089,6 +1097,7 @@
   const HERO_DAMAGE_FLASH_INTERVAL_MS = 1000 / 10;
   const HERO_VP_FLASH_MS = 168;
   const HERO_VP_FLASH_INTERVAL_MS = 1000 / 10;
+  const HERO_GRAVITY_WAVE_FLASH_MS = 180;
   let hp = HP_MAX;
   let vp = 0;
   let entropy = 0;
@@ -1130,6 +1139,10 @@
     });
   }
 
+  function triggerHeroGravityWaveFlash() {
+    heroGravityWaveFlashAge = 0;
+  }
+
   function damagePlayer(amount) {
     const scaledAmount = Math.max(0, amount) * PLAYER_DAMAGE_TAKEN_MULTIPLIER;
     if (scaledAmount <= 0 || hp <= 0) return 0;
@@ -1160,11 +1173,13 @@
   function updateHeroCombatFeedback(dt) {
     heroDamageFlashAge += dt;
     heroVpFlashAge += dt;
+    heroGravityWaveFlashAge += dt;
   }
 
   function resetHeroCombatFeedback() {
     heroDamageFlashAge = Infinity;
     heroVpFlashAge = Infinity;
+    heroGravityWaveFlashAge = Infinity;
     heroVpFlashSerial = 0;
   }
   const shockwaveArenaProgress = (t) => {
@@ -1723,6 +1738,59 @@
     if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
+  function clearSoundLog() {
+    for (const entry of soundLogEntries) {
+      window.clearTimeout(entry.timer);
+      entry.element.remove();
+    }
+    soundLogEntries.length = 0;
+  }
+
+  function setSoundLogOpen(open) {
+    if (!soundLogDisplay || !soundLogButton) return;
+    soundLogDisplay.classList.toggle('hidden', !open);
+    soundLogButton.setAttribute('aria-pressed', open ? 'true' : 'false');
+    soundLogButton.textContent = open ? 'HIDE SOUND LOG' : 'SHOW SOUND LOG';
+    if (!open) clearSoundLog();
+  }
+
+  function logBossSfx(name, data) {
+    if (!soundLogDisplay || soundLogDisplay.classList.contains('hidden')) return;
+    const spikeLabels = {
+      phase2TileCharge: 'Spike warning',
+      phase2SwordStrike: 'Spike fall',
+      phase2ClawCut: 'Spike impact',
+    };
+    const label = data.soundLogLabel || (data.spikeDropper && spikeLabels[name]) ||
+      (name === 'vp' ? 'VP gain' : null) ||
+      (name === 'gravityRipple' ? 'Gravity ripple' : null) ||
+      name.replace(/^phase2/, '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+    const now = performance.now();
+    const previous = soundLogEntries.find((entry) =>
+      entry.name === name && entry.label === label && now - entry.startedAt < 1000);
+    if (previous) {
+      previous.count++;
+      previous.countElement.textContent = previous.count + 'x - ' + previous.label;
+      soundLogDisplay.querySelector('.aether-boss2d-sound-log-entries').prepend(previous.element);
+      return;
+    }
+    const element = document.createElement('div');
+    element.className = 'aether-boss2d-sound-log-entry';
+    const countElement = document.createElement('span');
+    countElement.textContent = '1x - ' + label;
+    const cueElement = document.createElement('small');
+    cueElement.textContent = name;
+    element.append(countElement, cueElement);
+    soundLogDisplay.querySelector('.aether-boss2d-sound-log-entries').prepend(element);
+    const entry = { name, label, count: 1, startedAt: now, element, countElement, timer: 0 };
+    soundLogEntries.unshift(entry);
+    entry.timer = window.setTimeout(() => {
+      element.remove();
+      const index = soundLogEntries.indexOf(entry);
+      if (index >= 0) soundLogEntries.splice(index, 1);
+    }, 3000);
+  }
+
   function makeOverlay() {
     overlay = document.createElement('div');
     overlay.id = 'aether-boss2d-overlay';
@@ -1737,6 +1805,11 @@
       '<div id="aether-boss2d-fps" class="aether-boss2d-fps">FPS --</div>' +
       '<div id="aether-boss2d-bpm" class="aether-boss2d-bpm">BPM --</div>' +
       '<div id="aether-boss2d-debug" class="aether-boss2d-debug"></div>' +
+      '<div id="aether-boss2d-sound-log" class="aether-boss2d-sound-log hidden" aria-label="Recent sound effects">' +
+        '<div class="aether-boss2d-sound-log-title">SOUND LOG · LAST 3 SECONDS</div>' +
+        '<div class="aether-boss2d-sound-log-note">Scheduled cues; each may have multiple audio layers</div>' +
+        '<div class="aether-boss2d-sound-log-entries"></div>' +
+      '</div>' +
       '<button id="aether-boss2d-sound-debug-toggle" class="aether-boss2d-debug-btn aether-boss2d-sound-debug-toggle" type="button">SFX TEST</button>' +
       '<div id="aether-boss2d-sound-debug-overlay" class="aether-boss2d-sound-debug-overlay hidden" role="dialog" aria-modal="true" aria-label="Sound test utility">' +
         '<div class="aether-boss2d-sound-debug-window">' +
@@ -1825,6 +1898,7 @@
       persistBtn.blur();
     });
     soundDebugOverlay = document.getElementById('aether-boss2d-sound-debug-overlay');
+    soundLogDisplay = document.getElementById('aether-boss2d-sound-log');
     const soundDebugToggle = document.getElementById('aether-boss2d-sound-debug-toggle');
     const soundDebugClose = overlay.querySelector('.aether-boss2d-sound-debug-close');
     if (soundDebugToggle) {
@@ -2181,6 +2255,16 @@
     });
     utilityDebugControls.appendChild(primePhaseTwoBtn);
 
+    soundLogButton = document.createElement('button');
+    soundLogButton.type = 'button';
+    soundLogButton.className = 'aether-boss2d-debug-btn';
+    soundLogButton.addEventListener('click', () => {
+      setSoundLogOpen(soundLogDisplay.classList.contains('hidden'));
+      soundLogButton.blur();
+    });
+    utilityDebugControls.appendChild(soundLogButton);
+    setSoundLogOpen(false);
+
     const mayhemAdvanceControls = document.createElement('div');
     mayhemAdvanceControls.className = 'aether-boss2d-mayhem-advance';
     const previousMayhemBtn = document.createElement('button');
@@ -2223,6 +2307,18 @@
     const damageLife = 1 - clamp01(heroDamageFlashAge / HERO_DAMAGE_FLASH_MS);
     if (damageLife > 0) {
       ctx.fillStyle = 'rgba(255, 26, 34, ' + (0.78 * damageLife).toFixed(3) + ')';
+      for (let y = 0; y < HERO.rows.length; y++) {
+        for (let x = 0; x < HERO.rows[y].length; x++) {
+          const token = HERO.rows[y][x];
+          if (token === '.' || token === ' ' || !HERO.pal[token]) continue;
+          ctx.fillRect(ox + x * HERO_SCALE, oy + y * HERO_SCALE, HERO_SCALE, HERO_SCALE);
+        }
+      }
+    }
+
+    const gravityWaveLife = 1 - clamp01(heroGravityWaveFlashAge / HERO_GRAVITY_WAVE_FLASH_MS);
+    if (gravityWaveLife > 0) {
+      ctx.fillStyle = 'rgba(54, 238, 255, ' + (0.9 * gravityWaveLife * gravityWaveLife).toFixed(3) + ')';
       for (let y = 0; y < HERO.rows.length; y++) {
         for (let x = 0; x < HERO.rows[y].length; x++) {
           const token = HERO.rows[y][x];
@@ -7353,6 +7449,60 @@
     source.stop(time + (build ? duration : duration * 0.72) + 0.01);
   }
 
+  function gravityRippleSfxDuration() {
+    // The wave breathes over roughly two and a half beats, leaving a gap
+    // before the next ripple at the four-beat interval.
+    return Math.max(0.66, Math.min(1.04, 150 / Math.max(1, bpm)));
+  }
+
+  function scheduleGravityRippleSfx(destination, time) {
+    if (!bossMusic) return;
+    const context = bossMusic.context;
+    const duration = gravityRippleSfxDuration();
+    const tone = context.createOscillator();
+    const toneGain = context.createGain();
+    const noise = context.createBufferSource();
+    const noiseFilter = context.createBiquadFilter();
+    const noiseGain = context.createGain();
+    const peakAt = time + duration * 0.42;
+    const endAt = time + duration;
+
+    // A soft downward-moving low note gives the wave weight. Filtered noise
+    // supplies a little air movement without the rising attack of a telegraph.
+    tone.type = 'triangle';
+    tone.frequency.setValueAtTime(58, time);
+    tone.frequency.exponentialRampToValueAtTime(39, endAt);
+    toneGain.gain.setValueAtTime(0.0001, time);
+    toneGain.gain.linearRampToValueAtTime(0.15, peakAt);
+    toneGain.gain.exponentialRampToValueAtTime(0.0001, endAt);
+    tone.connect(toneGain).connect(destination);
+
+    noise.buffer = bossMusic.sfxNoise;
+    noise.loop = true;
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.setValueAtTime(210, time);
+    noiseFilter.frequency.exponentialRampToValueAtTime(95, endAt);
+    noiseFilter.Q.value = 0.55;
+    noiseGain.gain.setValueAtTime(0.0001, time);
+    noiseGain.gain.linearRampToValueAtTime(0.12, peakAt);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, endAt);
+    noise.connect(noiseFilter).connect(noiseGain).connect(destination);
+
+    tone.onended = () => {
+      try { tone.disconnect(); } catch (_) {}
+      try { toneGain.disconnect(); } catch (_) {}
+    };
+    noise.onended = () => {
+      try { noise.disconnect(); } catch (_) {}
+      try { noiseFilter.disconnect(); } catch (_) {}
+      try { noiseGain.disconnect(); } catch (_) {}
+    };
+    tone.start(time);
+    noise.start(time, Math.random() * Math.max(0, noise.buffer.duration - duration));
+    tone.stop(endAt + 0.02);
+    noise.stop(endAt + 0.02);
+  }
+
   function startBloodSpiralAudio() {
     const music = createBossMusic();
     if (!music || music.spiralSfx) return;
@@ -7655,7 +7805,7 @@
     if (name === 'death' || name === 'deathImpact' || name === 'deathCrack' ||
         name === 'persist' || name === 'playerAttack' || name === 'playerTravel' ||
         name === 'playerImpact' || name === 'vpFull' || name === 'phase2Parry') return 3;
-    if (name === 'damage' || name === 'shadowCharge' || name === 'phase2Feed' ||
+    if (name === 'damage' || name === 'shadowCharge' || name === 'gravityRipple' || name === 'phase2Feed' ||
         name === 'phase2Orb' || name === 'phase2TileCharge' || name === 'phase2HexOrb' ||
         name === 'phase2HexWall' || name === 'phase2Plane' || name === 'phase2Dash' ||
         name === 'phase2ClawCharge') return 1;
@@ -7663,6 +7813,12 @@
   }
 
   function bossSfxExpectedDuration(name, data) {
+    if (name === 'gravityRipple') return gravityRippleSfxDuration() + 0.08;
+    if (data.spikeDropper) {
+      if (name === 'phase2TileCharge') return 0.27;
+      if (name === 'phase2SwordStrike') return 0.27;
+      if (name === 'phase2ClawCut') return 0.31;
+    }
     if (name === 'shadowCharge') {
       const beats = Number.isFinite(data.beats) ? data.beats : 1;
       return Math.max(0.8, Math.min(2.35, (60 / Math.max(1, bpm)) * beats + 0.28));
@@ -7684,6 +7840,7 @@
 
   function bossSfxCueLimit(name) {
     if (name === 'vp') return 1;
+    if (name === 'gravityRipple') return 1;
     if (name === 'damage' || name === 'phase2Feed' || name === 'phase2Orb' ||
         name === 'phase2TileCharge' || name === 'phase2HexOrb' || name === 'phase2HexWall' ||
         name === 'phase2Plane' || name === 'phase2Dash' || name === 'phase2ClawCut') return 2;
@@ -7698,7 +7855,7 @@
     for (const event of events) {
       const priorityScale = event.priority === 3 ? 1.08 : event.priority === 1 ? 0.88 : 1;
       const target = Math.min(1, sharedGain * priorityScale);
-      const changeAt = Math.max(at, event.startAt);
+      const changeAt = Math.max(at + BOSS_SFX_SCHEDULE_LEAD, event.startAt);
       holdBossAudioParam(event.gain.gain, changeAt);
       event.gain.gain.setTargetAtTime(target, changeAt, 0.004);
     }
@@ -7717,12 +7874,13 @@
     if (!event || event.ended) return;
     event.ended = true;
     if (event.cleanupTimer) window.clearTimeout(event.cleanupTimer);
-    holdBossAudioParam(event.gain.gain, now);
-    event.gain.gain.setTargetAtTime(0.0001, now, 0.004);
+    const fadeAt = now + BOSS_SFX_SCHEDULE_LEAD;
+    holdBossAudioParam(event.gain.gain, fadeAt);
+    event.gain.gain.setTargetAtTime(0.0001, fadeAt, 0.004);
     music.activeSfxEvents = music.activeSfxEvents.filter((entry) => entry !== event && !entry.ended);
     window.setTimeout(() => {
       try { event.gain.disconnect(); } catch (_) {}
-    }, 32);
+    }, 85);
   }
 
   function createBossSfxEventBus(music, name, startAt, data) {
@@ -7820,8 +7978,10 @@
       music.sfxEventTimes.push(now);
     }
     music.sfxLastAt[throttleKey] = now;
-    const requestedTime = Number.isFinite(data.at) ? data.at : now + 0.006;
-    const time = Math.max(now + 0.003, requestedTime);
+    const requestedTime = Number.isFinite(data.at) ? data.at : now + BOSS_SFX_SCHEDULE_LEAD;
+    // Firefox may apply an automation ramp after currentTime has already
+    // passed its start. Keep every SFX envelope safely ahead of rendering.
+    const time = Math.max(now + BOSS_SFX_SCHEDULE_LEAD, requestedTime);
     const out = createBossSfxEventBus(music, name, time, data);
     if (!out) return false;
 
@@ -7950,8 +8110,11 @@
       scheduleBossSfxTone(out, 'sawtooth', 34.6, 69.3, time, 0.48, 0.16, { build: true });
       scheduleBossSfxNoise(out, time, 0.46, 0.14, 'bandpass', 150, 2.4, 520, true);
     } else if (name === 'phase2ClawCut') {
-      scheduleBossSfxSample(out, music.sfxSamples.tentacleLash, time, 0.62, { duration: 0.48 });
-      scheduleBossSfxTone(out, 'pulse12', 110, 27.5, time, 0.38, 0.30);
+      const spike = Boolean(data.spikeDropper);
+      scheduleBossSfxSample(out, music.sfxSamples.tentacleLash, time,
+        spike ? 0.48 : 0.62, { duration: spike ? 0.28 : 0.48 });
+      scheduleBossSfxTone(out, 'pulse12', 110, 27.5, time,
+        spike ? 0.22 : 0.38, spike ? 0.18 : 0.30);
     } else if (name === 'phase2Dash') {
       scheduleBossSfxNoise(out, time, 0.22, 0.20, 'bandpass', 760, 0.9, 140);
       scheduleBossSfxTone(out, 'triangle', 73.4, 36.7, time, 0.25, 0.17);
@@ -7968,8 +8131,11 @@
       scheduleBossSfxSample(out, music.sfxSamples.checkerExplosion, time, 0.88);
       scheduleBossSfxTone(out, 'sine', 92, 19, time, 0.68, 0.48);
     } else if (name === 'phase2TileCharge') {
-      scheduleBossSfxTone(out, 'pulse12', 43.65, 87.3, time, 0.44, 0.18, { build: true });
-      scheduleBossSfxTone(out, 'sine', 32.7, 49, time, 0.48, 0.21, { build: true });
+      const spike = Boolean(data.spikeDropper);
+      scheduleBossSfxTone(out, 'pulse12', 43.65, 87.3, time,
+        spike ? 0.21 : 0.44, spike ? 0.11 : 0.18, { build: true });
+      scheduleBossSfxTone(out, 'sine', 32.7, 49, time,
+        spike ? 0.23 : 0.48, spike ? 0.13 : 0.21, { build: true });
     } else if (name === 'phase2TileBreak') {
       scheduleBossSfxSample(out, music.sfxSamples.voidErupt, time, 0.84);
       scheduleBossSfxTone(out, 'sine', 72, 17, time, 0.72, 0.46);
@@ -7977,8 +8143,11 @@
       scheduleBossSfxTone(out, 'triangle', 55, 110, time, 0.82, 0.17, { build: true });
       scheduleBossSfxTone(out, 'pulse12', 41.2, 82.4, time, 0.82, 0.13, { build: true });
     } else if (name === 'phase2SwordStrike') {
-      scheduleBossSfxSample(out, music.sfxSamples.swordWhoosh, time, 0.78);
-      scheduleBossSfxTone(out, 'triangle', 98, 49, time, 0.30, 0.19);
+      const spike = Boolean(data.spikeDropper);
+      scheduleBossSfxSample(out, music.sfxSamples.swordWhoosh, time,
+        spike ? 0.52 : 0.78, spike ? { duration: 0.24 } : undefined);
+      scheduleBossSfxTone(out, 'triangle', 98, 49, time,
+        spike ? 0.20 : 0.30, spike ? 0.12 : 0.19);
     } else if (name === 'phase2Parry') {
       scheduleBossSfxTone(out, 'pulse25', 392, 293.7, time, 0.11, 0.18);
       scheduleBossSfxTone(out, 'triangle', 196, 98, time, 0.24, 0.24);
@@ -8001,9 +8170,12 @@
       scheduleBossSfxTone(out, 'sine', 29.1, 49, time, 1.15, 0.31, { build: true });
       scheduleBossSfxTone(out, 'triangle', 43.65, 73.4, time, 1.15, 0.18, { build: true });
       scheduleBossSfxNoise(out, time, 1.10, 0.12, 'bandpass', 95, 1.2, 330, true);
+    } else if (name === 'gravityRipple') {
+      scheduleGravityRippleSfx(out, time);
     } else {
       return false;
     }
+    logBossSfx(name, data);
     return true;
   }
 
@@ -8150,7 +8322,9 @@
     });
     panel.appendChild(combatPauseButton);
     updateCombatPauseButton();
-    BOSS_SFX_DEBUG_CUES.forEach((definition) => {
+    const sortedCues = [...BOSS_SFX_DEBUG_CUES]
+      .sort((first, second) => first.label.localeCompare(second.label, 'en'));
+    sortedCues.forEach((definition) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'aether-boss2d-debug-btn aether-boss2d-sound-debug-btn';
@@ -12719,6 +12893,9 @@
     pattern.grounded = false;
     pattern.jumpBufferMs = 0;
     pattern.groundedGraceMs = 0;
+    pattern.jumpActive = false;
+    pattern.jumpHoldMs = 0;
+    pattern.jumpReleaseGravity = 0;
     pattern.terrainPassThrough = false;
     pattern.ripples = [];
     beginPhaseTwoGravitySubpattern(pattern, pattern.initialSubpattern || 'weaponTetris');
@@ -12757,6 +12934,9 @@
       grounded: false,
       jumpBufferMs: 0,
       groundedGraceMs: 0,
+      jumpActive: false,
+      jumpHoldMs: 0,
+      jumpReleaseGravity: 0,
       terrainPassThrough: false,
       initialSubpattern,
       subpattern: null,
@@ -12787,7 +12967,7 @@
       pushed: false,
       seed: pattern.nextRippleId * 7.13,
     });
-    playBossSfx('phase2TileCharge');
+    playBossSfx('gravityRipple');
   }
 
   function createPhaseTwoGravitySpearRain() {
@@ -13710,7 +13890,7 @@
       ageBeats: 0,
     });
     subpattern.spawnedCount++;
-    playBossSfx('phase2TileCharge');
+    playBossSfx('phase2TileCharge', { spikeDropper: true });
   }
 
   function phaseTwoGravitySpikeMarkerTouchesHero(spike, content) {
@@ -13739,7 +13919,7 @@
         if (spike.ageBeats >= PHASE2_GRAVITY_SPIKE_TELEGRAPH_BEATS) {
           spike.state = 'falling';
           spike.ageBeats = 0;
-          playBossSfx('phase2SwordStrike');
+          playBossSfx('phase2SwordStrike', { spikeDropper: true });
         }
         continue;
       }
@@ -13752,7 +13932,7 @@
           spike.y = content.bottom - spike.length * 0.5 + spike.length * 0.10;
           spike.state = 'impact';
           spike.ageBeats = 0;
-          playBossSfx('phase2ClawCut');
+          playBossSfx('phase2ClawCut', { spikeDropper: true });
         }
         continue;
       }
@@ -13843,21 +14023,39 @@
     pattern.jumpBufferMs = Math.max(0, pattern.jumpBufferMs - dt);
     pattern.groundedGraceMs = Math.max(0, pattern.groundedGraceMs - dt);
     if (pattern.jumpBufferMs > 0 && (pattern.grounded || pattern.groundedGraceMs > 0)) {
+      pattern.jumpHoldMs = 0;
+      pattern.jumpActive = true;
+      pattern.jumpReleaseGravity = 0;
       pattern.vy = -PHASE2_GRAVITY_JUMP_SPEED;
       pattern.grounded = false;
       pattern.jumpBufferMs = 0;
       pattern.groundedGraceMs = 0;
-      playBossSfx('phase2SwordStrike');
     }
     const jumpHeld = keys.has('KeyW') || keys.has('ArrowUp');
-    if (!jumpHeld && pattern.vy < -PHASE2_GRAVITY_JUMP_RELEASE_SPEED) {
-      pattern.vy = -PHASE2_GRAVITY_JUMP_RELEASE_SPEED;
-    }
     const diving = !pattern.grounded && (keys.has('KeyS') || keys.has('ArrowDown'));
-    pattern.vy += (
-      PHASE2_GRAVITY_ACCELERATION * pattern.gravityStrength +
-      (diving ? PHASE2_GRAVITY_DIVE_ACCELERATION : 0)
-    ) * dt;
+    const normalGravity = PHASE2_GRAVITY_ACCELERATION * pattern.gravityStrength;
+    let verticalGravity = normalGravity;
+    if (pattern.jumpActive) {
+      if (jumpHeld && !diving && pattern.vy < 0 &&
+          pattern.jumpHoldMs < PHASE2_GRAVITY_JUMP_HOLD_MS) {
+        pattern.jumpHoldMs = Math.min(PHASE2_GRAVITY_JUMP_HOLD_MS, pattern.jumpHoldMs + dt);
+        // Holding only reduces upward deceleration. It never re-boosts speed.
+        verticalGravity = normalGravity * PHASE2_GRAVITY_JUMP_HELD_GRAVITY_SCALE;
+        if (pattern.jumpHoldMs >= PHASE2_GRAVITY_JUMP_HOLD_MS) pattern.jumpActive = false;
+      } else {
+        pattern.jumpActive = false;
+        const hold = pattern.jumpHoldMs / PHASE2_GRAVITY_JUMP_HOLD_MS;
+        // Earlier releases brake the remaining rise more strongly. The
+        // release acceleration tapers continuously to normal gravity.
+        pattern.jumpReleaseGravity = normalGravity +
+          (PHASE2_GRAVITY_JUMP_EARLY_RELEASE_GRAVITY - normalGravity) * (1 - hold);
+      }
+    }
+    if (pattern.vy < 0 && pattern.jumpReleaseGravity > 0) {
+      verticalGravity = pattern.jumpReleaseGravity;
+    }
+    pattern.vy += (verticalGravity + (diving ? PHASE2_GRAVITY_DIVE_ACCELERATION : 0)) * dt;
+    if (pattern.vy >= 0) pattern.jumpReleaseGravity = 0;
     hero.x += (moveVx + pattern.vx) * dt;
     hero.y += pattern.vy * dt;
     if (hero.x <= bounds.left || hero.x >= bounds.right) {
@@ -13867,6 +14065,8 @@
     if (hero.y <= bounds.top) {
       hero.y = bounds.top;
       pattern.vy = Math.max(0, pattern.vy);
+      pattern.jumpActive = false;
+      pattern.jumpReleaseGravity = 0;
     }
     if (hero.y >= bounds.bottom) {
       hero.y = bounds.bottom;
@@ -13883,7 +14083,11 @@
     );
     const arrowGrounded = resolvePhaseTwoGravityArrowMovement(pattern, previousX, previousY);
     pattern.grounded = terrainGrounded || arrowGrounded || pattern.grounded;
-    if (pattern.grounded) pattern.groundedGraceMs = PHASE2_GRAVITY_GROUNDED_GRACE_MS;
+    if (pattern.grounded) {
+      pattern.groundedGraceMs = PHASE2_GRAVITY_GROUNDED_GRACE_MS;
+      pattern.jumpActive = false;
+      pattern.jumpReleaseGravity = 0;
+    }
     heroMove.x = horizontal || Math.sign(pattern.vx);
     heroMove.y = Math.sign(pattern.vy);
   }
@@ -13923,7 +14127,9 @@
       pattern.vx += dx / length * PHASE2_GRAVITY_RIPPLE_PUSH_SPEED;
       pattern.vy += dy / length * PHASE2_GRAVITY_RIPPLE_PUSH_SPEED;
       pattern.grounded = false;
-      playBossSfx('phase2SwordStrike');
+      pattern.jumpActive = false;
+      pattern.jumpReleaseGravity = 0;
+      triggerHeroGravityWaveFlash();
     }
     pattern.ripples.length = liveRippleCount;
     const subpattern = pattern.subpattern;
@@ -20031,6 +20237,7 @@
     active = false;
     stopSoundDebugHold();
     setSoundDebugOverlayOpen(false);
+    setSoundLogOpen(false);
     stopBloodSpiralAudio(true);
     stopPhaseTwoMassAudio(true);
     combatPaused = false;
