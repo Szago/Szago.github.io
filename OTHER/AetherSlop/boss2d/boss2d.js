@@ -12921,6 +12921,7 @@
     pattern.jumpActive = false;
     pattern.jumpHoldMs = 0;
     pattern.jumpReleaseGravity = 0;
+    pattern.wallSupportId = null;
     pattern.terrainPassThrough = false;
     pattern.ripples = [];
     beginPhaseTwoGravitySubpattern(pattern, pattern.initialSubpattern || 'weaponTetris');
@@ -12962,6 +12963,7 @@
       jumpActive: false,
       jumpHoldMs: 0,
       jumpReleaseGravity: 0,
+      wallSupportId: null,
       terrainPassThrough: false,
       initialSubpattern,
       subpattern: null,
@@ -13628,6 +13630,7 @@
   function beginPhaseTwoGravitySubpattern(pattern, type, carry = null) {
     if (!pattern) return false;
     pattern.terrainPassThrough = false;
+    pattern.wallSupportId = null;
     if (type === 'weaponTetris') {
       pattern.subpattern = createPhaseTwoGravitySpearRain();
     } else if (type === 'terrainDrain') {
@@ -14068,22 +14071,32 @@
       ];
   }
 
-  function phaseTwoGravityWallTouchesHero(wall, x, y, content) {
-    const body = phaseTwoGravityHeroBodyRectAt(x, y);
-    return phaseTwoGravityWallSolidRects(wall, content).some((rect) =>
-      phaseTwoGravityBoundsOverlap(body, rect));
+  function phaseTwoGravityWallHeroRectAt(x = hero.x, y = hero.y) {
+    // Wall Pass uses one continuous rectangle. Sprite-pixel rounding here used
+    // to make a contact alternate between overlap and separation each frame.
+    return {
+      left: x - HERO_W / 2 + HERO_BODY_BOUNDS.minX * HERO_SCALE,
+      right: x - HERO_W / 2 + (HERO_BODY_BOUNDS.maxX + 1) * HERO_SCALE,
+      top: y - HERO_H / 2 + HERO_BODY_BOUNDS.minY * HERO_SCALE,
+      bottom: y - HERO_H / 2 + (HERO_BODY_BOUNDS.maxY + 1) * HERO_SCALE,
+    };
+  }
+
+  function phaseTwoGravityWallRectsOverlap(first, second) {
+    return first.left < second.right && first.right > second.left &&
+      first.top < second.bottom && first.bottom > second.top;
   }
 
   function phaseTwoGravityWallNearHero(wall, x, y, content) {
-    const body = phaseTwoGravityHeroBodyRectAt(x, y);
+    const body = phaseTwoGravityWallHeroRectAt(x, y);
     return phaseTwoGravityWallSolidRects(wall, content).some((rect) =>
       body.left <= rect.right + 3 && body.right >= rect.left - 3 &&
       body.top <= rect.bottom + 3 && body.bottom >= rect.top - 3);
   }
 
   function phaseTwoGravityWallSweepsHero(wall, fromX, fromY, toX, toY, content) {
-    const before = phaseTwoGravityHeroBodyRectAt(fromX, fromY);
-    const after = phaseTwoGravityHeroBodyRectAt(toX, toY);
+    const before = phaseTwoGravityWallHeroRectAt(fromX, fromY);
+    const after = phaseTwoGravityWallHeroRectAt(toX, toY);
     const sweep = {
       left: Math.min(before.left, after.left),
       right: Math.max(before.right, after.right),
@@ -14091,63 +14104,95 @@
       bottom: Math.max(before.bottom, after.bottom),
     };
     return phaseTwoGravityWallSolidRects(wall, content).some((rect) =>
-      phaseTwoGravityBoundsOverlap(sweep, rect));
+      phaseTwoGravityWallRectsOverlap(sweep, rect));
   }
 
-  function phaseTwoGravityWallPushTarget(wall) {
-    const body = phaseTwoGravityHeroBodyRectAt();
-    const near = wall.position - wall.thickness / 2;
-    const far = wall.position + wall.thickness / 2;
-    if (wall.axis === 'x') {
-      return {
-        x: hero.x + (wall.direction > 0 ? far - body.left + 1 : near - body.right - 1),
-        y: hero.y,
-      };
+  function resolvePhaseTwoGravityWallHeroMovement(pattern, dx, dy, bounds) {
+    const subpattern = pattern.subpattern;
+    const content = phaseTwoGravityContentRect();
+    const walls = subpattern.walls.filter((wall) =>
+      !wall.phasing && wall.ageBeats >= PHASE2_GRAVITY_WALL_PASS_READY_BEATS);
+    const start = phaseTwoGravityWallHeroRectAt();
+    let allowedX = dx;
+    for (const wall of walls) {
+      for (const rect of phaseTwoGravityWallSolidRects(wall, content)) {
+        if (start.top >= rect.bottom || start.bottom <= rect.top) continue;
+        if (dx > 0 && start.right <= rect.left && start.right + allowedX > rect.left) {
+          allowedX = Math.min(allowedX, rect.left - start.right);
+        } else if (dx < 0 && start.left >= rect.right && start.left + allowedX < rect.right) {
+          allowedX = Math.max(allowedX, rect.right - start.left);
+        }
+      }
     }
-    return {
-      x: hero.x,
-      y: hero.y + (wall.direction > 0 ? far - body.top + 1 : near - body.bottom - 1),
-    };
+    hero.x = clampRange(hero.x + allowedX, bounds.left, bounds.right);
+    if (allowedX !== dx) pattern.vx = 0;
+    const afterX = phaseTwoGravityWallHeroRectAt();
+    let allowedY = dy;
+    let supportId = null;
+    let hitCeiling = false;
+    for (const wall of walls) {
+      for (const rect of phaseTwoGravityWallSolidRects(wall, content)) {
+        if (afterX.left >= rect.right || afterX.right <= rect.left) continue;
+        if (dy > 0 && afterX.bottom <= rect.top && afterX.bottom + allowedY > rect.top) {
+          allowedY = Math.min(allowedY, rect.top - afterX.bottom);
+          supportId = wall.id;
+        } else if (dy < 0 && afterX.top >= rect.bottom && afterX.top + allowedY < rect.bottom) {
+          allowedY = Math.max(allowedY, rect.bottom - afterX.top);
+          hitCeiling = true;
+        }
+      }
+    }
+    hero.y = clampRange(hero.y + allowedY, bounds.top, bounds.bottom);
+    if (allowedY !== dy) {
+      pattern.vy = 0;
+      pattern.jumpActive = false;
+      pattern.jumpReleaseGravity = 0;
+    }
+    pattern.wallSupportId = supportId;
+    return { grounded: supportId !== null, hitCeiling };
   }
 
-  function phaseTwoGravityWallSupportRect(wall, content, previousBody, body, vy) {
-    if (wall.axis !== 'y' || wall.phasing) return null;
+  function phaseTwoGravityWallMotionContact(wall, previousBody, body, content, pattern) {
+    const travel = wall.position - wall.previousPosition;
+    if (!travel) return null;
     const wallSpeed = PHASE2_GRAVITY_WALL_PASS_SPEED_PER_BEAT / Math.max(1, beatMs);
-    if (vy < -wallSpeed - 0.025) return null; // A deliberate jump leaves the platform.
-    const wallTravel = wall.position - wall.previousPosition;
     for (const rect of phaseTwoGravityWallSolidRects(wall, content)) {
-      if (body.left >= rect.right || body.right <= rect.left) continue;
-      const previousTop = rect.top - wallTravel;
-      if (previousBody.bottom <= previousTop + 2 &&
-          body.bottom >= rect.top - 2 && body.top < rect.top) return rect;
+      const across = wall.axis === 'x'
+        ? body.top < rect.bottom && body.bottom > rect.top
+        : body.left < rect.right && body.right > rect.left;
+      if (!across) continue;
+      if (wall.axis === 'y' && pattern.vy >= -wallSpeed - 0.025) {
+        const oldTop = rect.top - travel;
+        const restingAbove = previousBody.bottom <= oldTop + 1.5 &&
+          body.top < rect.top &&
+          (pattern.wallSupportId === wall.id || body.bottom >= rect.top - 1.5);
+        if (restingAbove) {
+          const relativeTravel = body.bottom - previousBody.bottom - travel;
+          const time = relativeTravel
+            ? clamp01((oldTop - previousBody.bottom) / relativeTravel) : 0;
+          return { wall, axis: 'y', displacement: rect.top - body.bottom,
+            support: true, time };
+        }
+      }
+      const oldFace = wall.previousPosition + wall.direction * wall.thickness / 2;
+      const newFace = wall.position + wall.direction * wall.thickness / 2;
+      const oldEdge = wall.axis === 'x'
+        ? (wall.direction > 0 ? previousBody.left : previousBody.right)
+        : (wall.direction > 0 ? previousBody.top : previousBody.bottom);
+      const edge = wall.axis === 'x'
+        ? (wall.direction > 0 ? body.left : body.right)
+        : (wall.direction > 0 ? body.top : body.bottom);
+      const approached = wall.direction > 0
+        ? oldFace <= oldEdge + 1 && newFace >= edge
+        : oldFace >= oldEdge - 1 && newFace <= edge;
+      if (approached || phaseTwoGravityWallRectsOverlap(body, rect)) {
+        const displacement = newFace - edge;
+        const relativeTravel = (newFace - oldFace) - (edge - oldEdge);
+        const time = relativeTravel ? clamp01((oldEdge - oldFace) / relativeTravel) : 0;
+        return { wall, axis: wall.axis, displacement, support: false, time };
+      }
     }
     return null;
-  }
-
-  function phaseTwoGravityWallContactTime(wall, previousBody, body, content) {
-    const wallTravel = wall.position - wall.previousPosition;
-    const bodyDx = body.left - previousBody.left;
-    const bodyDy = body.top - previousBody.top;
-    const entryForAxis = (bodyMin, bodyMax, wallMin, wallMax, movement) => {
-      if (movement > 0) return [(wallMin - bodyMax) / movement, (wallMax - bodyMin) / movement];
-      if (movement < 0) return [(wallMax - bodyMin) / movement, (wallMin - bodyMax) / movement];
-      return bodyMin <= wallMax && bodyMax >= wallMin
-        ? [-Infinity, Infinity] : [Infinity, -Infinity];
-    };
-    let firstTouch = Infinity;
-    for (const rect of phaseTwoGravityWallSolidRects(wall, content)) {
-      const oldRect = wall.axis === 'x'
-        ? { left: rect.left - wallTravel, right: rect.right - wallTravel, top: rect.top, bottom: rect.bottom }
-        : { left: rect.left, right: rect.right, top: rect.top - wallTravel, bottom: rect.bottom - wallTravel };
-      const x = entryForAxis(previousBody.left, previousBody.right,
-        oldRect.left, oldRect.right, bodyDx - (wall.axis === 'x' ? wallTravel : 0));
-      const y = entryForAxis(previousBody.top, previousBody.bottom,
-        oldRect.top, oldRect.bottom, bodyDy - (wall.axis === 'y' ? wallTravel : 0));
-      const entry = Math.max(x[0], y[0]);
-      const exit = Math.min(x[1], y[1]);
-      if (entry <= exit && exit >= 0 && entry <= 1) firstTouch = Math.min(firstTouch, Math.max(0, entry));
-    }
-    return firstTouch;
   }
 
   function updatePhaseTwoGravityWallPass(pattern, beatStep) {
@@ -14178,28 +14223,25 @@
     const damageFrom = (wall) => {
       if (wall.phasing) return;
       wall.phasing = true;
+      if (pattern.wallSupportId === wall.id) pattern.wallSupportId = null;
       damagePlayer(PHASE2_GRAVITY_WALL_PASS_DAMAGE);
     };
-    const previousBody = phaseTwoGravityHeroBodyRectAt(pattern.wallPreviousX, pattern.wallPreviousY);
-    const body = phaseTwoGravityHeroBodyRectAt();
+    const previousBody = phaseTwoGravityWallHeroRectAt(pattern.wallPreviousX, pattern.wallPreviousY);
+    const body = phaseTwoGravityWallHeroRectAt();
     const contacts = [];
     for (const wall of subpattern.walls) {
       if (wall.phasing || wall.ageBeats < PHASE2_GRAVITY_WALL_PASS_READY_BEATS) continue;
-      const support = phaseTwoGravityWallSupportRect(wall, content, previousBody, body, pattern.vy);
-      const touching = !!support || phaseTwoGravityWallTouchesHero(wall, hero.x, hero.y, content);
-      if (touching) {
-        contacts.push({ wall, support });
+      const contact = phaseTwoGravityWallMotionContact(wall, previousBody, body, content, pattern);
+      if (contact) {
+        contacts.push(contact);
       } else if (!phaseTwoGravityWallNearHero(wall, hero.x, hero.y, content)) {
         wall.touching = false;
       }
     }
-    // Only a fresh contact gets a new priority. Repeated overlap with the
-    // same moving wall must not keep stealing priority from a newer wall.
+    // A continuing push retains its order. New contacts in this frame are
+    // ordered by their actual crossing time, so the last arrival wins.
     contacts.filter(({ wall }) => !wall.touching)
-      .sort((first, second) =>
-        phaseTwoGravityWallContactTime(first.wall, previousBody, body, content) -
-        phaseTwoGravityWallContactTime(second.wall, previousBody, body, content) ||
-        first.wall.id - second.wall.id)
+      .sort((first, second) => first.time - second.time || first.wall.id - second.wall.id)
       .forEach(({ wall }) => {
         wall.contactOrder = subpattern.nextContactOrder++;
         wall.touching = true;
@@ -14208,12 +14250,19 @@
       !current || contact.wall.contactOrder > current.wall.contactOrder ? contact : current, null);
     if (latest) {
       const winner = latest.wall;
-      const target = latest.support
-        ? { x: hero.x, y: hero.y + latest.support.top - body.bottom - 1 }
-        : phaseTwoGravityWallPushTarget(winner);
+      const travel = Math.abs(winner.position - winner.previousPosition);
+      const displacement = latest.displacement;
+      const target = {
+        x: hero.x + (latest.axis === 'x' ? displacement : 0),
+        y: hero.y + (latest.axis === 'y' ? displacement : 0),
+      };
+      // Contact is resolved only by this frame's wall travel. An old overlap
+      // cannot eject the player across a wall or onto another axis.
+      const tooDeep = Math.abs(displacement) > travel + 1.5 ||
+        (!latest.support && displacement * winner.direction < -0.001);
       const blockedByArena = target.x < bounds.left || target.x > bounds.right ||
         target.y < bounds.top || target.y > bounds.bottom;
-      if (blockedByArena) {
+      if (tooDeep || blockedByArena) {
         damageFrom(winner);
         for (const contact of contacts) {
           if (contact.wall !== winner) damageFrom(contact.wall);
@@ -14245,27 +14294,39 @@
             pattern.vy = winner.direction * wallSpeed;
             pattern.grounded = true;
             pattern.groundedGraceMs = PHASE2_GRAVITY_GROUNDED_GRACE_MS;
+            pattern.wallSupportId = winner.id;
             pattern.jumpActive = false;
             pattern.jumpReleaseGravity = 0;
           } else if (winner.axis === 'x') {
-            pattern.vx = winner.direction * (wallSpeed + 0.02);
+            pattern.vx = winner.direction * wallSpeed;
           } else {
-            // Match or outrun a descending wall so it cannot glue the hero
-            // to its underside; an ascending wall is a jumpable platform.
-            pattern.vy = winner.direction * (wallSpeed + 0.02);
+            pattern.vy = winner.direction * wallSpeed;
             pattern.grounded = winner.direction < 0;
             pattern.groundedGraceMs = pattern.grounded
               ? PHASE2_GRAVITY_GROUNDED_GRACE_MS : 0;
+            pattern.wallSupportId = pattern.grounded ? winner.id : null;
             pattern.jumpActive = false;
             pattern.jumpReleaseGravity = 0;
           }
         }
       }
     }
+    // An activating wall can already cover the arena-edge hero before its
+    // first moving frame. Never leave a solid rectangle embedded in the
+    // character; impossible penetrations take the damage/phase path.
+    const resolvedBody = phaseTwoGravityWallHeroRectAt();
+    for (const wall of subpattern.walls) {
+      if (wall.phasing || wall.ageBeats < PHASE2_GRAVITY_WALL_PASS_READY_BEATS) continue;
+      if (phaseTwoGravityWallSolidRects(wall, content).some((rect) =>
+        Math.min(resolvedBody.right - rect.left, rect.right - resolvedBody.left) > 0.5 &&
+        Math.min(resolvedBody.bottom - rect.top, rect.bottom - resolvedBody.top) > 0.5)) {
+        damageFrom(wall);
+      }
+    }
     for (const wall of subpattern.walls) {
       if (wall.claimedVp || wall.phasing ||
           wall.ageBeats < PHASE2_GRAVITY_WALL_PASS_READY_BEATS) continue;
-      const body = phaseTwoGravityHeroBodyRectAt();
+      const body = phaseTwoGravityWallHeroRectAt();
       const center = heroBodyCenterWorld();
       const gapCenter = (wall.gapStart + wall.gapEnd) / 2;
       const shadowReach = Math.min(20, (wall.gapEnd - wall.gapStart) * 0.28);
@@ -14361,6 +14422,7 @@
       pattern.grounded = false;
       pattern.jumpBufferMs = 0;
       pattern.groundedGraceMs = 0;
+      pattern.wallSupportId = null;
     }
     const jumpHeld = keys.has('KeyW') || keys.has('ArrowUp');
     const diving = !pattern.grounded && (keys.has('KeyS') || keys.has('ArrowDown'));
@@ -14387,8 +14449,15 @@
     }
     pattern.vy += (verticalGravity + (diving ? PHASE2_GRAVITY_DIVE_ACCELERATION : 0)) * dt;
     if (pattern.vy >= 0) pattern.jumpReleaseGravity = 0;
-    hero.x += (moveVx + pattern.vx) * dt;
-    hero.y += pattern.vy * dt;
+    const dx = (moveVx + pattern.vx) * dt;
+    const dy = pattern.vy * dt;
+    const wallMovement = pattern.subpattern && pattern.subpattern.type === 'wallPass'
+      ? resolvePhaseTwoGravityWallHeroMovement(pattern, dx, dy, bounds)
+      : null;
+    if (!wallMovement) {
+      hero.x += dx;
+      hero.y += dy;
+    }
     if (hero.x <= bounds.left || hero.x >= bounds.right) {
       hero.x = clampRange(hero.x, bounds.left, bounds.right);
       pattern.vx = 0;
@@ -14413,7 +14482,8 @@
       bounds
     );
     const arrowGrounded = resolvePhaseTwoGravityArrowMovement(pattern, previousX, previousY);
-    pattern.grounded = terrainGrounded || arrowGrounded || pattern.grounded;
+    pattern.grounded = terrainGrounded || arrowGrounded ||
+      !!(wallMovement && wallMovement.grounded) || pattern.grounded;
     if (pattern.grounded) {
       pattern.groundedGraceMs = PHASE2_GRAVITY_GROUNDED_GRACE_MS;
       pattern.jumpActive = false;
