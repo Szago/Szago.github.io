@@ -457,6 +457,7 @@
     { label: 'HEX ORB', cue: 'phase2HexOrb', stepsPerBeat: 2 },
     { label: 'WHIRLPOOL', cue: 'phase2Whirlpool', stepsPerBeat: 0.5 },
     { label: 'GRAVITY WAVE', cue: 'gravityRipple', stepsPerBeat: 0.25 },
+    { label: 'WALL APPEAR', cue: 'gravityWallAppear', stepsPerBeat: 0.5 },
   ];
   let bossMusic = null;
   let bossMusicTimer = 0;
@@ -985,7 +986,14 @@
   const PHASE2_GRAVITY_SPIKE_WIDTH_MAX = 30;
   const PHASE2_GRAVITY_SPIKE_HOLD_BEATS = 0.5;
   const PHASE2_GRAVITY_SPIKE_SINK_BEATS = 0.5;
-  const PHASE2_GRAVITY_SUBPATTERNS = ['weaponTetris', 'ticTacToe', 'spikeDropper'];
+  const PHASE2_GRAVITY_WALL_PASS_COUNT = 16;
+  const PHASE2_GRAVITY_WALL_PASS_SPAWN_BEATS = 4;
+  const PHASE2_GRAVITY_WALL_PASS_READY_BEATS = 1.25;
+  const PHASE2_GRAVITY_WALL_PASS_SPEED_PER_BEAT = 62.5;
+  const PHASE2_GRAVITY_WALL_PASS_DAMAGE = 32;
+  const PHASE2_GRAVITY_WALL_PASS_VP = VP_MAX * 0.20;
+  const PHASE2_GRAVITY_WALL_PASS_MAX_GAP_RISE = 155;
+  const PHASE2_GRAVITY_SUBPATTERNS = ['weaponTetris', 'ticTacToe', 'spikeDropper', 'wallPass'];
   const PHASE2_MAYHEM_UNDER_PATTERNS = [
     'quadrantFans',
     'spearRain',
@@ -2149,6 +2157,17 @@
     });
     phaseThreeDebugControls.appendChild(gravitySpikeBtn);
 
+    const gravityWallPassBtn = document.createElement('button');
+    gravityWallPassBtn.type = 'button';
+    gravityWallPassBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-gravity';
+    gravityWallPassBtn.textContent = 'WALL PASS';
+    gravityWallPassBtn.title = 'Start the Gravity wall-pass subpattern';
+    gravityWallPassBtn.addEventListener('click', () => {
+      debugPhaseTwoGravitySubpattern('wallPass');
+      gravityWallPassBtn.blur();
+    });
+    phaseThreeDebugControls.appendChild(gravityWallPassBtn);
+
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
     gridSpecialBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-danger';
@@ -2226,7 +2245,8 @@
       gravityBtn,
       gravitySpearsBtn,
       gravityTicTacToeBtn,
-      gravitySpikeBtn
+      gravitySpikeBtn,
+      gravityWallPassBtn
     );
 
     const tempoControls = document.createElement('div');
@@ -7805,7 +7825,8 @@
     if (name === 'death' || name === 'deathImpact' || name === 'deathCrack' ||
         name === 'persist' || name === 'playerAttack' || name === 'playerTravel' ||
         name === 'playerImpact' || name === 'vpFull' || name === 'phase2Parry') return 3;
-    if (name === 'damage' || name === 'shadowCharge' || name === 'gravityRipple' || name === 'phase2Feed' ||
+    if (name === 'damage' || name === 'shadowCharge' || name === 'gravityRipple' ||
+        name === 'gravityWallAppear' || name === 'phase2Feed' ||
         name === 'phase2Orb' || name === 'phase2TileCharge' || name === 'phase2HexOrb' ||
         name === 'phase2HexWall' || name === 'phase2Plane' || name === 'phase2Dash' ||
         name === 'phase2ClawCharge') return 1;
@@ -7814,6 +7835,7 @@
 
   function bossSfxExpectedDuration(name, data) {
     if (name === 'gravityRipple') return gravityRippleSfxDuration() + 0.08;
+    if (name === 'gravityWallAppear') return 0.36;
     if (data.spikeDropper) {
       if (name === 'phase2TileCharge') return 0.27;
       if (name === 'phase2SwordStrike') return 0.27;
@@ -8172,6 +8194,9 @@
       scheduleBossSfxNoise(out, time, 1.10, 0.12, 'bandpass', 95, 1.2, 330, true);
     } else if (name === 'gravityRipple') {
       scheduleGravityRippleSfx(out, time);
+    } else if (name === 'gravityWallAppear') {
+      scheduleBossSfxNoise(out, time, 0.26, 0.13, 'lowpass', 410, 0.7, 130);
+      scheduleBossSfxTone(out, 'triangle', 74, 42, time, 0.28, 0.15);
     } else {
       return false;
     }
@@ -12638,7 +12663,7 @@
         : phase2GravityPattern.initialSubpattern;
       if (activeType === 'idle') {
         return step < 0
-          ? beginPhaseTwoGravitySubpattern(phase2GravityPattern, 'spikeDropper')
+          ? beginPhaseTwoGravitySubpattern(phase2GravityPattern, 'wallPass')
           : false;
       }
       const canonicalType = activeType === 'terrainDrain'
@@ -13621,10 +13646,12 @@
       };
     } else if (type === 'spikeDropper') {
       pattern.subpattern = createPhaseTwoGravitySpikeDropper();
+    } else if (type === 'wallPass') {
+      pattern.subpattern = createPhaseTwoGravityWallPass();
     } else {
       pattern.subpattern = { type: 'idle', elapsedBeats: 0 };
     }
-    if (type !== 'idle') {
+    if (type !== 'idle' && type !== 'wallPass') {
       playBossSfx(type === 'spikeDropper' ? 'phase2ClawCut' : 'phase2TileCharge');
     }
     return true;
@@ -13954,8 +13981,310 @@
     subpattern.spikes = subpattern.spikes.filter((spike) =>
       spike.state !== 'sinking' || spike.ageBeats < PHASE2_GRAVITY_SPIKE_SINK_BEATS);
     if (subpattern.spawnedCount >= PHASE2_GRAVITY_SPIKE_COUNT && !subpattern.spikes.length) {
-      beginPhaseTwoGravitySubpattern(pattern, 'idle');
+      beginPhaseTwoGravitySubpattern(pattern, 'wallPass');
     }
+  }
+
+  function createPhaseTwoGravityWallPass() {
+    return {
+      type: 'wallPass',
+      elapsedBeats: 0,
+      nextSpawnBeat: 0,
+      spawnedCount: 0,
+      nextWallId: 1,
+      nextContactOrder: 1,
+      sideBag: [],
+      walls: [],
+    };
+  }
+
+  function spawnPhaseTwoGravityWall(subpattern) {
+    const content = phaseTwoGravityContentRect();
+    if (!subpattern.sideBag.length) {
+      subpattern.sideBag = ['left', 'right', 'top', 'bottom'];
+      for (let index = subpattern.sideBag.length - 1; index > 0; index--) {
+        const swap = Math.floor(Math.random() * (index + 1));
+        [subpattern.sideBag[index], subpattern.sideBag[swap]] =
+          [subpattern.sideBag[swap], subpattern.sideBag[index]];
+      }
+    }
+    const side = subpattern.sideBag.pop();
+    const axis = side === 'left' || side === 'right' ? 'x' : 'y';
+    const direction = side === 'left' || side === 'top' ? 1 : -1;
+    const thicknesses = [16, 22, 38, 50];
+    const thickness = thicknesses[Math.floor(Math.random() * thicknesses.length)];
+    const bodyWidth = (HERO_BODY_BOUNDS.maxX - HERO_BODY_BOUNDS.minX + 1) * HERO_SCALE;
+    const bodyHeight = (HERO_BODY_BOUNDS.maxY - HERO_BODY_BOUNDS.minY + 1) * HERO_SCALE;
+    const gapSize = axis === 'x'
+      ? bodyHeight + 24 + Math.random() * 20
+      : bodyWidth + 26 + Math.random() * 30;
+    const gapCenter = axis === 'x'
+      ? clampRange(
+        content.bottom - HERO_H / 2 -
+          (22 + Math.random() * PHASE2_GRAVITY_WALL_PASS_MAX_GAP_RISE),
+        content.top + gapSize / 2 + 8,
+        content.bottom - gapSize / 2 - 8
+      )
+      : clampRange(
+        hero.x + (Math.random() - 0.5) * 320,
+        content.left + gapSize / 2 + 8,
+        content.right - gapSize / 2 - 8
+      );
+    const visibleLip = Math.max(4, thickness * 0.3);
+    const position = side === 'left' ? content.left - thickness / 2 + visibleLip
+      : side === 'right' ? content.right + thickness / 2 - visibleLip
+        : side === 'top' ? content.top - thickness / 2 + visibleLip
+          : content.bottom + thickness / 2 - visibleLip;
+    subpattern.walls.push({
+      id: subpattern.nextWallId++,
+      side,
+      axis,
+      direction,
+      position,
+      ageBeats: 0,
+      thickness,
+      gapStart: gapCenter - gapSize / 2,
+      gapEnd: gapCenter + gapSize / 2,
+      contactOrder: 0,
+      touching: false,
+      phasing: false,
+      claimedVp: false,
+    });
+    subpattern.spawnedCount++;
+    playBossSfx('gravityWallAppear');
+  }
+
+  function phaseTwoGravityWallSolidRects(wall, content) {
+    const start = wall.position - wall.thickness / 2;
+    const end = wall.position + wall.thickness / 2;
+    return wall.axis === 'x'
+      ? [
+        { left: start, right: end, top: content.top, bottom: wall.gapStart },
+        { left: start, right: end, top: wall.gapEnd, bottom: content.bottom },
+      ]
+      : [
+        { left: content.left, right: wall.gapStart, top: start, bottom: end },
+        { left: wall.gapEnd, right: content.right, top: start, bottom: end },
+      ];
+  }
+
+  function phaseTwoGravityWallTouchesHero(wall, x, y, content) {
+    const body = phaseTwoGravityHeroBodyRectAt(x, y);
+    return phaseTwoGravityWallSolidRects(wall, content).some((rect) =>
+      phaseTwoGravityBoundsOverlap(body, rect));
+  }
+
+  function phaseTwoGravityWallNearHero(wall, x, y, content) {
+    const body = phaseTwoGravityHeroBodyRectAt(x, y);
+    return phaseTwoGravityWallSolidRects(wall, content).some((rect) =>
+      body.left <= rect.right + 3 && body.right >= rect.left - 3 &&
+      body.top <= rect.bottom + 3 && body.bottom >= rect.top - 3);
+  }
+
+  function phaseTwoGravityWallSweepsHero(wall, fromX, fromY, toX, toY, content) {
+    const before = phaseTwoGravityHeroBodyRectAt(fromX, fromY);
+    const after = phaseTwoGravityHeroBodyRectAt(toX, toY);
+    const sweep = {
+      left: Math.min(before.left, after.left),
+      right: Math.max(before.right, after.right),
+      top: Math.min(before.top, after.top),
+      bottom: Math.max(before.bottom, after.bottom),
+    };
+    return phaseTwoGravityWallSolidRects(wall, content).some((rect) =>
+      phaseTwoGravityBoundsOverlap(sweep, rect));
+  }
+
+  function phaseTwoGravityWallPushTarget(wall) {
+    const body = phaseTwoGravityHeroBodyRectAt();
+    const near = wall.position - wall.thickness / 2;
+    const far = wall.position + wall.thickness / 2;
+    if (wall.axis === 'x') {
+      return {
+        x: hero.x + (wall.direction > 0 ? far - body.left + 1 : near - body.right - 1),
+        y: hero.y,
+      };
+    }
+    return {
+      x: hero.x,
+      y: hero.y + (wall.direction > 0 ? far - body.top + 1 : near - body.bottom - 1),
+    };
+  }
+
+  function phaseTwoGravityWallSupportRect(wall, content, previousBody, body, vy) {
+    if (wall.axis !== 'y' || wall.phasing) return null;
+    const wallSpeed = PHASE2_GRAVITY_WALL_PASS_SPEED_PER_BEAT / Math.max(1, beatMs);
+    if (vy < -wallSpeed - 0.025) return null; // A deliberate jump leaves the platform.
+    const wallTravel = wall.position - wall.previousPosition;
+    for (const rect of phaseTwoGravityWallSolidRects(wall, content)) {
+      if (body.left >= rect.right || body.right <= rect.left) continue;
+      const previousTop = rect.top - wallTravel;
+      if (previousBody.bottom <= previousTop + 2 &&
+          body.bottom >= rect.top - 2 && body.top < rect.top) return rect;
+    }
+    return null;
+  }
+
+  function phaseTwoGravityWallContactTime(wall, previousBody, body, content) {
+    const wallTravel = wall.position - wall.previousPosition;
+    const bodyDx = body.left - previousBody.left;
+    const bodyDy = body.top - previousBody.top;
+    const entryForAxis = (bodyMin, bodyMax, wallMin, wallMax, movement) => {
+      if (movement > 0) return [(wallMin - bodyMax) / movement, (wallMax - bodyMin) / movement];
+      if (movement < 0) return [(wallMax - bodyMin) / movement, (wallMin - bodyMax) / movement];
+      return bodyMin <= wallMax && bodyMax >= wallMin
+        ? [-Infinity, Infinity] : [Infinity, -Infinity];
+    };
+    let firstTouch = Infinity;
+    for (const rect of phaseTwoGravityWallSolidRects(wall, content)) {
+      const oldRect = wall.axis === 'x'
+        ? { left: rect.left - wallTravel, right: rect.right - wallTravel, top: rect.top, bottom: rect.bottom }
+        : { left: rect.left, right: rect.right, top: rect.top - wallTravel, bottom: rect.bottom - wallTravel };
+      const x = entryForAxis(previousBody.left, previousBody.right,
+        oldRect.left, oldRect.right, bodyDx - (wall.axis === 'x' ? wallTravel : 0));
+      const y = entryForAxis(previousBody.top, previousBody.bottom,
+        oldRect.top, oldRect.bottom, bodyDy - (wall.axis === 'y' ? wallTravel : 0));
+      const entry = Math.max(x[0], y[0]);
+      const exit = Math.min(x[1], y[1]);
+      if (entry <= exit && exit >= 0 && entry <= 1) firstTouch = Math.min(firstTouch, Math.max(0, entry));
+    }
+    return firstTouch;
+  }
+
+  function updatePhaseTwoGravityWallPass(pattern, beatStep) {
+    const subpattern = pattern.subpattern;
+    const content = phaseTwoGravityContentRect();
+    const bounds = phaseTwoGravityBounds();
+    subpattern.elapsedBeats += beatStep;
+    while (subpattern.spawnedCount < PHASE2_GRAVITY_WALL_PASS_COUNT &&
+           subpattern.elapsedBeats >= subpattern.nextSpawnBeat) {
+      spawnPhaseTwoGravityWall(subpattern);
+      subpattern.nextSpawnBeat += PHASE2_GRAVITY_WALL_PASS_SPAWN_BEATS;
+    }
+    for (const wall of subpattern.walls) {
+      wall.previousPosition = wall.position;
+      const previousAge = wall.ageBeats;
+      wall.ageBeats += beatStep;
+      const movingBeats = Math.max(0, wall.ageBeats - PHASE2_GRAVITY_WALL_PASS_READY_BEATS) -
+        Math.max(0, previousAge - PHASE2_GRAVITY_WALL_PASS_READY_BEATS);
+      wall.position += wall.direction * PHASE2_GRAVITY_WALL_PASS_SPEED_PER_BEAT * movingBeats;
+    }
+    subpattern.walls = subpattern.walls.filter((wall) => {
+      const start = wall.axis === 'x' ? content.left : content.top;
+      const end = wall.axis === 'x' ? content.right : content.bottom;
+      return wall.direction > 0
+        ? wall.position - wall.thickness / 2 <= end
+        : wall.position + wall.thickness / 2 >= start;
+    });
+    const damageFrom = (wall) => {
+      if (wall.phasing) return;
+      wall.phasing = true;
+      damagePlayer(PHASE2_GRAVITY_WALL_PASS_DAMAGE);
+    };
+    const previousBody = phaseTwoGravityHeroBodyRectAt(pattern.wallPreviousX, pattern.wallPreviousY);
+    const body = phaseTwoGravityHeroBodyRectAt();
+    const contacts = [];
+    for (const wall of subpattern.walls) {
+      if (wall.phasing || wall.ageBeats < PHASE2_GRAVITY_WALL_PASS_READY_BEATS) continue;
+      const support = phaseTwoGravityWallSupportRect(wall, content, previousBody, body, pattern.vy);
+      const touching = !!support || phaseTwoGravityWallTouchesHero(wall, hero.x, hero.y, content);
+      if (touching) {
+        contacts.push({ wall, support });
+      } else if (!phaseTwoGravityWallNearHero(wall, hero.x, hero.y, content)) {
+        wall.touching = false;
+      }
+    }
+    // Only a fresh contact gets a new priority. Repeated overlap with the
+    // same moving wall must not keep stealing priority from a newer wall.
+    contacts.filter(({ wall }) => !wall.touching)
+      .sort((first, second) =>
+        phaseTwoGravityWallContactTime(first.wall, previousBody, body, content) -
+        phaseTwoGravityWallContactTime(second.wall, previousBody, body, content) ||
+        first.wall.id - second.wall.id)
+      .forEach(({ wall }) => {
+        wall.contactOrder = subpattern.nextContactOrder++;
+        wall.touching = true;
+      });
+    const latest = contacts.reduce((current, contact) =>
+      !current || contact.wall.contactOrder > current.wall.contactOrder ? contact : current, null);
+    if (latest) {
+      const winner = latest.wall;
+      const target = latest.support
+        ? { x: hero.x, y: hero.y + latest.support.top - body.bottom - 1 }
+        : phaseTwoGravityWallPushTarget(winner);
+      const blockedByArena = target.x < bounds.left || target.x > bounds.right ||
+        target.y < bounds.top || target.y > bounds.bottom;
+      if (blockedByArena) {
+        damageFrom(winner);
+        for (const contact of contacts) {
+          if (contact.wall !== winner) damageFrom(contact.wall);
+        }
+      } else {
+        // A push that would run into another wall gives that wall priority
+        // immediately. Stop the old push here instead of teleporting to the
+        // far side of a wall that has not reached the hero yet.
+        const newlyHit = subpattern.walls.find((wall) =>
+          wall !== winner && !wall.phasing &&
+          wall.ageBeats >= PHASE2_GRAVITY_WALL_PASS_READY_BEATS &&
+          !contacts.some((contact) => contact.wall === wall) &&
+          phaseTwoGravityWallSweepsHero(wall, hero.x, hero.y, target.x, target.y, content));
+        if (newlyHit) {
+          newlyHit.contactOrder = subpattern.nextContactOrder++;
+          newlyHit.touching = true;
+          damageFrom(winner);
+          for (const contact of contacts) {
+            if (contact.wall !== winner) damageFrom(contact.wall);
+          }
+        } else {
+          for (const contact of contacts) {
+            if (contact.wall !== winner) damageFrom(contact.wall);
+          }
+          hero.x = target.x;
+          hero.y = target.y;
+          const wallSpeed = PHASE2_GRAVITY_WALL_PASS_SPEED_PER_BEAT / Math.max(1, beatMs);
+          if (latest.support) {
+            pattern.vy = winner.direction * wallSpeed;
+            pattern.grounded = true;
+            pattern.groundedGraceMs = PHASE2_GRAVITY_GROUNDED_GRACE_MS;
+            pattern.jumpActive = false;
+            pattern.jumpReleaseGravity = 0;
+          } else if (winner.axis === 'x') {
+            pattern.vx = winner.direction * (wallSpeed + 0.02);
+          } else {
+            // Match or outrun a descending wall so it cannot glue the hero
+            // to its underside; an ascending wall is a jumpable platform.
+            pattern.vy = winner.direction * (wallSpeed + 0.02);
+            pattern.grounded = winner.direction < 0;
+            pattern.groundedGraceMs = pattern.grounded
+              ? PHASE2_GRAVITY_GROUNDED_GRACE_MS : 0;
+            pattern.jumpActive = false;
+            pattern.jumpReleaseGravity = 0;
+          }
+        }
+      }
+    }
+    for (const wall of subpattern.walls) {
+      if (wall.claimedVp || wall.phasing ||
+          wall.ageBeats < PHASE2_GRAVITY_WALL_PASS_READY_BEATS) continue;
+      const body = phaseTwoGravityHeroBodyRectAt();
+      const center = heroBodyCenterWorld();
+      const gapCenter = (wall.gapStart + wall.gapEnd) / 2;
+      const shadowReach = Math.min(20, (wall.gapEnd - wall.gapStart) * 0.28);
+      const throughGap = wall.axis === 'x'
+        ? body.top >= wall.gapStart + 2 && body.bottom <= wall.gapEnd - 2 &&
+          Math.abs(center.y - gapCenter) <= shadowReach &&
+          Math.abs(center.x - wall.position) <= wall.thickness * 0.5
+        : body.left >= wall.gapStart + 2 && body.right <= wall.gapEnd - 2 &&
+          Math.abs(center.x - gapCenter) <= shadowReach &&
+          Math.abs(center.y - wall.position) <= wall.thickness * 0.5;
+      if (throughGap) {
+        wall.claimedVp = true;
+        // Wall Pass has only its entry sound; the shadow awards VP silently.
+        addVp(PHASE2_GRAVITY_WALL_PASS_VP, false);
+      }
+    }
+    if (hp <= 0) die();
+    if (subpattern.spawnedCount >= PHASE2_GRAVITY_WALL_PASS_COUNT &&
+        !subpattern.walls.length) beginPhaseTwoGravitySubpattern(pattern, 'idle');
   }
 
   function resolvePhaseTwoGravityTerrainMovement(pattern, previousX, previousY, bounds) {
@@ -14010,6 +14339,8 @@
     const bounds = phaseTwoGravityBounds();
     const previousX = hero.x;
     const previousY = hero.y;
+    pattern.wallPreviousX = previousX;
+    pattern.wallPreviousY = previousY;
     const horizontal = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) -
       (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
     const moveVx = horizontal * MOVE_SPEED * (bpm / BASE_BPM);
@@ -14144,6 +14475,8 @@
       updatePhaseTwoGravityTicTacToeFade(pattern, beatStep);
     } else if (subpattern.type === 'spikeDropper') {
       updatePhaseTwoGravitySpikeDropper(pattern, beatStep);
+    } else if (subpattern.type === 'wallPass') {
+      updatePhaseTwoGravityWallPass(pattern, beatStep);
     } else {
       subpattern.elapsedBeats += beatStep;
     }
@@ -17833,6 +18166,68 @@
     actx.restore();
   }
 
+  function renderPhaseTwoGravityWallPass(subpattern) {
+    const content = phaseTwoGravityContentRect();
+    const frameOverlap = PAD + 1;
+    actx.save();
+    actx.globalAlpha = 1;
+    actx.lineWidth = 2;
+    actx.lineJoin = 'miter';
+    actx.lineCap = 'butt';
+    for (const wall of subpattern.walls) {
+      const ready = wall.ageBeats >= PHASE2_GRAVITY_WALL_PASS_READY_BEATS;
+      actx.save();
+      actx.globalAlpha = ready ? 1 : 0.65;
+      for (const [index, rect] of phaseTwoGravityWallSolidRects(wall, content).entries()) {
+        const first = index === 0;
+        const left = wall.axis === 'y' && first ? rect.left - frameOverlap : rect.left;
+        const right = wall.axis === 'y' && !first ? rect.right + frameOverlap : rect.right;
+        const top = wall.axis === 'x' && first ? rect.top - frameOverlap : rect.top;
+        const bottom = wall.axis === 'x' && !first ? rect.bottom + frameOverlap : rect.bottom;
+        actx.fillStyle = '#292b2e';
+        actx.fillRect(left, top, right - left, bottom - top);
+        actx.strokeStyle = '#db1e2b';
+        actx.beginPath();
+        if (wall.axis === 'x') {
+          const gapEdge = first ? bottom : top;
+          const frameEdge = first ? top : bottom;
+          actx.moveTo(left, frameEdge);
+          actx.lineTo(left, gapEdge);
+          actx.lineTo(right, gapEdge);
+          actx.lineTo(right, frameEdge);
+        } else {
+          const gapEdge = first ? right : left;
+          const frameEdge = first ? left : right;
+          actx.moveTo(frameEdge, top);
+          actx.lineTo(gapEdge, top);
+          actx.lineTo(gapEdge, bottom);
+          actx.lineTo(frameEdge, bottom);
+        }
+        actx.stroke();
+      }
+      const gapCenter = (wall.gapStart + wall.gapEnd) / 2;
+      const centerX = wall.axis === 'x' ? wall.position : gapCenter;
+      const centerY = wall.axis === 'x' ? gapCenter : wall.position;
+      actx.save();
+      actx.globalAlpha = (wall.claimedVp ? 0.16 : 0.75) * (ready ? 1 : 0.65);
+      actx.fillStyle = '#8534b5';
+      actx.shadowColor = '#b15adc';
+      actx.shadowBlur = 11;
+      actx.beginPath();
+      actx.ellipse(
+        centerX,
+        centerY,
+        wall.axis === 'x' ? Math.max(7, wall.thickness * 0.44) : Math.min(20, (wall.gapEnd - wall.gapStart) * 0.28),
+        wall.axis === 'x' ? Math.min(20, (wall.gapEnd - wall.gapStart) * 0.28) : Math.max(7, wall.thickness * 0.44),
+        0, 0, Math.PI * 2
+      );
+      actx.fill();
+      actx.restore();
+      actx.restore();
+    }
+    actx.restore();
+  }
+
   function renderPhaseTwoGravityPattern() {
     const pattern = phase2GravityPattern;
     if (!pattern) return;
@@ -17844,6 +18239,7 @@
     actx.translate(board.left, board.top);
     actx.scale(scaleX, scaleY);
     const subpattern = pattern.subpattern;
+    actx.save();
     actx.beginPath();
     const contentInset = BORDER + PAD;
     actx.rect(
@@ -17889,6 +18285,21 @@
       actx.beginPath();
       actx.arc(pattern.originX, pattern.originY, 25 + (1 - pulse) * 34, 0, Math.PI * 2);
       actx.stroke();
+    }
+    actx.restore();
+    if (subpattern && subpattern.type === 'wallPass') {
+      const frameInset = BORDER - 1;
+      actx.save();
+      actx.beginPath();
+      actx.rect(
+        arena.x - arena.width / 2 + frameInset,
+        arena.y - arena.height / 2 + frameInset,
+        Math.max(1, arena.width - frameInset * 2),
+        Math.max(1, arena.height - frameInset * 2)
+      );
+      actx.clip();
+      renderPhaseTwoGravityWallPass(subpattern);
+      actx.restore();
     }
     actx.restore();
   }
