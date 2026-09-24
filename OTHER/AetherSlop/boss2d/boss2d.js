@@ -1001,8 +1001,18 @@
   const PHASE2_GRAVITY_WALL_PASS_CRUSH_DAMAGE = 35;
   const PHASE2_GRAVITY_WALL_PASS_MAX_GAP_RISE = 155;
   const PHASE2_GRAVITY_WALL_PASS_CONTACT_EPSILON = 0.5; // includes subpixel edge overlap
+  const PHASE2_GRAVITY_BALL_COUNT = 56; // four times the sequence, at the same cadence
+  const PHASE2_GRAVITY_BALL_SPAWN_BEATS = 1.25;
+  const PHASE2_GRAVITY_BALL_ACCELERATION = 0.000525;
+  // Rebound height is proportional to speed squared: sqrt(2) gives twice
+  // the old height, rather than four times the height from doubling velocity.
+  const PHASE2_GRAVITY_BALL_RESTITUTION = 0.78 * Math.SQRT2;
+  const PHASE2_GRAVITY_PHYSICS_STEP_MS = 8;
+  const PHASE2_GRAVITY_BOX_CANVAS_SIZE = Math.ceil(BOARD * Math.SQRT2 + BORDER * 2);
+  const PHASE2_GRAVITY_BOX_SPIN_PER_BEAT = Math.PI / 60; // three degrees per beat
   const PHASE2_GRAVITY_SUBPATTERNS = [
     'weaponTetris', 'ticTacToe', 'spikeDropper', 'wallPass', 'wallPassDynamic',
+    'rotatingBalls',
   ];
   const PHASE2_MAYHEM_UNDER_PATTERNS = [
     'quadrantFans',
@@ -1229,12 +1239,16 @@
     overlay.classList.remove('hex-arena-active');
     overlay.classList.remove('tower-climb-active');
     overlay.classList.remove('avatar-phase-two');
+    overlay.classList.remove('rotating-balls-active');
     overlay.style.removeProperty('--phase2-stage-w');
     overlay.style.removeProperty('--phase2-stage-h');
     overlay.style.removeProperty('--phase2-vbar-h');
     overlay.style.removeProperty('--phase2-row-left');
     overlay.style.removeProperty('--phase2-row-top');
     overlay.style.removeProperty('--phase2-wrath-top');
+    overlay.style.removeProperty('--phase2-rotating-canvas');
+    overlay.style.removeProperty('--phase2-rotating-center-x');
+    overlay.style.removeProperty('--phase2-rotating-center-y');
     overlay.style.removeProperty('--tower-ui-left');
     overlay.style.removeProperty('--tower-ui-width');
     overlay.style.removeProperty('--tower-ui-top');
@@ -1317,6 +1331,7 @@
     phase2DoomPattern = null;
     phase2MayhemPattern = null;
     phase2GravityPattern = null;
+    overlay.classList.remove('rotating-balls-active');
     overlay.classList.remove('hex-arena-active');
     overlay.classList.remove('tower-climb-active');
     const help = overlay.querySelector('.aether-boss2d-help');
@@ -2188,6 +2203,17 @@
       gravityDynamicWallPassBtn.blur();
     });
     phaseThreeDebugControls.appendChild(gravityDynamicWallPassBtn);
+
+    const gravityRotatingBallsBtn = document.createElement('button');
+    gravityRotatingBallsBtn.type = 'button';
+    gravityRotatingBallsBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-gravity';
+    gravityRotatingBallsBtn.textContent = 'ROTATING BALLS';
+    gravityRotatingBallsBtn.title = 'Start the rotating Gravity box and bouncing balls';
+    gravityRotatingBallsBtn.addEventListener('click', () => {
+      debugPhaseTwoGravitySubpattern('rotatingBalls');
+      gravityRotatingBallsBtn.blur();
+    });
+    phaseThreeDebugControls.appendChild(gravityRotatingBallsBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -12689,12 +12715,13 @@
         : phase2GravityPattern.initialSubpattern;
       if (activeType === 'idle') {
         return step < 0
-          ? beginPhaseTwoGravitySubpattern(phase2GravityPattern, 'wallPassDynamic')
+          ? beginPhaseTwoGravitySubpattern(phase2GravityPattern, 'rotatingBalls')
           : false;
       }
       const canonicalType = activeType === 'terrainDrain'
         ? 'weaponTetris'
         : activeType === 'ticTacToeFade' ? 'ticTacToe'
+          : activeType === 'rotatingBallsRecover' ? 'rotatingBalls'
           : activeType;
       const currentIndex = PHASE2_GRAVITY_SUBPATTERNS.indexOf(canonicalType);
       if (step < 0 && currentIndex <= 0) return startPhaseTwoMayhemPattern('tornadoRumble');
@@ -12951,10 +12978,9 @@
     pattern.terrainPassThrough = false;
     pattern.ripples = [];
     beginPhaseTwoGravitySubpattern(pattern, pattern.initialSubpattern || 'weaponTetris');
-    setPhaseTwoMayhemCastPose(
-      'ritual',
-      100000
-    );
+    if (pattern.initialSubpattern !== 'rotatingBalls') {
+      setPhaseTwoMayhemCastPose('ritual', 100000);
+    }
     playBossSfx('phase2Mass');
     playBossSfx('phase2Whirlpool');
   }
@@ -13653,8 +13679,88 @@
     };
   }
 
+  function enterPhaseTwoGravityRotatingLayout(pattern) {
+    const board = getBoardRect();
+    const center = PHASE2_GRAVITY_BOX_CANVAS_SIZE / 2;
+    const shiftX = center - arena.x;
+    const shiftY = center - arena.y;
+    pattern.rotatingLayout = {
+      canvasWidth: canvas.width, canvasHeight: canvas.height,
+      arenaX: arena.x, arenaY: arena.y,
+    };
+    overlay.classList.add('rotating-balls-active');
+    overlay.style.setProperty('--phase2-rotating-canvas',
+      PHASE2_GRAVITY_BOX_CANVAS_SIZE + 'px');
+    overlay.style.setProperty('--phase2-rotating-center-x',
+      (board.left + board.width / 2).toFixed(1) + 'px');
+    overlay.style.setProperty('--phase2-rotating-center-y',
+      (board.top + board.height / 2).toFixed(1) + 'px');
+    canvas.width = PHASE2_GRAVITY_BOX_CANVAS_SIZE;
+    canvas.height = PHASE2_GRAVITY_BOX_CANVAS_SIZE;
+    ctx.imageSmoothingEnabled = false;
+    frameBoardRect = null;
+    arena.x = center;
+    arena.y = center;
+    arena.width = BOARD;
+    arena.height = BOARD;
+    arena.rotation = 0;
+    arena.from = null;
+    arena.target = null;
+    hero.x += shiftX;
+    hero.y += shiftY;
+    pattern.originX += shiftX;
+    pattern.originY += shiftY;
+    for (const ripple of pattern.ripples) {
+      ripple.x += shiftX;
+      ripple.y += shiftY;
+    }
+  }
+
+  function restorePhaseTwoGravityRotatingLayout(pattern) {
+    const previous = pattern.rotatingLayout;
+    if (!previous) return;
+    const shiftX = previous.arenaX - arena.x;
+    const shiftY = previous.arenaY - arena.y;
+    overlay.classList.remove('rotating-balls-active');
+    overlay.style.removeProperty('--phase2-rotating-canvas');
+    overlay.style.removeProperty('--phase2-rotating-center-x');
+    overlay.style.removeProperty('--phase2-rotating-center-y');
+    canvas.width = previous.canvasWidth;
+    canvas.height = previous.canvasHeight;
+    ctx.imageSmoothingEnabled = false;
+    frameBoardRect = null;
+    arena.x = previous.arenaX;
+    arena.y = previous.arenaY;
+    hero.x += shiftX;
+    hero.y += shiftY;
+    pattern.originX += shiftX;
+    pattern.originY += shiftY;
+    for (const ripple of pattern.ripples) {
+      ripple.x += shiftX;
+      ripple.y += shiftY;
+    }
+    pattern.rotatingLayout = null;
+  }
+
+  function createPhaseTwoGravityRotatingBalls(pattern) {
+    enterPhaseTwoGravityRotatingLayout(pattern);
+    setPhaseTwoMayhemCastPose('channel', 3);
+    return {
+      type: 'rotatingBalls', elapsedBeats: 0, nextSpawnBeat: 0,
+      spawnedCount: 0, balls: [], spinning: false, supportSide: null,
+      castRemainingMs: 900, lastRotation: 0, angularSpeed: 0, slideFallSpeed: 0,
+    };
+  }
+
   function beginPhaseTwoGravitySubpattern(pattern, type, carry = null) {
     if (!pattern) return false;
+    if (pattern.subpattern &&
+        (pattern.subpattern.type === 'rotatingBalls' ||
+         pattern.subpattern.type === 'rotatingBallsRecover') &&
+        type !== 'rotatingBallsRecover') {
+      setArena({ width: BOARD, height: BOARD, rotation: 0 }, 0);
+      restorePhaseTwoGravityRotatingLayout(pattern);
+    }
     pattern.terrainPassThrough = false;
     pattern.wallSupportId = null;
     if (type === 'weaponTetris') {
@@ -13677,6 +13783,15 @@
       pattern.subpattern = createPhaseTwoGravitySpikeDropper();
     } else if (type === 'wallPass' || type === 'wallPassDynamic') {
       pattern.subpattern = createPhaseTwoGravityWallPass(type === 'wallPassDynamic');
+    } else if (type === 'rotatingBalls') {
+      pattern.subpattern = createPhaseTwoGravityRotatingBalls(pattern);
+    } else if (type === 'rotatingBallsRecover') {
+      pattern.subpattern = carry;
+      pattern.subpattern.type = type;
+      pattern.subpattern.supportSide = null;
+      // A square is upright at every quarter turn. Settle to the nearest one
+      // so a long sequence never rewinds several revolutions through the hero.
+      setArena({ rotation: Math.round(arena.rotation / (Math.PI / 2)) * Math.PI / 2 }, 900);
     } else {
       pattern.subpattern = { type: 'idle', elapsedBeats: 0 };
     }
@@ -14505,7 +14620,7 @@
     if (hp <= 0) die();
     if (subpattern.spawnedCount >= PHASE2_GRAVITY_WALL_PASS_COUNT &&
         !subpattern.walls.length) beginPhaseTwoGravitySubpattern(
-          pattern, subpattern.type === 'wallPass' ? 'wallPassDynamic' : 'idle'
+          pattern, subpattern.type === 'wallPass' ? 'wallPassDynamic' : 'rotatingBalls'
         );
   }
 
@@ -14551,11 +14666,403 @@
     return true;
   }
 
+  function phaseTwoGravityRotatingHeroLimits() {
+    const c = Math.abs(Math.cos(arena.rotation));
+    const s = Math.abs(Math.sin(arena.rotation));
+    return {
+      x: Math.max(1, arena.width / 2 - BORDER -
+        c * HERO_BODY_HALF_W - s * HERO_BODY_HALF_H),
+      y: Math.max(1, arena.height / 2 - BORDER -
+        s * HERO_BODY_HALF_W - c * HERO_BODY_HALF_H),
+    };
+  }
+
+  function phaseTwoGravityRotatingWallNormal(side) {
+    const c = Math.cos(arena.rotation);
+    const s = Math.sin(arena.rotation);
+    if (side === 'bottom') return { x: s, y: -c };
+    if (side === 'top') return { x: -s, y: c };
+    if (side === 'left') return { x: c, y: s };
+    return { x: -c, y: -s };
+  }
+
+  function phaseTwoGravitySetHeroBodyCenter(local) {
+    const world = arenaToWorld(local.x, local.y);
+    hero.x = world.x - HERO_BODY_OFFSET_X;
+    hero.y = world.y - HERO_BODY_OFFSET_Y;
+  }
+
+  function phaseTwoGravityWallVelocity(x, y, angularSpeed) {
+    return { x: -angularSpeed * (y - arena.y), y: angularSpeed * (x - arena.x) };
+  }
+
+  function phaseTwoGravityHeroWallContacts(resolve = false) {
+    const limits = phaseTwoGravityRotatingHeroLimits();
+    const local = worldToArena(hero.x + HERO_BODY_OFFSET_X, hero.y + HERO_BODY_OFFSET_Y);
+    let support = null;
+    const blocked = [];
+    for (const side of ['left', 'right', 'top', 'bottom']) {
+      const axis = side === 'left' || side === 'right' ? 'x' : 'y';
+      const sign = side === 'left' || side === 'top' ? -1 : 1;
+      const gap = limits[axis] - sign * local[axis];
+      if (gap > 1e-7) continue;
+      const normal = phaseTwoGravityRotatingWallNormal(side);
+      if (resolve && gap < 0) {
+        local[axis] = sign * limits[axis];
+        blocked.push(normal);
+      }
+      if (normal.y < -0.05 &&
+          (!support || normal.y < support.normal.y)) {
+        support = { side, normal };
+      }
+    }
+    if (resolve) phaseTwoGravitySetHeroBodyCenter(local);
+    return { support, blocked };
+  }
+
+  function updatePhaseTwoGravityRotatingMovement(pattern, subpattern, dt) {
+    if (dt <= 0) return;
+    const startRotation = subpattern.lastRotation ?? arena.rotation;
+    const endRotation = arena.rotation + (subpattern.type === 'rotatingBalls'
+      ? PHASE2_GRAVITY_BOX_SPIN_PER_BEAT * dt / Math.max(1, beatMs) : 0);
+    const angularSpeed = (endRotation - startRotation) / dt;
+    subpattern.frameStartRotation = startRotation;
+    subpattern.frameEndRotation = endRotation;
+    subpattern.angularSpeed = angularSpeed;
+    const horizontal = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) -
+      (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+    const jumpHeld = keys.has('KeyW') || keys.has('ArrowUp');
+    const moveVx = horizontal * playerMovementSpeed();
+    // Keep the established Gravity input, knockback, and jump envelope. Only
+    // collision displacement on an angled wall is special to this pattern.
+    pattern.vx -= Math.sign(pattern.vx) * Math.min(
+      Math.abs(pattern.vx), PHASE2_GRAVITY_KNOCKBACK_DRAG * dt
+    );
+    pattern.jumpBufferMs = Math.max(0, pattern.jumpBufferMs - dt);
+    pattern.groundedGraceMs = Math.max(0, pattern.groundedGraceMs - dt);
+    arena.rotation = startRotation;
+    let support = pattern.vy >= 0 ? phaseTwoGravityHeroWallContacts().support : null;
+    pattern.grounded = !!support;
+    const bufferedJump = pattern.jumpBufferMs > 0 &&
+      (pattern.grounded || pattern.groundedGraceMs > 0);
+    if (bufferedJump || (jumpHeld && pattern.grounded)) {
+      pattern.vy = -PHASE2_GRAVITY_JUMP_SPEED;
+      pattern.jumpHoldMs = 0;
+      pattern.jumpActive = true;
+      pattern.jumpReleaseGravity = 0;
+      pattern.grounded = false;
+      pattern.jumpBufferMs = 0;
+      pattern.groundedGraceMs = 0;
+      pattern.wallSupportId = null;
+      subpattern.slideFallSpeed = 0;
+      support = null;
+    }
+    const diving = !pattern.grounded && (keys.has('KeyS') || keys.has('ArrowDown'));
+    const normalGravity = PHASE2_GRAVITY_ACCELERATION * pattern.gravityStrength;
+    let verticalGravity = normalGravity;
+    if (pattern.jumpActive) {
+      if (jumpHeld && !diving && pattern.vy < 0 &&
+          pattern.jumpHoldMs < PHASE2_GRAVITY_JUMP_HOLD_MS) {
+        pattern.jumpHoldMs = Math.min(PHASE2_GRAVITY_JUMP_HOLD_MS, pattern.jumpHoldMs + dt);
+        verticalGravity = normalGravity * PHASE2_GRAVITY_JUMP_HELD_GRAVITY_SCALE;
+        if (pattern.jumpHoldMs >= PHASE2_GRAVITY_JUMP_HOLD_MS) pattern.jumpActive = false;
+      } else {
+        pattern.jumpActive = false;
+        const hold = pattern.jumpHoldMs / PHASE2_GRAVITY_JUMP_HOLD_MS;
+        pattern.jumpReleaseGravity = normalGravity +
+          (PHASE2_GRAVITY_JUMP_EARLY_RELEASE_GRAVITY - normalGravity) * (1 - hold);
+      }
+    }
+    if (pattern.vy < 0 && pattern.jumpReleaseGravity > 0) {
+      verticalGravity = pattern.jumpReleaseGravity;
+    }
+    pattern.vy += (verticalGravity + (diving ? PHASE2_GRAVITY_DIVE_ACCELERATION : 0)) * dt;
+    if (pattern.vy >= 0) pattern.jumpReleaseGravity = 0;
+
+    const steps = Math.max(1, Math.ceil(dt / PHASE2_GRAVITY_PHYSICS_STEP_MS));
+    const step = dt / steps;
+    // Normal free-fall speed over this box's height is a natural upper bound.
+    // A long contact must not accumulate extra energy on every revolution.
+    const fallSpeedLimit = Math.sqrt(2 * normalGravity * (arena.height - BORDER * 2));
+    for (let i = 0; i < steps; i++) {
+      const local = support ? worldToArena(
+        hero.x + HERO_BODY_OFFSET_X, hero.y + HERO_BODY_OFFSET_Y
+      ) : null;
+      arena.rotation = startRotation + (endRotation - startRotation) * (i + 1) / steps;
+      if (support) {
+        const normal = phaseTwoGravityRotatingWallNormal(support.side);
+        if (normal.y < -0.05) {
+          const limits = phaseTwoGravityRotatingHeroLimits();
+          if (support.side === 'bottom') local.y = limits.y;
+          else if (support.side === 'top') local.y = -limits.y;
+          else if (support.side === 'left') local.x = -limits.x;
+          else local.x = limits.x;
+          // Carry contact position with the wall, without giving its rotational
+          // velocity to the character or to the next jump.
+          phaseTwoGravitySetHeroBodyCenter(local);
+          const tx = -normal.y, ty = normal.x;
+          if (-normal.y >= Math.SQRT1_2 - 1e-9) {
+            const dx = (moveVx + pattern.vx) * step;
+            hero.x += dx;
+            hero.y += dx * ty / tx;
+            subpattern.slideFallSpeed = 0;
+          } else {
+            const downhill = Math.sign(ty);
+            subpattern.slideFallSpeed = Math.min(fallSpeedLimit,
+              (subpattern.slideFallSpeed || 0) + normalGravity * step);
+            const direction = horizontal * downhill;
+            const inputScale = direction < 0 ? 0.55 : direction > 0 ? 1.15 : 1;
+            const slide = downhill * subpattern.slideFallSpeed * inputScale;
+            hero.x += (slide + pattern.vx * tx) * tx * step;
+            hero.y += (slide + pattern.vx * tx) * ty * step;
+          }
+          pattern.vy = 0;
+        } else {
+          // At vertical the surface stops supporting us. Ordinary air controls
+          // take over; slide speed is never added to jump or horizontal speed.
+          support = null;
+          pattern.vy = Math.max(pattern.vy, subpattern.slideFallSpeed || 0);
+          subpattern.slideFallSpeed = 0;
+        }
+      }
+      if (!support) {
+        hero.x += (moveVx + pattern.vx) * step;
+        hero.y += pattern.vy * step;
+      }
+      const contacts = phaseTwoGravityHeroWallContacts(true);
+      if (pattern.vy < 0 && contacts.blocked.some(normal => normal.y > 0.05)) {
+        pattern.vy = 0;
+        pattern.jumpActive = false;
+        pattern.jumpReleaseGravity = 0;
+      }
+      if (contacts.blocked.some(normal => Math.abs(normal.y) < 0.05 &&
+          pattern.vx * normal.x < 0)) pattern.vx = 0;
+      const landed = pattern.vy >= 0 ? contacts.support : null;
+      if (landed && !support) {
+        subpattern.slideFallSpeed = Math.min(fallSpeedLimit, Math.max(0, pattern.vy));
+      } else if (!landed) {
+        subpattern.slideFallSpeed = 0;
+      }
+      support = landed;
+      pattern.grounded = !!support;
+      subpattern.supportSide = support ? support.side : null;
+      if (support) {
+        pattern.vy = 0;
+        pattern.groundedGraceMs = PHASE2_GRAVITY_GROUNDED_GRACE_MS;
+        pattern.jumpActive = false;
+        pattern.jumpReleaseGravity = 0;
+      }
+    }
+    arena.rotation = endRotation;
+    subpattern.lastRotation = endRotation;
+    heroMove.x = horizontal || Math.sign(pattern.vx);
+    heroMove.y = Math.sign(pattern.vy);
+  }
+
+  function spawnPhaseTwoGravityBall(subpattern) {
+    const radius = 9 + Math.random() * 4;
+    const halfWidth = arena.width / 2 - BORDER - radius - 5;
+    const localX = (Math.random() * 2 - 1) * halfWidth;
+    const localY = -arena.height / 2 + BORDER + radius;
+    const world = arenaToWorld(localX, localY);
+    const c = Math.cos(arena.rotation);
+    const s = Math.sin(arena.rotation);
+    const dropSpeed = 0.06 + Math.random() * 0.04;
+    const wallVelocity = phaseTwoGravityWallVelocity(
+      world.x + s * radius, world.y - c * radius, subpattern.angularSpeed || 0
+    );
+    const sideways = (Math.random() - 0.5) * 0.06;
+    subpattern.balls.push({
+      x: world.x, y: world.y,
+      vx: wallVelocity.x - s * dropSpeed + c * sideways,
+      vy: wallVelocity.y + c * dropSpeed + s * sideways,
+      radius, bounces: 0, shadow: subpattern.spawnedCount % 4 === 3,
+      touchedHero: false, age: 0, wallMask: 0,
+      rotation: Math.random() * Math.PI * 2, angularVelocity: 0,
+    });
+    subpattern.spawnedCount++;
+  }
+
+  function resolvePhaseTwoGravityBallWalls(ball, angularSpeed, stepIndex) {
+    const local = worldToArena(ball.x, ball.y);
+    const limits = { x: arena.width / 2 - BORDER - ball.radius,
+      y: arena.height / 2 - BORDER - ball.radius };
+    let mask = 0;
+    for (const [index, side] of ['left', 'right', 'top', 'bottom'].entries()) {
+      const axis = index < 2 ? 'x' : 'y';
+      const sign = side === 'left' || side === 'top' ? -1 : 1;
+      const gap = limits[axis] - sign * local[axis];
+      if (gap > 0.5) continue;
+      const bit = 1 << index;
+      // Proximity alone must not pre-arm the contact: that would suppress
+      // the first actual rebound when the disk reaches the wall next step.
+      mask |= ball.wallMask & bit;
+      if (gap > 0) continue;
+      local[axis] = sign * limits[axis];
+      const center = arenaToWorld(local.x, local.y);
+      const normal = phaseTwoGravityRotatingWallNormal(side);
+      const tx = -normal.y, ty = normal.x;
+      // Use the moving wall at the contact point, including its tangential
+      // motion. Friction transfers some of that motion into ball spin.
+      const wall = phaseTwoGravityWallVelocity(
+        center.x - normal.x * ball.radius, center.y - normal.y * ball.radius, angularSpeed
+      );
+      const relativeX = ball.vx - wall.x, relativeY = ball.vy - wall.y;
+      const incoming = relativeX * normal.x + relativeY * normal.y;
+      if (incoming >= -0.0001) continue;
+      mask |= bit;
+      const fresh = !(ball.wallMask & bit);
+      const rebound = fresh
+        ? Math.max(0.13 * Math.SQRT2, -incoming * PHASE2_GRAVITY_BALL_RESTITUTION) : 0;
+      const normalImpulse = rebound - incoming;
+      const slip = relativeX * tx + relativeY * ty - ball.angularVelocity * ball.radius;
+      // A solid disk's rotational inertia makes tangential effective mass m/3.
+      const tangentImpulse = clampRange(-slip / 3, -0.22 * normalImpulse, 0.22 * normalImpulse);
+      ball.vx += normal.x * normalImpulse + tx * tangentImpulse;
+      ball.vy += normal.y * normalImpulse + ty * tangentImpulse;
+      ball.angularVelocity -= 2 * tangentImpulse / ball.radius;
+      if (fresh && ball.lastBounceStep !== stepIndex) {
+        ball.bounces++;
+        ball.lastBounceStep = stepIndex;
+      }
+    }
+    ball.wallMask = mask;
+    const world = arenaToWorld(local.x, local.y);
+    ball.x = world.x;
+    ball.y = world.y;
+  }
+
+  function resolvePhaseTwoGravityBallPair(first, second) {
+    const dx = second.x - first.x, dy = second.y - first.y;
+    const distance = Math.hypot(dx, dy);
+    const overlap = first.radius + second.radius - distance;
+    if (overlap <= 0) return;
+    const nx = distance ? dx / distance : 1, ny = distance ? dy / distance : 0;
+    const inverseFirst = 1 / (first.radius * first.radius);
+    const inverseSecond = 1 / (second.radius * second.radius);
+    const inverseSum = inverseFirst + inverseSecond;
+    first.x -= nx * overlap * inverseFirst / inverseSum;
+    first.y -= ny * overlap * inverseFirst / inverseSum;
+    second.x += nx * overlap * inverseSecond / inverseSum;
+    second.y += ny * overlap * inverseSecond / inverseSum;
+    const approach = (second.vx - first.vx) * nx + (second.vy - first.vy) * ny;
+    if (approach >= 0) return;
+    const impulse = -1.88 * approach / inverseSum;
+    first.vx -= nx * impulse * inverseFirst;
+    first.vy -= ny * impulse * inverseFirst;
+    second.vx += nx * impulse * inverseSecond;
+    second.vy += ny * impulse * inverseSecond;
+    const tx = -ny, ty = nx;
+    const slip = (second.vx - first.vx) * tx + (second.vy - first.vy) * ty -
+      first.angularVelocity * first.radius - second.angularVelocity * second.radius;
+    const friction = clampRange(-slip / (3 * inverseSum), -0.08 * impulse, 0.08 * impulse);
+    first.vx -= tx * friction * inverseFirst;
+    first.vy -= ty * friction * inverseFirst;
+    second.vx += tx * friction * inverseSecond;
+    second.vy += ty * friction * inverseSecond;
+    first.angularVelocity -= 2 * friction * inverseFirst / first.radius;
+    second.angularVelocity -= 2 * friction * inverseSecond / second.radius;
+  }
+
+  function updatePhaseTwoGravityBallPhysics(subpattern, dt) {
+    const steps = Math.max(1, Math.ceil(dt / PHASE2_GRAVITY_PHYSICS_STEP_MS));
+    const step = dt / steps;
+    const endRotation = arena.rotation;
+    const startRotation = subpattern.frameStartRotation ?? endRotation;
+    const angularSpeed = subpattern.angularSpeed || 0;
+    const core = heroBodyCenterWorld();
+    const rewardPoints = heroBodyWorldRewardPoints();
+    for (let iteration = 0; iteration < steps; iteration++) {
+      arena.rotation = startRotation + (endRotation - startRotation) * (iteration + 1) / steps;
+      subpattern.physicsStepIndex = (subpattern.physicsStepIndex || 0) + 1;
+      for (const ball of subpattern.balls) {
+        if (ball.bounces >= 4) continue;
+        ball.age += step;
+        ball.vy += PHASE2_GRAVITY_BALL_ACCELERATION * step;
+        ball.x += ball.vx * step;
+        ball.y += ball.vy * step;
+        ball.rotation += ball.angularVelocity * step;
+        resolvePhaseTwoGravityBallWalls(ball, angularSpeed, subpattern.physicsStepIndex);
+      }
+      // Iterate contacts so a ball-ball collision cannot leave either disk
+      // outside the box. Persistent contacts do not consume extra bounces.
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = 0; i < subpattern.balls.length; i++) {
+          const first = subpattern.balls[i];
+          if (first.bounces >= 4) continue;
+          for (let j = i + 1; j < subpattern.balls.length; j++) {
+            const second = subpattern.balls[j];
+            if (second.bounces < 4) resolvePhaseTwoGravityBallPair(first, second);
+          }
+        }
+        for (const ball of subpattern.balls) {
+          if (ball.bounces < 4) resolvePhaseTwoGravityBallWalls(
+            ball, angularSpeed, subpattern.physicsStepIndex
+          );
+        }
+      }
+      for (const ball of subpattern.balls) {
+        if (ball.bounces >= 4 || ball.touchedHero) continue;
+        const touches = ball.shadow
+          ? rewardPoints.some((point) =>
+            Math.hypot(point.x - ball.x, point.y - ball.y) <= ball.radius)
+          : Math.hypot(core.x - ball.x, core.y - ball.y) <= ball.radius + 2.5;
+        if (!touches) continue;
+        ball.touchedHero = true;
+        if (ball.shadow) addVp(VP_MAX * 0.12, true);
+        else {
+          damagePlayer(40);
+          phaseTwoGravityPlayDamageSfx(subpattern);
+          if (hp <= 0) die();
+        }
+      }
+    }
+    arena.rotation = endRotation;
+    subpattern.balls = subpattern.balls.filter((ball) => ball.bounces < 4);
+  }
+
+  function updatePhaseTwoGravityRotatingBalls(pattern, dt, beatStep) {
+    const subpattern = pattern.subpattern;
+    if (subpattern.type === 'rotatingBallsRecover') {
+      if (!arena.target) beginPhaseTwoGravitySubpattern(pattern, 'idle');
+      return;
+    }
+    if (subpattern.castRemainingMs > 0) {
+      subpattern.castRemainingMs = Math.max(0, subpattern.castRemainingMs - dt);
+      return;
+    }
+    if (arena.target) return;
+    if (!subpattern.spinning) {
+      subpattern.spinning = true;
+      setPhaseTwoMayhemCastPose('ritual', 2);
+      subpattern.lastRotation = arena.rotation;
+      subpattern.supportSide = pattern.grounded ? 'bottom' : null;
+    }
+    subpattern.elapsedBeats += beatStep;
+    updatePhaseTwoGravityBallPhysics(subpattern, dt);
+    while (subpattern.spawnedCount < PHASE2_GRAVITY_BALL_COUNT &&
+           subpattern.elapsedBeats >= subpattern.nextSpawnBeat) {
+      spawnPhaseTwoGravityBall(subpattern);
+      subpattern.nextSpawnBeat += PHASE2_GRAVITY_BALL_SPAWN_BEATS;
+    }
+    if (subpattern.spawnedCount >= PHASE2_GRAVITY_BALL_COUNT &&
+        !subpattern.balls.length) {
+      beginPhaseTwoGravitySubpattern(pattern, 'rotatingBallsRecover', subpattern);
+    }
+  }
+
   function updatePhaseTwoGravityMovement(dt) {
     const pattern = phase2GravityPattern;
     if (!pattern || pattern.mode !== 'active') {
       heroMove.x = 0;
       heroMove.y = 0;
+      return;
+    }
+    const rotating = pattern.subpattern &&
+      (pattern.subpattern.type === 'rotatingBalls' ||
+       pattern.subpattern.type === 'rotatingBallsRecover');
+    if (rotating && pattern.subpattern.spinning) {
+      updatePhaseTwoGravityRotatingMovement(pattern, pattern.subpattern, dt);
       return;
     }
     const bounds = phaseTwoGravityBounds();
@@ -14694,6 +15201,11 @@
       pattern.vx += dx / length * PHASE2_GRAVITY_RIPPLE_PUSH_SPEED;
       pattern.vy += dy / length * PHASE2_GRAVITY_RIPPLE_PUSH_SPEED;
       pattern.grounded = false;
+      if (pattern.subpattern &&
+          (pattern.subpattern.type === 'rotatingBalls' ||
+           pattern.subpattern.type === 'rotatingBallsRecover')) {
+        pattern.subpattern.supportSide = null;
+      }
       pattern.jumpActive = false;
       pattern.jumpReleaseGravity = 0;
       triggerHeroGravityWaveFlash();
@@ -14713,6 +15225,9 @@
       updatePhaseTwoGravitySpikeDropper(pattern, beatStep);
     } else if (subpattern.type === 'wallPass' || subpattern.type === 'wallPassDynamic') {
       updatePhaseTwoGravityWallPass(pattern, beatStep);
+    } else if (subpattern.type === 'rotatingBalls' ||
+               subpattern.type === 'rotatingBallsRecover') {
+      updatePhaseTwoGravityRotatingBalls(pattern, dt, beatStep);
     } else {
       subpattern.elapsedBeats += beatStep;
     }
@@ -18540,6 +19055,45 @@
     actx.restore();
   }
 
+  function renderPhaseTwoGravityRotatingBalls(subpattern) {
+    for (const ball of subpattern.balls) {
+      const r = ball.radius;
+      actx.save();
+      actx.globalAlpha = 1;
+      actx.translate(ball.x, ball.y);
+      actx.rotate(ball.rotation);
+      actx.shadowColor = ball.shadow ? '#af62ff' : '#b72f3b';
+      actx.shadowBlur = ball.shadow ? 16 : 7;
+      const fill = actx.createRadialGradient(-r * 0.35, -r * 0.4, 1, 0, 0, r);
+      if (ball.shadow) {
+        fill.addColorStop(0, '#d9a5ff');
+        fill.addColorStop(0.38, '#7135af');
+        fill.addColorStop(1, '#271042');
+      } else {
+        fill.addColorStop(0, '#d4a7ac');
+        fill.addColorStop(0.42, '#80414c');
+        fill.addColorStop(1, '#321a23');
+      }
+      actx.fillStyle = fill;
+      actx.strokeStyle = ball.shadow ? '#b87aff' : '#f4505f';
+      actx.lineWidth = 2.5;
+      actx.beginPath();
+      actx.arc(0, 0, r, 0, Math.PI * 2);
+      actx.fill();
+      actx.stroke();
+      actx.shadowBlur = 0;
+      actx.strokeStyle = ball.shadow ? 'rgba(245, 210, 255, 0.65)' :
+        'rgba(225, 135, 140, 0.45)';
+      actx.lineWidth = 1;
+      actx.beginPath();
+      actx.moveTo(-r * 0.48, -r * 0.25);
+      actx.lineTo(r * 0.12, -r * 0.5);
+      actx.lineTo(r * 0.42, -r * 0.08);
+      actx.stroke();
+      actx.restore();
+    }
+  }
+
   function renderPhaseTwoGravityPattern() {
     const pattern = phase2GravityPattern;
     if (!pattern) return;
@@ -18552,14 +19106,19 @@
     actx.scale(scaleX, scaleY);
     const subpattern = pattern.subpattern;
     actx.save();
-    actx.beginPath();
     const contentInset = BORDER;
-    actx.rect(
-      arena.x - arena.width / 2 + contentInset,
-      arena.y - arena.height / 2 + contentInset,
-      Math.max(1, arena.width - contentInset * 2),
-      Math.max(1, arena.height - contentInset * 2)
-    );
+    if (subpattern && (subpattern.type === 'rotatingBalls' ||
+                       subpattern.type === 'rotatingBallsRecover')) {
+      arenaPath(actx, contentInset);
+    } else {
+      actx.beginPath();
+      actx.rect(
+        arena.x - arena.width / 2 + contentInset,
+        arena.y - arena.height / 2 + contentInset,
+        Math.max(1, arena.width - contentInset * 2),
+        Math.max(1, arena.height - contentInset * 2)
+      );
+    }
     actx.clip();
     actx.lineCap = 'round';
     actx.globalAlpha = 1;
@@ -18588,6 +19147,9 @@
       );
     } else if (subpattern && subpattern.type === 'spikeDropper') {
       renderPhaseTwoGravitySpikeDropper(subpattern);
+    } else if (subpattern && (subpattern.type === 'rotatingBalls' ||
+                              subpattern.type === 'rotatingBallsRecover')) {
+      renderPhaseTwoGravityRotatingBalls(subpattern);
     }
     if (pattern.elapsed < PHASE2_GRAVITY_ROAR_MS) {
       const pulse = 1 - clamp01(pattern.elapsed / PHASE2_GRAVITY_ROAR_MS);

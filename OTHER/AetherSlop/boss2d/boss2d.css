@@ -964,6 +964,44 @@
   margin-top: 0;
 }
 
+/* The playfield remains 500 world pixels wide; only its transparent drawing
+   surface grows enough to show all four corners as it rotates. */
+#aether-boss2d-overlay.avatar-phase-two.rotating-balls-active .aether-boss2d-stage-row {
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+#aether-boss2d-overlay.rotating-balls-active .aether-boss2d-stage {
+  position: absolute;
+  left: var(--phase2-rotating-center-x, 50%);
+  top: var(--phase2-rotating-center-y, 50%);
+  transform: translate(-50%, -50%);
+  width: min(var(--phase2-rotating-canvas, 724px), calc(100vw - 76px), calc(100vh - 24px));
+  height: min(var(--phase2-rotating-canvas, 724px), calc(100vw - 76px), calc(100vh - 24px));
+  box-shadow: none;
+}
+
+#aether-boss2d-overlay.rotating-balls-active .aether-boss2d-vbar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+#aether-boss2d-overlay.rotating-balls-active .aether-boss2d-vp {
+  left: 12px;
+}
+
+#aether-boss2d-overlay.rotating-balls-active .aether-boss2d-hp {
+  right: 12px;
+}
+
+#aether-boss2d-overlay.avatar-phase-two.rotating-balls-active .aether-boss2d-wrath {
+  top: 8px;
+}
+
 #aether-boss2d-overlay.avatar-phase-two .aether-boss2d-wrath {
   position: fixed;
   left: 50%;
