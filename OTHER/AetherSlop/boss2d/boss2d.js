@@ -33,7 +33,7 @@
   // ---- Combat window geometry -------------------------------------------
   const BOARD = 500;            // the static 500x500 combat window (outer)
   const BORDER = 16;            // bloody border thickness, drawn inside the box
-  const PAD = 6;                // breathing room between border and play area
+  const PAD = 6;                // inset for attack and layout staging (not hero collision)
   const INNER_MIN = BORDER + PAD;
   const INNER_MAX = BOARD - BORDER - PAD;
 
@@ -99,6 +99,12 @@
     x: (HERO_BODY_BOUNDS.minX + HERO_BODY_BOUNDS.maxX + 1) * HERO_SCALE / 2,
     y: (HERO_BODY_BOUNDS.minY + HERO_BODY_BOUNDS.maxY + 1) * HERO_SCALE / 2,
   };
+  // The detached sword is rendered, but only the connected body can touch
+  // arena edges, moving walls, attacks, and VP shadows.
+  const HERO_BODY_OFFSET_X = HERO_BODY_CENTER_LOCAL.x - HERO_W / 2;
+  const HERO_BODY_OFFSET_Y = HERO_BODY_CENTER_LOCAL.y - HERO_H / 2;
+  const HERO_BODY_HALF_W = (HERO_BODY_BOUNDS.maxX - HERO_BODY_BOUNDS.minX + 1) * HERO_SCALE / 2;
+  const HERO_BODY_HALF_H = (HERO_BODY_BOUNDS.maxY - HERO_BODY_BOUNDS.minY + 1) * HERO_SCALE / 2;
   const HERO_BODY_PIXEL_OFFSETS = [];
   for (const cell of HERO_BODY_CELLS) {
     for (let pixelY = 0; pixelY < HERO_SCALE; pixelY++) {
@@ -986,13 +992,14 @@
   const PHASE2_GRAVITY_SPIKE_WIDTH_MAX = 30;
   const PHASE2_GRAVITY_SPIKE_HOLD_BEATS = 0.5;
   const PHASE2_GRAVITY_SPIKE_SINK_BEATS = 0.5;
-  const PHASE2_GRAVITY_WALL_PASS_COUNT = 16;
+  const PHASE2_GRAVITY_WALL_PASS_COUNT = 24;
   const PHASE2_GRAVITY_WALL_PASS_SPAWN_BEATS = 4;
   const PHASE2_GRAVITY_WALL_PASS_READY_BEATS = 1.25;
   const PHASE2_GRAVITY_WALL_PASS_SPEED_PER_BEAT = 62.5;
   const PHASE2_GRAVITY_WALL_PASS_DAMAGE = 32;
-  const PHASE2_GRAVITY_WALL_PASS_VP = VP_MAX * 0.20;
   const PHASE2_GRAVITY_WALL_PASS_MAX_GAP_RISE = 155;
+  const PHASE2_GRAVITY_WALL_PASS_HERO_PADDING = 4; // firm rectangle around the visible body
+  const PHASE2_GRAVITY_WALL_PASS_CONTACT_EPSILON = 0.5; // includes subpixel edge overlap
   const PHASE2_GRAVITY_SUBPATTERNS = ['weaponTetris', 'ticTacToe', 'spikeDropper', 'wallPass'];
   const PHASE2_MAYHEM_UNDER_PATTERNS = [
     'quadrantFans',
@@ -5472,13 +5479,13 @@
 
   // ---- Movement ----------------------------------------------------------
   function clampHero() {
-    const local = worldToArena(hero.x, hero.y);
+    const local = worldToArena(hero.x + HERO_BODY_OFFSET_X, hero.y + HERO_BODY_OFFSET_Y);
     const c = Math.abs(Math.cos(arena.rotation));
     const s = Math.abs(Math.sin(arena.rotation));
-    const heroHalfX = c * HERO_W / 2 + s * HERO_H / 2;
-    const heroHalfY = s * HERO_W / 2 + c * HERO_H / 2;
-    const rx = Math.max(1, arena.width / 2 - BORDER - PAD - heroHalfX);
-    const ry = Math.max(1, arena.height / 2 - BORDER - PAD - heroHalfY);
+    const heroHalfX = c * HERO_BODY_HALF_W + s * HERO_BODY_HALF_H;
+    const heroHalfY = s * HERO_BODY_HALF_W + c * HERO_BODY_HALF_H;
+    const rx = Math.max(1, arena.width / 2 - BORDER - heroHalfX);
+    const ry = Math.max(1, arena.height / 2 - BORDER - heroHalfY);
 
     if (arena.shape === 'ellipse') {
       const distance = Math.hypot(local.x / rx, local.y / ry);
@@ -5497,8 +5504,8 @@
       local.y = Math.max(-ry, Math.min(ry, local.y));
     }
     const world = arenaToWorld(local.x, local.y);
-    hero.x = world.x;
-    hero.y = world.y;
+    hero.x = world.x - HERO_BODY_OFFSET_X;
+    hero.y = world.y - HERO_BODY_OFFSET_Y;
   }
 
   function heroTouchesPhaseTwoCrack(worldX, worldY) {
@@ -5626,6 +5633,11 @@
     return frameBoardRect;
   }
 
+  function playerMovementSpeed() {
+    const tempoProgress = clamp01((bpm - BASE_BPM) / (PHASE2_BPM_MAX - BASE_BPM));
+    return MOVE_SPEED * (bpm / BASE_BPM) * (1 - 0.25 * tempoProgress);
+  }
+
   function updateMovement(dt) {
     let dx = 0;
     let dy = 0;
@@ -5643,7 +5655,7 @@
     const len = Math.hypot(dx, dy);
     heroMove.x = dx / len;
     heroMove.y = dy / len;
-    const speed = MOVE_SPEED * (bpm / BASE_BPM);
+    const speed = playerMovementSpeed();
     const startX = hero.x;
     const startY = hero.y;
     const startedInCrack = heroTouchesPhaseTwoCrack(startX, startY);
@@ -12424,7 +12436,7 @@
         projectile.y - bodyCenter.y
       );
       if (projectile.shadow) {
-        if (centerDistance <= projectile.radius + Math.max(HERO_W, HERO_H) * 0.52 &&
+        if (centerDistance <= projectile.radius + Math.hypot(HERO_BODY_HALF_W, HERO_BODY_HALF_H) &&
             rewardPoints.some((point) =>
               phaseTwoMayhemPointTouchesTornadoProjectile(point, projectile))) {
           shadowProjectileHits++;
@@ -12888,15 +12900,15 @@
 
   function phaseTwoGravityBounds() {
     return {
-      left: arena.x - arena.width / 2 + BORDER + PAD + HERO_W / 2,
-      right: arena.x + arena.width / 2 - BORDER - PAD - HERO_W / 2,
-      top: arena.y - arena.height / 2 + BORDER + PAD + HERO_H / 2,
-      bottom: arena.y + arena.height / 2 - BORDER - PAD - HERO_H / 2,
+      left: arena.x - arena.width / 2 + BORDER - HERO_BODY_OFFSET_X + HERO_BODY_HALF_W,
+      right: arena.x + arena.width / 2 - BORDER - HERO_BODY_OFFSET_X - HERO_BODY_HALF_W,
+      top: arena.y - arena.height / 2 + BORDER - HERO_BODY_OFFSET_Y + HERO_BODY_HALF_H,
+      bottom: arena.y + arena.height / 2 - BORDER - HERO_BODY_OFFSET_Y - HERO_BODY_HALF_H,
     };
   }
 
   function phaseTwoGravityContentRect() {
-    const inset = BORDER + PAD;
+    const inset = BORDER;
     return {
       left: arena.x - arena.width / 2 + inset,
       right: arena.x + arena.width / 2 - inset,
@@ -14014,13 +14026,16 @@
     const side = subpattern.sideBag.pop();
     const axis = side === 'left' || side === 'right' ? 'x' : 'y';
     const direction = side === 'left' || side === 'top' ? 1 : -1;
-    const thicknesses = [16, 22, 38, 50];
-    const thickness = thicknesses[Math.floor(Math.random() * thicknesses.length)];
+    const thicknessRoll = Math.random();
+    // The former 50px maximum remains common; 150px slabs are rare.
+    const thickness = thicknessRoll < 0.28 ? 16 : thicknessRoll < 0.51 ? 22
+      : thicknessRoll < 0.69 ? 38 : thicknessRoll < 0.81 ? 50
+        : thicknessRoll < 0.90 ? 75 : thicknessRoll < 0.96 ? 100 : 150;
     const bodyWidth = (HERO_BODY_BOUNDS.maxX - HERO_BODY_BOUNDS.minX + 1) * HERO_SCALE;
     const bodyHeight = (HERO_BODY_BOUNDS.maxY - HERO_BODY_BOUNDS.minY + 1) * HERO_SCALE;
     const gapSize = axis === 'x'
-      ? bodyHeight + 24 + Math.random() * 20
-      : bodyWidth + 26 + Math.random() * 30;
+      ? bodyHeight + 20 + Math.random() * 18
+      : bodyWidth + 22 + Math.random() * 26;
     const gapCenter = axis === 'x'
       ? clampRange(
         content.bottom - HERO_H / 2 -
@@ -14051,7 +14066,6 @@
       contactOrder: 0,
       touching: false,
       phasing: false,
-      claimedVp: false,
     });
     subpattern.spawnedCount++;
     playBossSfx('gravityWallAppear');
@@ -14071,14 +14085,34 @@
       ];
   }
 
+  function phaseTwoGravityWallShadowEllipse(wall) {
+    const gapCenter = (wall.gapStart + wall.gapEnd) / 2;
+    const gapRadius = Math.min(20, (wall.gapEnd - wall.gapStart) * 0.28);
+    const wallRadius = Math.max(7, wall.thickness * 0.44);
+    return wall.axis === 'x'
+      ? { x: wall.position, y: gapCenter, radiusX: wallRadius, radiusY: gapRadius }
+      : { x: gapCenter, y: wall.position, radiusX: gapRadius, radiusY: wallRadius };
+  }
+
+  function phaseTwoGravityWallShadowTouchesHero(shadow, rewardPoints) {
+    return rewardPoints.some((point) => {
+      const x = (point.x - shadow.x) / shadow.radiusX;
+      const y = (point.y - shadow.y) / shadow.radiusY;
+      return x * x + y * y <= 1;
+    });
+  }
+
   function phaseTwoGravityWallHeroRectAt(x = hero.x, y = hero.y) {
     // Wall Pass uses one continuous rectangle. Sprite-pixel rounding here used
     // to make a contact alternate between overlap and separation each frame.
+    // Keep its extra opening clearance inside the arena so the visible body
+    // can still rest directly against the frame and floor.
+    const content = phaseTwoGravityContentRect();
     return {
-      left: x - HERO_W / 2 + HERO_BODY_BOUNDS.minX * HERO_SCALE,
-      right: x - HERO_W / 2 + (HERO_BODY_BOUNDS.maxX + 1) * HERO_SCALE,
-      top: y - HERO_H / 2 + HERO_BODY_BOUNDS.minY * HERO_SCALE,
-      bottom: y - HERO_H / 2 + (HERO_BODY_BOUNDS.maxY + 1) * HERO_SCALE,
+      left: Math.max(content.left, x + HERO_BODY_OFFSET_X - HERO_BODY_HALF_W - PHASE2_GRAVITY_WALL_PASS_HERO_PADDING),
+      right: Math.min(content.right, x + HERO_BODY_OFFSET_X + HERO_BODY_HALF_W + PHASE2_GRAVITY_WALL_PASS_HERO_PADDING),
+      top: Math.max(content.top, y + HERO_BODY_OFFSET_Y - HERO_BODY_HALF_H - PHASE2_GRAVITY_WALL_PASS_HERO_PADDING),
+      bottom: Math.min(content.bottom, y + HERO_BODY_OFFSET_Y + HERO_BODY_HALF_H + PHASE2_GRAVITY_WALL_PASS_HERO_PADDING),
     };
   }
 
@@ -14117,10 +14151,12 @@
     for (const wall of walls) {
       for (const rect of phaseTwoGravityWallSolidRects(wall, content)) {
         if (start.top >= rect.bottom || start.bottom <= rect.top) continue;
-        if (dx > 0 && start.right <= rect.left && start.right + allowedX > rect.left) {
-          allowedX = Math.min(allowedX, rect.left - start.right);
-        } else if (dx < 0 && start.left >= rect.right && start.left + allowedX < rect.right) {
-          allowedX = Math.max(allowedX, rect.right - start.left);
+        if (dx > 0 && start.right <= rect.left + PHASE2_GRAVITY_WALL_PASS_CONTACT_EPSILON &&
+            start.right + allowedX > rect.left) {
+          allowedX = Math.min(allowedX, Math.max(0, rect.left - start.right));
+        } else if (dx < 0 && start.left >= rect.right - PHASE2_GRAVITY_WALL_PASS_CONTACT_EPSILON &&
+                   start.left + allowedX < rect.right) {
+          allowedX = Math.max(allowedX, Math.min(0, rect.right - start.left));
         }
       }
     }
@@ -14133,11 +14169,13 @@
     for (const wall of walls) {
       for (const rect of phaseTwoGravityWallSolidRects(wall, content)) {
         if (afterX.left >= rect.right || afterX.right <= rect.left) continue;
-        if (dy > 0 && afterX.bottom <= rect.top && afterX.bottom + allowedY > rect.top) {
-          allowedY = Math.min(allowedY, rect.top - afterX.bottom);
+        if (dy > 0 && afterX.bottom <= rect.top + PHASE2_GRAVITY_WALL_PASS_CONTACT_EPSILON &&
+            afterX.bottom + allowedY > rect.top) {
+          allowedY = Math.min(allowedY, Math.max(0, rect.top - afterX.bottom));
           supportId = wall.id;
-        } else if (dy < 0 && afterX.top >= rect.bottom && afterX.top + allowedY < rect.bottom) {
-          allowedY = Math.max(allowedY, rect.bottom - afterX.top);
+        } else if (dy < 0 && afterX.top >= rect.bottom - PHASE2_GRAVITY_WALL_PASS_CONTACT_EPSILON &&
+                   afterX.top + allowedY < rect.bottom) {
+          allowedY = Math.max(allowedY, Math.min(0, rect.bottom - afterX.top));
           hitCeiling = true;
         }
       }
@@ -14323,24 +14361,12 @@
         damageFrom(wall);
       }
     }
+    const rewardPoints = heroBodyWorldRewardPoints();
     for (const wall of subpattern.walls) {
-      if (wall.claimedVp || wall.phasing ||
-          wall.ageBeats < PHASE2_GRAVITY_WALL_PASS_READY_BEATS) continue;
-      const body = phaseTwoGravityWallHeroRectAt();
-      const center = heroBodyCenterWorld();
-      const gapCenter = (wall.gapStart + wall.gapEnd) / 2;
-      const shadowReach = Math.min(20, (wall.gapEnd - wall.gapStart) * 0.28);
-      const throughGap = wall.axis === 'x'
-        ? body.top >= wall.gapStart + 2 && body.bottom <= wall.gapEnd - 2 &&
-          Math.abs(center.y - gapCenter) <= shadowReach &&
-          Math.abs(center.x - wall.position) <= wall.thickness * 0.5
-        : body.left >= wall.gapStart + 2 && body.right <= wall.gapEnd - 2 &&
-          Math.abs(center.x - gapCenter) <= shadowReach &&
-          Math.abs(center.y - wall.position) <= wall.thickness * 0.5;
-      if (throughGap) {
-        wall.claimedVp = true;
-        // Wall Pass has only its entry sound; the shadow awards VP silently.
-        addVp(PHASE2_GRAVITY_WALL_PASS_VP, false);
+      if (phaseTwoGravityWallShadowTouchesHero(
+        phaseTwoGravityWallShadowEllipse(wall), rewardPoints
+      )) {
+        addVp(VP_PER_BEAT * beatStep, true);
       }
     }
     if (hp <= 0) die();
@@ -14404,7 +14430,7 @@
     pattern.wallPreviousY = previousY;
     const horizontal = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) -
       (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
-    const moveVx = horizontal * MOVE_SPEED * (bpm / BASE_BPM);
+    const moveVx = horizontal * playerMovementSpeed();
     pattern.vx -= Math.sign(pattern.vx) * Math.min(
       Math.abs(pattern.vx),
       PHASE2_GRAVITY_KNOCKBACK_DRAG * dt
@@ -15467,7 +15493,7 @@
     }
     heroMove.x = dx / length;
     heroMove.y = dy / length;
-    const speed = MOVE_SPEED * (bpm / BASE_BPM) * PHASE2_PITFALL_MOVE_SCALE;
+    const speed = playerMovementSpeed() * PHASE2_PITFALL_MOVE_SCALE;
     hero.x += heroMove.x * speed * dt;
     hero.y += heroMove.y * speed * dt;
     clampHero();
@@ -18238,7 +18264,7 @@
 
   function renderPhaseTwoGravityWallPass(subpattern) {
     const content = phaseTwoGravityContentRect();
-    const frameOverlap = PAD + 1;
+    const frameOverlap = 1;
     actx.save();
     actx.globalAlpha = 1;
     actx.lineWidth = 2;
@@ -18275,20 +18301,18 @@
         }
         actx.stroke();
       }
-      const gapCenter = (wall.gapStart + wall.gapEnd) / 2;
-      const centerX = wall.axis === 'x' ? wall.position : gapCenter;
-      const centerY = wall.axis === 'x' ? gapCenter : wall.position;
+      const shadow = phaseTwoGravityWallShadowEllipse(wall);
       actx.save();
-      actx.globalAlpha = (wall.claimedVp ? 0.16 : 0.75) * (ready ? 1 : 0.65);
+      actx.globalAlpha = 0.75 * (ready ? 1 : 0.65);
       actx.fillStyle = '#8534b5';
       actx.shadowColor = '#b15adc';
       actx.shadowBlur = 11;
       actx.beginPath();
       actx.ellipse(
-        centerX,
-        centerY,
-        wall.axis === 'x' ? Math.max(7, wall.thickness * 0.44) : Math.min(20, (wall.gapEnd - wall.gapStart) * 0.28),
-        wall.axis === 'x' ? Math.min(20, (wall.gapEnd - wall.gapStart) * 0.28) : Math.max(7, wall.thickness * 0.44),
+        shadow.x,
+        shadow.y,
+        shadow.radiusX,
+        shadow.radiusY,
         0, 0, Math.PI * 2
       );
       actx.fill();
@@ -18311,7 +18335,7 @@
     const subpattern = pattern.subpattern;
     actx.save();
     actx.beginPath();
-    const contentInset = BORDER + PAD;
+    const contentInset = BORDER;
     actx.rect(
       arena.x - arena.width / 2 + contentInset,
       arena.y - arena.height / 2 + contentInset,
