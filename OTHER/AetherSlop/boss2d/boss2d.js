@@ -1010,9 +1010,13 @@
   const PHASE2_GRAVITY_PHYSICS_STEP_MS = 8;
   const PHASE2_GRAVITY_BOX_CANVAS_SIZE = Math.ceil(BOARD * Math.SQRT2 + BORDER * 2);
   const PHASE2_GRAVITY_BOX_SPIN_PER_BEAT = Math.PI / 60; // three degrees per beat
+  const PHASE2_GRAVITY_SCROLL_BEATS = 72;
+  const PHASE2_GRAVITY_SCROLL_PER_BEAT = 32;
+  const PHASE2_GRAVITY_SWING_COST = VP_MAX * 0.25;
+  const PHASE2_GRAVITY_SWING_MS = 280;
   const PHASE2_GRAVITY_SUBPATTERNS = [
     'weaponTetris', 'ticTacToe', 'spikeDropper', 'wallPass', 'wallPassDynamic',
-    'rotatingBalls',
+    'rotatingBalls', 'sideScroller',
   ];
   const PHASE2_MAYHEM_UNDER_PATTERNS = [
     'quadrantFans',
@@ -1240,6 +1244,7 @@
     overlay.classList.remove('tower-climb-active');
     overlay.classList.remove('avatar-phase-two');
     overlay.classList.remove('rotating-balls-active');
+    overlay.classList.remove('side-scroller-active', 'side-scroller-intro');
     overlay.style.removeProperty('--phase2-stage-w');
     overlay.style.removeProperty('--phase2-stage-h');
     overlay.style.removeProperty('--phase2-vbar-h');
@@ -1249,9 +1254,20 @@
     overlay.style.removeProperty('--phase2-rotating-canvas');
     overlay.style.removeProperty('--phase2-rotating-center-x');
     overlay.style.removeProperty('--phase2-rotating-center-y');
+    for (const name of ['left', 'top', 'width', 'height']) {
+      overlay.style.removeProperty('--phase2-scroll-' + name);
+    }
     overlay.style.removeProperty('--tower-ui-left');
     overlay.style.removeProperty('--tower-ui-width');
     overlay.style.removeProperty('--tower-ui-top');
+    if (vpBar) {
+      vpBar.removeAttribute('role');
+      vpBar.removeAttribute('tabindex');
+      const ready = vpBar.querySelector('.aether-boss2d-vp-ready');
+      if (ready) ready.textContent = 'ATTACK READY';
+    }
+    if (vpFill) vpFill.style.width = '';
+    if (hpFill) hpFill.style.transform = '';
     phase2LayoutAnchor = null;
     phase2LayoutSignature = '';
     const help = overlay.querySelector('.aether-boss2d-help');
@@ -1326,12 +1342,15 @@
 
   function restorePhaseTwoSquareArena(force) {
     if (!overlay || !canvas || (phase2SquareArenaLocked && !force)) return;
+    if (phase2GravityPattern?.sideScrollerLayout) {
+      restorePhaseTwoGravitySideScrollerLayout(phase2GravityPattern);
+    }
     phase2SquareArenaLocked = true;
     phase2TowerPattern = null;
     phase2DoomPattern = null;
     phase2MayhemPattern = null;
     phase2GravityPattern = null;
-    overlay.classList.remove('rotating-balls-active');
+    overlay.classList.remove('rotating-balls-active', 'side-scroller-active', 'side-scroller-intro');
     overlay.classList.remove('hex-arena-active');
     overlay.classList.remove('tower-climb-active');
     const help = overlay.querySelector('.aether-boss2d-help');
@@ -1920,6 +1939,19 @@
     wrathValue = overlay.querySelector('.aether-boss2d-wrath-value');
     wrathTrack = overlay.querySelector('.aether-boss2d-wrath-track');
     vpBar = overlay.querySelector('.aether-boss2d-vp');
+    vpBar.addEventListener('click', () => {
+      if (phase2GravityPattern?.subpattern?.type === 'sideScroller') {
+        swingPhaseTwoGravitySword();
+      }
+    });
+    vpBar.addEventListener('keydown', event => {
+      if (phase2GravityPattern?.subpattern?.type === 'sideScroller' &&
+          (event.code === 'Enter' || event.code === 'Space')) {
+        swingPhaseTwoGravitySword();
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
     vpFill = overlay.querySelector('.aether-boss2d-vp .aether-boss2d-vbar-fill');
     hpFill = overlay.querySelector('.aether-boss2d-hp .aether-boss2d-vbar-fill');
     deathScreen = overlay.querySelector('.aether-boss2d-death');
@@ -2214,6 +2246,17 @@
       gravityRotatingBallsBtn.blur();
     });
     phaseThreeDebugControls.appendChild(gravityRotatingBallsBtn);
+
+    const gravitySideScrollerBtn = document.createElement('button');
+    gravitySideScrollerBtn.type = 'button';
+    gravitySideScrollerBtn.className = 'aether-boss2d-debug-btn aether-boss2d-debug-btn-gravity';
+    gravitySideScrollerBtn.textContent = 'SIDE SCROLLER';
+    gravitySideScrollerBtn.title = 'Start the scrolling Gravity gauntlet';
+    gravitySideScrollerBtn.addEventListener('click', () => {
+      debugPhaseTwoGravitySubpattern('sideScroller');
+      gravitySideScrollerBtn.blur();
+    });
+    phaseThreeDebugControls.appendChild(gravitySideScrollerBtn);
 
     const gridSpecialBtn = document.createElement('button');
     gridSpecialBtn.type = 'button';
@@ -5507,6 +5550,9 @@
     if (!towerActive && !pitfallActive && !doomActive && phase === PHASE.SECOND) renderPhaseTwoFinalTile();
     if (doomActive) renderPhaseTwoDoomFloor();
     if (phase2MayhemPattern) renderPhaseTwoMayhem();
+    if (phase2GravityPattern?.subpattern?.type === 'sideScroller') {
+      renderPhaseTwoGravitySideTerrain(phase2GravityPattern.subpattern);
+    }
     drawHero();
     if (towerActive) renderPhaseTwoTowerAim();
     if (pitfallActive) renderPhaseTwoPitfallImpact();
@@ -6773,12 +6819,20 @@
     if (wrathValue) wrathValue.textContent = isPhaseTwoCombat
       ? 'ENTROPY ' + Math.round(entropy) + ' / ' + ENTROPY_MAX
       : 'WRATH ' + wrath;
-    if (hpFill) hpFill.style.height = (Math.max(0, hp) / HP_MAX * 100) + '%';
+    if (hpFill) {
+      hpFill.style.height = (Math.max(0, hp) / HP_MAX * 100) + '%';
+      hpFill.style.transform = phase2GravityPattern?.subpattern?.type === 'sideScroller'
+        ? 'scaleX(' + clamp01(hp / HP_MAX) + ')' : '';
+    }
     if (vpFill) {
       const attackCharge = clamp01(Math.max(0, vp) / PLAYER_ATTACK_VP_COST);
       vpFill.style.height = (attackCharge * 100) + '%';
+      vpFill.style.width = phase2GravityPattern?.subpattern?.type === 'sideScroller'
+        ? (attackCharge * 100) + '%' : '';
     }
-    if (vpBar) vpBar.classList.toggle('is-full', vp >= PLAYER_ATTACK_VP_COST);
+    if (vpBar) vpBar.classList.toggle('is-full', vp >=
+      (phase2GravityPattern?.subpattern?.type === 'sideScroller'
+        ? PHASE2_GRAVITY_SWING_COST : PLAYER_ATTACK_VP_COST));
   }
 
   // ---- Phase machine -----------------------------------------------------
@@ -12715,7 +12769,7 @@
         : phase2GravityPattern.initialSubpattern;
       if (activeType === 'idle') {
         return step < 0
-          ? beginPhaseTwoGravitySubpattern(phase2GravityPattern, 'rotatingBalls')
+          ? beginPhaseTwoGravitySubpattern(phase2GravityPattern, 'sideScroller')
           : false;
       }
       const canonicalType = activeType === 'terrainDrain'
@@ -13752,8 +13806,121 @@
     };
   }
 
+  function enterPhaseTwoGravitySideScrollerLayout(pattern) {
+    const board = getBoardRect();
+    const width = Math.max(500, Math.floor(window.innerWidth - 28));
+    const top = Math.max(62, Math.min(board.top, window.innerHeight - 380));
+    const height = Math.max(300, Math.min(500, Math.floor(window.innerHeight - top - 80)));
+    pattern.sideScrollerLayout = {
+      canvasWidth: canvas.width, canvasHeight: canvas.height,
+      arenaX: arena.x, arenaY: arena.y, arenaWidth: arena.width,
+      arenaHeight: arena.height, heroX: hero.x, heroY: hero.y,
+    };
+    overlay.style.setProperty('--phase2-scroll-left', Math.max(0, (window.innerWidth - width) / 2) + 'px');
+    overlay.style.setProperty('--phase2-scroll-top', top + 'px');
+    overlay.style.setProperty('--phase2-scroll-width', width + 'px');
+    overlay.style.setProperty('--phase2-scroll-height', height + 'px');
+    overlay.classList.add('side-scroller-active', 'side-scroller-intro');
+    canvas.width = width;
+    canvas.height = height;
+    ctx.imageSmoothingEnabled = false;
+    frameBoardRect = null;
+    Object.assign(arena, {
+      x: width / 2, y: height / 2, width, height, rotation: 0,
+      shape: 'rect', from: null, target: null,
+    });
+    hero.x = width * 0.36;
+    hero.y = height - BORDER - 48 - HERO_BODY_OFFSET_Y - HERO_BODY_HALF_H;
+    pattern.ripples = [];
+    pattern.gravityStrength = 1;
+    pattern.vx = 0;
+    pattern.vy = 0;
+    pattern.grounded = true;
+    pattern.groundedGraceMs = PHASE2_GRAVITY_GROUNDED_GRACE_MS;
+    pattern.jumpActive = false;
+    pattern.jumpReleaseGravity = 0;
+    vp = VP_MAX;
+    const ready = vpBar?.querySelector('.aether-boss2d-vp-ready');
+    if (ready) ready.textContent = 'SWING READY';
+    if (vpBar) { vpBar.setAttribute('role', 'button'); vpBar.setAttribute('tabindex', '0'); }
+    const help = overlay?.querySelector('.aether-boss2d-help');
+    if (help && help.firstChild) help.firstChild.nodeValue = 'A / D RUN   W JUMP   SPACE SWING';
+    playBossSfx('vpFull');
+  }
+
+  function restorePhaseTwoGravitySideScrollerLayout(pattern) {
+    const saved = pattern.sideScrollerLayout;
+    if (!saved) return;
+    overlay.classList.remove('side-scroller-active', 'side-scroller-intro');
+    for (const name of ['left', 'top', 'width', 'height']) {
+      overlay.style.removeProperty('--phase2-scroll-' + name);
+    }
+    canvas.width = saved.canvasWidth;
+    canvas.height = saved.canvasHeight;
+    ctx.imageSmoothingEnabled = false;
+    frameBoardRect = null;
+    Object.assign(arena, {
+      x: saved.arenaX, y: saved.arenaY, width: saved.arenaWidth,
+      height: saved.arenaHeight, rotation: 0, shape: 'rect', from: null, target: null,
+    });
+    hero.x = saved.heroX;
+    hero.y = saved.heroY;
+    pattern.vx = 0;
+    pattern.vy = 0;
+    pattern.grounded = false;
+    pattern.sideScrollerLayout = null;
+    const ready = vpBar?.querySelector('.aether-boss2d-vp-ready');
+    if (ready) ready.textContent = 'ATTACK READY';
+    if (vpBar) { vpBar.removeAttribute('role'); vpBar.removeAttribute('tabindex'); }
+    const help = overlay?.querySelector('.aether-boss2d-help');
+    if (help && help.firstChild) help.firstChild.nodeValue = 'A / D MOVE   W JUMP   S DIVE';
+  }
+
+  function resizePhaseTwoGravitySideScrollerLayout(pattern) {
+    const subpattern = pattern?.subpattern;
+    if (!subpattern || subpattern.type !== 'sideScroller') return;
+    const width = Math.max(500, Math.floor(window.innerWidth - 28));
+    const currentTop = parseFloat(overlay.style.getPropertyValue('--phase2-scroll-top')) || 80;
+    const top = Math.max(62, Math.min(currentTop, window.innerHeight - 380));
+    const height = Math.max(300, Math.min(500, Math.floor(window.innerHeight - top - 80)));
+    const dy = height - arena.height;
+    overlay.style.setProperty('--phase2-scroll-left', Math.max(0, (window.innerWidth - width) / 2) + 'px');
+    overlay.style.setProperty('--phase2-scroll-top', top + 'px');
+    overlay.style.setProperty('--phase2-scroll-width', width + 'px');
+    overlay.style.setProperty('--phase2-scroll-height', height + 'px');
+    if (canvas.width === width && canvas.height === height) return;
+    canvas.width = width;
+    canvas.height = height;
+    ctx.imageSmoothingEnabled = false;
+    arena.x = width / 2;
+    arena.y = height / 2;
+    arena.width = width;
+    arena.height = height;
+    hero.y += dy;
+    for (const piece of subpattern.terrain) piece.y += dy;
+    for (const spike of subpattern.spikes) spike.y += dy;
+    for (const tentacle of subpattern.tentacles) tentacle.y += dy;
+    for (const attack of subpattern.attacks) attack.y += dy;
+    extendPhaseTwoGravitySideTerrain(subpattern);
+    frameBoardRect = null;
+  }
+
+  function createPhaseTwoGravitySideScroller(pattern) {
+    enterPhaseTwoGravitySideScrollerLayout(pattern);
+    setPhaseTwoMayhemCastPose('ritual', 3);
+    return {
+      type: 'sideScroller', elapsedBeats: 0, introMs: 0, introDone: false,
+      scroll: 0, nextTerrainX: 0, groundHeight: 48, terrain: [],
+      spikes: [], tentacles: [], attacks: [], nextAttackBeat: 2.5,
+      nextTentacleBeat: 5, swing: null, facing: 1, lastDamageStep: -1,
+    };
+  }
+
   function beginPhaseTwoGravitySubpattern(pattern, type, carry = null) {
     if (!pattern) return false;
+    if (pattern.subpattern?.type === 'sideScroller' && type !== 'sideScroller') {
+      restorePhaseTwoGravitySideScrollerLayout(pattern);
+    }
     if (pattern.subpattern &&
         (pattern.subpattern.type === 'rotatingBalls' ||
          pattern.subpattern.type === 'rotatingBallsRecover') &&
@@ -13792,6 +13959,8 @@
       // A square is upright at every quarter turn. Settle to the nearest one
       // so a long sequence never rewinds several revolutions through the hero.
       setArena({ rotation: Math.round(arena.rotation / (Math.PI / 2)) * Math.PI / 2 }, 900);
+    } else if (type === 'sideScroller') {
+      pattern.subpattern = createPhaseTwoGravitySideScroller(pattern);
     } else {
       pattern.subpattern = { type: 'idle', elapsedBeats: 0 };
     }
@@ -15024,7 +15193,7 @@
   function updatePhaseTwoGravityRotatingBalls(pattern, dt, beatStep) {
     const subpattern = pattern.subpattern;
     if (subpattern.type === 'rotatingBallsRecover') {
-      if (!arena.target) beginPhaseTwoGravitySubpattern(pattern, 'idle');
+      if (!arena.target) beginPhaseTwoGravitySubpattern(pattern, 'sideScroller');
       return;
     }
     if (subpattern.castRemainingMs > 0) {
@@ -15051,11 +15220,302 @@
     }
   }
 
+  function phaseTwoGravitySideGroundAt(subpattern, worldX) {
+    return subpattern.terrain.find(piece =>
+      piece.layer === 0 && worldX >= piece.x && worldX < piece.x + piece.w);
+  }
+
+  function extendPhaseTwoGravitySideTerrain(subpattern) {
+    const until = subpattern.scroll + arena.width + 280;
+    while (subpattern.nextTerrainX < until) {
+      const x = subpattern.nextTerrainX;
+      const w = x === 0 ? Math.max(440, arena.width * 0.7) :
+        94 + Math.floor(Math.random() * 70);
+      const height = x === 0 ? 48 : clampRange(
+        subpattern.groundHeight + (Math.random() - 0.5) * 38, 36, 83);
+      subpattern.groundHeight = height;
+      const ground = { layer: 0, x, w, y: arena.height - BORDER - height, h: height };
+      subpattern.terrain.push(ground);
+      if (x > 0) {
+        const paths = [ground];
+        for (let layer = 1; layer <= 2; layer++) {
+          if (Math.random() < 0.72) {
+            const platformW = 58 + Math.random() * Math.min(100, w - 30);
+            const platform = { layer, x: x + Math.random() * (w - platformW),
+              w: platformW, y: arena.height - BORDER - 48 - layer * 130 +
+                (Math.random() - 0.5) * 24, h: 9 };
+            subpattern.terrain.push(platform);
+            paths.push(platform);
+          }
+        }
+        if (Math.random() < 0.26) {
+          const path = paths[Math.floor(Math.random() * paths.length)];
+          subpattern.spikes.push({ x: path.x + 12 +
+            Math.random() * Math.max(0, path.w - 46), y: path.y, w: 22 });
+        }
+      }
+      subpattern.nextTerrainX += w;
+    }
+    const behind = subpattern.scroll - 180;
+    subpattern.terrain = subpattern.terrain.filter(piece => piece.x + piece.w > behind);
+    subpattern.spikes = subpattern.spikes.filter(spike => spike.x + spike.w > behind);
+    subpattern.tentacles = subpattern.tentacles.filter(tentacle =>
+      !tentacle.dead && tentacle.x > behind);
+  }
+
+  function spawnPhaseTwoGravitySideTentacle(subpattern) {
+    const x = subpattern.scroll + arena.width * (0.65 + Math.random() * 0.28);
+    const path = Math.floor(Math.random() * 3);
+    const surface = subpattern.terrain.find(piece =>
+      piece.layer === path && x >= piece.x && x <= piece.x + piece.w) ||
+      phaseTwoGravitySideGroundAt(subpattern, x);
+    if (!surface) return;
+    subpattern.tentacles.push({ x, y: surface.y, path: surface.layer,
+      ageBeats: 0, health: 2, dead: false, phase: Math.random() * Math.PI * 2 });
+  }
+
+  function spawnPhaseTwoGravitySideAttack(subpattern) {
+    const kinds = ['claw', 'scythe', 'beam', 'spear', 'ball'];
+    const kind = kinds[Math.floor(Math.random() * kinds.length)];
+    const x = subpattern.scroll + hero.x + 20 + Math.random() * Math.min(140, arena.width * 0.15);
+    const lane = Math.floor(Math.random() * 3);
+    const y = kind === 'beam' ? arena.height - BORDER :
+      arena.height - BORDER - 48 - lane * 130;
+    subpattern.attacks.push({ kind, x, y, ageBeats: 0, hit: false,
+      deflected: false, vx: 0, vy: 0, radius: kind === 'ball' ? 10 : 21 });
+    setPhaseTwoMayhemCastPose('ritual', Math.max(1, beatMs * 0.6));
+  }
+
+  function swingPhaseTwoGravitySword() {
+    const subpattern = phase2GravityPattern?.subpattern;
+    if (!subpattern || subpattern.type !== 'sideScroller' ||
+        subpattern.swing || vp < PHASE2_GRAVITY_SWING_COST || dead) return false;
+    vp -= PHASE2_GRAVITY_SWING_COST;
+    subpattern.swing = { age: 0, facing: subpattern.facing, hitIds: new Set() };
+    playBossSfx('playerTravel');
+    return true;
+  }
+
+  function phaseTwoGravitySideSwingTip(subpattern) {
+    const swing = subpattern.swing;
+    if (!swing) return null;
+    const progress = clamp01(swing.age / PHASE2_GRAVITY_SWING_MS);
+    const angle = -2.35 + progress * 3.45;
+    const length = HERO_H * 1.5;
+    const originX = hero.x + swing.facing * HERO_BODY_HALF_W * 0.55;
+    const originY = hero.y - HERO_H * 0.18;
+    return { originX, originY,
+      x: originX + Math.cos(angle) * length * swing.facing,
+      y: originY + Math.sin(angle) * length };
+  }
+
+  function phaseTwoGravitySideSwordTouches(subpattern, x, y, radius) {
+    const tip = phaseTwoGravitySideSwingTip(subpattern);
+    if (!tip) return false;
+    const dx = tip.x - tip.originX, dy = tip.y - tip.originY;
+    const t = clampRange(((x - tip.originX) * dx + (y - tip.originY) * dy) /
+      Math.max(1, dx * dx + dy * dy), 0, 1);
+    return Math.hypot(x - tip.originX - dx * t, y - tip.originY - dy * t) <= radius + 7;
+  }
+
+  function updatePhaseTwoGravitySideScroller(pattern, dt) {
+    const subpattern = pattern.subpattern;
+    if (subpattern.introMs < 1900) return;
+    if (!subpattern.introDone) {
+      subpattern.introDone = true;
+      overlay.classList.remove('side-scroller-intro');
+    }
+    const beatStep = dt / Math.max(1, beatMs);
+    subpattern.elapsedBeats += beatStep;
+    const scrollDelta = PHASE2_GRAVITY_SCROLL_PER_BEAT * beatStep;
+    subpattern.scroll += scrollDelta;
+    hero.x -= scrollDelta;
+    extendPhaseTwoGravitySideTerrain(subpattern);
+    vp = Math.min(VP_MAX, vp + VP_MAX * 0.05 * dt / 1000);
+    while (subpattern.elapsedBeats >= subpattern.nextTentacleBeat) {
+      spawnPhaseTwoGravitySideTentacle(subpattern);
+      subpattern.nextTentacleBeat += 4 + Math.random() * 2;
+    }
+    while (subpattern.elapsedBeats >= subpattern.nextAttackBeat) {
+      spawnPhaseTwoGravitySideAttack(subpattern);
+      subpattern.nextAttackBeat += 1.7 + Math.random() * 1.1;
+    }
+    if (subpattern.swing) {
+      subpattern.swing.age += dt;
+      if (subpattern.swing.age >= PHASE2_GRAVITY_SWING_MS) subpattern.swing = null;
+    }
+    const core = heroBodyCenterWorld();
+    const hit = (amount) => {
+      damagePlayer(amount);
+      phaseTwoGravityPlayDamageSfx(subpattern);
+      if (hp <= 0) die();
+    };
+    for (const spike of subpattern.spikes) {
+      const x = spike.x - subpattern.scroll;
+      if (Math.abs(core.x - (x + spike.w / 2)) < spike.w / 2 + 5 &&
+          Math.abs(core.y - (spike.y - 10)) < 18) hit(34 * beatStep);
+    }
+    for (const tentacle of subpattern.tentacles) {
+      tentacle.ageBeats += beatStep;
+      const x = tentacle.x - subpattern.scroll;
+      const y = tentacle.y - 22;
+      if (subpattern.swing &&
+          phaseTwoGravitySideSwordTouches(subpattern, x, y, 12) &&
+          !subpattern.swing.hitIds.has(tentacle)) {
+        subpattern.swing.hitIds.add(tentacle);
+        tentacle.health--;
+        if (tentacle.health <= 0) tentacle.dead = true;
+      }
+      if (!tentacle.dead && Math.hypot(core.x - x, core.y - y) < 25) hit(24 * beatStep);
+    }
+    for (const attack of subpattern.attacks) {
+      attack.ageBeats += beatStep;
+      const x = attack.x - subpattern.scroll;
+      if (attack.deflected) {
+        attack.deflectAge += dt;
+        if (attack.kind === 'ball' || attack.kind === 'spear') {
+          attack.x += attack.vx * dt;
+          attack.y += attack.vy * dt;
+          attack.vy += 0.0009 * dt;
+        }
+        continue;
+      }
+      if (attack.ageBeats < 2) continue;
+      if (attack.kind === 'ball') {
+        if (attack.ageBeats - beatStep < 2) {
+          const targetY = attack.y;
+          attack.y = BORDER + 18;
+          attack.vy = Math.max(0.7,
+            (targetY - attack.y) / (beatMs * 0.55));
+        }
+        attack.vy += 0.0017 * dt;
+        attack.y += attack.vy * dt;
+      }
+      const sweepX = attack.kind === 'scythe' || attack.kind === 'claw'
+        ? x + (clamp01((attack.ageBeats - 2) / 0.72) - 0.5) * 64 : x;
+      const y = attack.kind === 'beam' ? core.y : attack.kind === 'ball'
+        ? attack.y : attack.y - 25;
+      if (subpattern.swing &&
+          phaseTwoGravitySideSwordTouches(subpattern, sweepX, y, attack.radius) &&
+          !subpattern.swing.hitIds.has(attack)) {
+        subpattern.swing.hitIds.add(attack);
+        attack.deflected = true;
+        attack.deflectAge = 0;
+        attack.vx = subpattern.swing.facing * 0.55;
+        attack.vy = -0.30;
+        entropy = Math.min(ENTROPY_MAX, entropy + damageEnemy(8));
+        if (setCombatBpm(phaseTwoBpm())) updateBossMusicTempo(true);
+        playBossSfx('playerImpact', { phaseTwo: true });
+        continue;
+      }
+      if (attack.ageBeats > 2.72) continue;
+      const halfWidth = attack.kind === 'beam' ? 13 : 24;
+      if (Math.abs(core.x - sweepX) < halfWidth &&
+          (attack.kind === 'beam' || Math.abs(core.y - y) < 34)) {
+        hit(35 * beatStep);
+      }
+    }
+    subpattern.attacks = subpattern.attacks.filter(attack => attack.deflected
+      ? attack.deflectAge < beatMs * 0.9 : attack.ageBeats < 3.2);
+    if (hero.x < BORDER + 65) hit(75 * beatStep);
+    if (subpattern.elapsedBeats >= PHASE2_GRAVITY_SCROLL_BEATS) {
+      beginPhaseTwoGravitySubpattern(pattern, 'idle');
+    }
+  }
+
+  function updatePhaseTwoGravitySideMovement(pattern, subpattern, dt) {
+    extendPhaseTwoGravitySideTerrain(subpattern);
+    const horizontal = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) -
+      (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+    if (horizontal) subpattern.facing = horizontal;
+    const jumpHeld = keys.has('KeyW') || keys.has('ArrowUp');
+    pattern.jumpBufferMs = Math.max(0, pattern.jumpBufferMs - dt);
+    pattern.groundedGraceMs = Math.max(0, pattern.groundedGraceMs - dt);
+    if ((pattern.jumpBufferMs > 0 &&
+         (pattern.grounded || pattern.groundedGraceMs > 0)) ||
+        (jumpHeld && pattern.grounded)) {
+      pattern.vy = -PHASE2_GRAVITY_JUMP_SPEED;
+      pattern.jumpHoldMs = 0;
+      pattern.jumpActive = true;
+      pattern.jumpReleaseGravity = 0;
+      pattern.grounded = false;
+      pattern.jumpBufferMs = 0;
+      pattern.groundedGraceMs = 0;
+    }
+    const diving = !pattern.grounded && (keys.has('KeyS') || keys.has('ArrowDown'));
+    let verticalGravity = PHASE2_GRAVITY_ACCELERATION;
+    if (pattern.jumpActive) {
+      if (jumpHeld && !diving && pattern.vy < 0 &&
+          pattern.jumpHoldMs < PHASE2_GRAVITY_JUMP_HOLD_MS) {
+        pattern.jumpHoldMs = Math.min(PHASE2_GRAVITY_JUMP_HOLD_MS, pattern.jumpHoldMs + dt);
+        verticalGravity *= PHASE2_GRAVITY_JUMP_HELD_GRAVITY_SCALE;
+        if (pattern.jumpHoldMs >= PHASE2_GRAVITY_JUMP_HOLD_MS) pattern.jumpActive = false;
+      } else {
+        pattern.jumpActive = false;
+        const hold = pattern.jumpHoldMs / PHASE2_GRAVITY_JUMP_HOLD_MS;
+        pattern.jumpReleaseGravity = PHASE2_GRAVITY_ACCELERATION +
+          (PHASE2_GRAVITY_JUMP_EARLY_RELEASE_GRAVITY - PHASE2_GRAVITY_ACCELERATION) * (1 - hold);
+      }
+    }
+    if (pattern.vy < 0 && pattern.jumpReleaseGravity > 0) {
+      verticalGravity = pattern.jumpReleaseGravity;
+    }
+    pattern.vy += (verticalGravity + (diving ? PHASE2_GRAVITY_DIVE_ACCELERATION : 0)) * dt;
+    if (pattern.vy >= 0) pattern.jumpReleaseGravity = 0;
+    const beforeBottom = hero.y + HERO_BODY_OFFSET_Y + HERO_BODY_HALF_H;
+    hero.x += (horizontal * playerMovementSpeed() + pattern.vx) * dt;
+    hero.x = clampRange(hero.x, BORDER + HERO_BODY_HALF_W - HERO_BODY_OFFSET_X,
+      arena.width - BORDER - HERO_BODY_HALF_W - HERO_BODY_OFFSET_X);
+    hero.y += pattern.vy * dt;
+    const afterBottom = hero.y + HERO_BODY_OFFSET_Y + HERO_BODY_HALF_H;
+    const worldX = hero.x + subpattern.scroll + HERO_BODY_OFFSET_X;
+    let landing = null;
+    if (pattern.vy >= 0) {
+      for (const piece of subpattern.terrain) {
+        if (worldX + HERO_BODY_HALF_W < piece.x ||
+            worldX - HERO_BODY_HALF_W > piece.x + piece.w) continue;
+        const climbsSmallStep = piece.layer === 0 && pattern.grounded &&
+          beforeBottom > piece.y && beforeBottom <= piece.y + 22;
+        if ((beforeBottom <= piece.y + 3 || climbsSmallStep) &&
+            afterBottom >= piece.y) {
+          if (!landing || piece.y < landing.y) landing = piece;
+        }
+      }
+    }
+    if (landing) {
+      hero.y = landing.y - HERO_BODY_OFFSET_Y - HERO_BODY_HALF_H;
+      pattern.vy = 0;
+      pattern.grounded = true;
+      pattern.groundedGraceMs = PHASE2_GRAVITY_GROUNDED_GRACE_MS;
+      pattern.jumpActive = false;
+      pattern.jumpReleaseGravity = 0;
+    } else pattern.grounded = false;
+    const ceiling = BORDER + HERO_BODY_HALF_H - HERO_BODY_OFFSET_Y;
+    if (hero.y < ceiling) {
+      hero.y = ceiling;
+      pattern.vy = Math.max(0, pattern.vy);
+      pattern.jumpActive = false;
+    }
+    if (hero.y > arena.height - BORDER - HERO_BODY_HALF_H - HERO_BODY_OFFSET_Y) {
+      hero.y = arena.height - BORDER - HERO_BODY_HALF_H - HERO_BODY_OFFSET_Y;
+      pattern.vy = 0;
+      pattern.grounded = true;
+    }
+    pattern.vx -= Math.sign(pattern.vx) * Math.min(
+      Math.abs(pattern.vx), PHASE2_GRAVITY_KNOCKBACK_DRAG * dt);
+    heroMove.x = horizontal || Math.sign(pattern.vx);
+    heroMove.y = Math.sign(pattern.vy);
+  }
+
   function updatePhaseTwoGravityMovement(dt) {
     const pattern = phase2GravityPattern;
     if (!pattern || pattern.mode !== 'active') {
       heroMove.x = 0;
       heroMove.y = 0;
+      return;
+    }
+    if (pattern.subpattern?.type === 'sideScroller') {
+      updatePhaseTwoGravitySideMovement(pattern, pattern.subpattern, dt);
       return;
     }
     const rotating = pattern.subpattern &&
@@ -15177,6 +15637,10 @@
     const beatStep = dt / Math.max(1, beatMs);
     pattern.elapsedBeats += beatStep;
     pattern.gravityStrength = smoothstep(pattern.elapsed / 1250);
+    if (pattern.subpattern?.type === 'sideScroller') {
+      updatePhaseTwoGravitySideScroller(pattern, dt);
+      return;
+    }
     while (pattern.elapsedBeats >= pattern.nextRippleBeat) {
       spawnPhaseTwoGravityRipple(pattern);
       pattern.nextRippleBeat += PHASE2_GRAVITY_RIPPLE_INTERVAL_BEATS;
@@ -19094,6 +19558,184 @@
     }
   }
 
+  function renderPhaseTwoGravitySideTerrain(subpattern) {
+    ctx.save();
+    const view = subpattern.scroll;
+    for (const piece of subpattern.terrain) {
+      const x = piece.x - view;
+      if (x > arena.width || x + piece.w < 0) continue;
+      ctx.fillStyle = piece.layer ? '#292b30' : '#25262b';
+      ctx.fillRect(x, piece.y, piece.w + 1,
+        piece.layer ? piece.h : arena.height - piece.y);
+      ctx.fillStyle = '#55565a';
+      ctx.fillRect(x, piece.y, piece.w, 3);
+      ctx.fillStyle = '#3b3d42';
+      const seed = Math.floor(piece.x * 3 + piece.layer * 37);
+      for (let i = 0; i < Math.min(90, piece.w * (piece.layer ? 0.22 : 0.44)); i++) {
+        const px = (seed * 37 + i * 67) % Math.floor(piece.w);
+        const depth = piece.layer ? piece.h - 3 : Math.min(70, arena.height - piece.y - 3);
+        const py = (seed * 13 + i * 43) % Math.max(1, Math.floor(depth));
+        ctx.fillRect(x + px, piece.y + 4 + py, 2, 1);
+      }
+    }
+    for (const spike of subpattern.spikes) {
+      const x = spike.x - view;
+      if (x < -30 || x > arena.width + 30) continue;
+      ctx.fillStyle = '#0e0e13';
+      ctx.strokeStyle = '#c32032';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, spike.y);
+      ctx.lineTo(x + 7, spike.y - 19);
+      ctx.lineTo(x + 12, spike.y - 2);
+      ctx.lineTo(x + 18, spike.y - 14);
+      ctx.lineTo(x + spike.w, spike.y);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    for (const tentacle of subpattern.tentacles) {
+      if (tentacle.dead) continue;
+      const x = tentacle.x - view;
+      if (x < -35 || x > arena.width + 35) continue;
+      const sway = Math.sin(tentacle.ageBeats * 2.2 + tentacle.phase) * 9;
+      ctx.strokeStyle = '#8e2948';
+      ctx.lineWidth = 12;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, tentacle.y + 5);
+      ctx.quadraticCurveTo(x + sway * 1.5, tentacle.y - 16,
+        x + sway, tentacle.y - 43);
+      ctx.stroke();
+      ctx.strokeStyle = '#bd5378';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.fillStyle = '#e588aa';
+      ctx.fillRect(x + sway - 3, tentacle.y - 46, 6, 5);
+    }
+    ctx.restore();
+  }
+
+  function renderPhaseTwoGravitySideAttacks(subpattern) {
+    actx.save();
+    if (subpattern.introDone) {
+      const left = BORDER;
+      const flameFront = left + 70;
+      const flame = actx.createLinearGradient(left, 0, flameFront, 0);
+      flame.addColorStop(0, 'rgba(125, 30, 190, 0.85)');
+      flame.addColorStop(1, 'rgba(70, 10, 100, 0)');
+      actx.fillStyle = flame;
+      actx.fillRect(left, BORDER, flameFront - left, arena.height - BORDER * 2);
+      for (let i = 0; i < 20; i++) {
+        const y = BORDER + i * (arena.height - BORDER * 2) / 20;
+        const flicker = Math.sin(subpattern.elapsedBeats * 3 + i * 2.7) * 12;
+        actx.fillStyle = i % 3 ? '#6b2a9a' : '#b25ed1';
+        actx.beginPath();
+        actx.moveTo(left + 18, y + 10);
+        actx.quadraticCurveTo(flameFront + flicker, y - 3, left + 18, y - 14);
+        actx.fill();
+      }
+    }
+    for (const attack of subpattern.attacks) {
+      const x = attack.x - subpattern.scroll;
+      if (x < -60 || x > arena.width + 60) continue;
+      if (attack.deflected && attack.kind !== 'ball' && attack.kind !== 'spear') continue;
+      const warning = attack.ageBeats < 2;
+      const fading = clamp01((3.2 - attack.ageBeats) / 0.48);
+      const sweepX = attack.kind === 'scythe' || attack.kind === 'claw'
+        ? x + (clamp01((attack.ageBeats - 2) / 0.72) - 0.5) * 64 : x;
+      actx.save();
+      actx.globalAlpha = warning ? 0.35 + 0.45 *
+        (0.5 + 0.5 * Math.sin(attack.ageBeats * Math.PI * 5)) : fading;
+      if (warning) {
+        actx.strokeStyle = '#b868e2';
+        actx.fillStyle = 'rgba(150, 68, 210, 0.24)';
+        actx.shadowColor = '#9d43d3';
+        actx.shadowBlur = 10;
+        if (attack.kind === 'beam') {
+          actx.fillRect(x - 13, BORDER, 26, arena.height - BORDER * 2);
+          actx.strokeRect(x - 13, BORDER, 26, arena.height - BORDER * 2);
+        } else {
+          actx.beginPath();
+          actx.ellipse(x, attack.y - 25,
+            attack.kind === 'scythe' ? 40 : 25, 30, 0, 0, Math.PI * 2);
+          actx.fill(); actx.stroke();
+          actx.beginPath(); actx.moveTo(x, BORDER);
+          actx.lineTo(x, attack.y - 54); actx.stroke();
+        }
+      } else if (attack.kind === 'beam') {
+        actx.fillStyle = attack.deflected ? '#e7cf79' : '#1b060b';
+        actx.strokeStyle = attack.deflected ? '#fff5af' : '#f0263e';
+        actx.lineWidth = 3;
+        actx.fillRect(x - 10, BORDER, 20, arena.height - BORDER * 2);
+        actx.strokeRect(x - 10, BORDER, 20, arena.height - BORDER * 2);
+      } else if (attack.kind === 'ball') {
+        actx.fillStyle = attack.deflected ? '#ffdf77' : '#220d18';
+        actx.strokeStyle = attack.deflected ? '#fff5c2' : '#f13d5b';
+        actx.lineWidth = 2;
+        actx.beginPath(); actx.arc(x, attack.y, 10, 0, Math.PI * 2);
+        actx.fill(); actx.stroke();
+      } else {
+        actx.strokeStyle = attack.deflected ? '#ffe996' : '#f02740';
+        actx.lineWidth = attack.kind === 'scythe' ? 9 : 6;
+        actx.lineCap = 'round';
+        actx.shadowColor = actx.strokeStyle;
+        actx.shadowBlur = 8;
+        actx.beginPath();
+        const y = attack.y - 25;
+        if (attack.kind === 'spear') {
+          actx.moveTo(x, attack.deflected ? attack.y - 28 : BORDER);
+          actx.lineTo(x, attack.deflected ? attack.y + 28 : y + 28);
+        } else {
+          actx.moveTo(sweepX - 37, y - 26);
+          actx.quadraticCurveTo(sweepX + (attack.kind === 'claw' ? 33 : 5),
+            y - 12, sweepX + 33, y + 22);
+        }
+        actx.stroke();
+        if (attack.kind === 'claw') {
+          for (const offset of [-10, 10]) {
+            actx.beginPath();
+            actx.moveTo(sweepX - 37, y - 26 + offset);
+            actx.quadraticCurveTo(sweepX + 28, y - 12 + offset,
+              sweepX + 32, y + 22 + offset);
+            actx.stroke();
+          }
+        }
+      }
+      actx.restore();
+    }
+    if (subpattern.swing) {
+      const swing = subpattern.swing;
+      const tip = phaseTwoGravitySideSwingTip(subpattern);
+      actx.save();
+      actx.lineCap = 'round';
+      actx.shadowColor = '#ffd86b';
+      actx.shadowBlur = 18;
+      actx.strokeStyle = 'rgba(255, 215, 104, 0.48)';
+      actx.lineWidth = 20;
+      actx.beginPath();
+      const progress = clamp01(swing.age / PHASE2_GRAVITY_SWING_MS);
+      for (let i = 0; i <= 10; i++) {
+        const angle = -2.35 + Math.max(0, progress - 0.38 + i * 0.038) * 3.45;
+        const x = tip.originX + Math.cos(angle) * HERO_H * 1.5 * swing.facing;
+        const y = tip.originY + Math.sin(angle) * HERO_H * 1.5;
+        if (i === 0) actx.moveTo(x, y); else actx.lineTo(x, y);
+      }
+      actx.stroke();
+      actx.shadowBlur = 7;
+      actx.strokeStyle = '#fff2ac';
+      actx.lineWidth = 6;
+      actx.beginPath(); actx.moveTo(tip.originX, tip.originY);
+      actx.lineTo(tip.x, tip.y); actx.stroke();
+      actx.strokeStyle = '#caa55a';
+      actx.lineWidth = 3;
+      actx.beginPath();
+      actx.moveTo(tip.originX - 7, tip.originY - 3);
+      actx.lineTo(tip.originX + 7, tip.originY + 3);
+      actx.stroke();
+      actx.restore();
+    }
+    actx.restore();
+  }
+
   function renderPhaseTwoGravityPattern() {
     const pattern = phase2GravityPattern;
     if (!pattern) return;
@@ -19150,6 +19792,8 @@
     } else if (subpattern && (subpattern.type === 'rotatingBalls' ||
                               subpattern.type === 'rotatingBallsRecover')) {
       renderPhaseTwoGravityRotatingBalls(subpattern);
+    } else if (subpattern && subpattern.type === 'sideScroller') {
+      renderPhaseTwoGravitySideAttacks(subpattern);
     }
     if (pattern.elapsed < PHASE2_GRAVITY_ROAR_MS) {
       const pulse = 1 - clamp01(pattern.elapsed / PHASE2_GRAVITY_ROAR_MS);
@@ -21233,7 +21877,17 @@
       return;
     }
     // The strike flourish advances in real time but slows everything else down.
-    const timeScale = updateStrike(dtRaw);
+    let timeScale = updateStrike(dtRaw);
+    const sideIntro = phase2GravityPattern?.subpattern;
+    if (sideIntro?.type === 'sideScroller' && sideIntro.introMs < 1900) {
+      sideIntro.introMs += dtRaw;
+      vp = Math.min(VP_MAX, vp + VP_MAX * 0.05 * dtRaw / 1000);
+      if (sideIntro.swing) {
+        sideIntro.swing.age += dtRaw;
+        if (sideIntro.swing.age >= PHASE2_GRAVITY_SWING_MS) sideIntro.swing = null;
+      }
+      timeScale *= 0.08 + 0.92 * smoothstep((sideIntro.introMs - 1150) / 750);
+    }
     const dt = dtRaw * timeScale;
     clock += dt;
     phaseTime += dt;
@@ -21296,7 +21950,9 @@
       return;
     }
     if (event.code === 'KeyF' || event.code === 'Space') {
-      playerAttack();
+      if (phase2GravityPattern?.subpattern?.type === 'sideScroller') {
+        if (!event.repeat) swingPhaseTwoGravitySword();
+      } else playerAttack();
       event.preventDefault();
       return;
     }
@@ -21546,6 +22202,7 @@
     sizeBackground();
     sizeAttackCanvas();
     sizeDeathCanvas();
+    resizePhaseTwoGravitySideScrollerLayout(phase2GravityPattern);
     if (dead && deathSequence) {
       deathSequence.cracks = makeDeathCracks(
         deathSequence.heroX,
