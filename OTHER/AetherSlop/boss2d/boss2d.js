@@ -1010,8 +1010,8 @@
   const PHASE2_GRAVITY_PHYSICS_STEP_MS = 8;
   const PHASE2_GRAVITY_BOX_CANVAS_SIZE = Math.ceil(BOARD * Math.SQRT2 + BORDER * 2);
   const PHASE2_GRAVITY_BOX_SPIN_PER_BEAT = Math.PI / 60; // three degrees per beat
-  const PHASE2_GRAVITY_SCROLL_BEATS = 72;
-  const PHASE2_GRAVITY_SCROLL_PER_BEAT = 32;
+  const PHASE2_GRAVITY_SCROLL_BEATS = 720;
+  const PHASE2_GRAVITY_SCROLL_PER_BEAT = 96;
   const PHASE2_GRAVITY_SWING_COST = VP_MAX * 0.25;
   const PHASE2_GRAVITY_SWING_MS = 280;
   const PHASE2_GRAVITY_SUBPATTERNS = [
@@ -13899,7 +13899,10 @@
     hero.y += dy;
     for (const piece of subpattern.terrain) piece.y += dy;
     for (const spike of subpattern.spikes) spike.y += dy;
-    for (const tentacle of subpattern.tentacles) tentacle.y += dy;
+    for (const tentacle of subpattern.tentacles) {
+      tentacle.y += dy;
+      tentacle.targetY += dy;
+    }
     for (const attack of subpattern.attacks) attack.y += dy;
     extendPhaseTwoGravitySideTerrain(subpattern);
     frameBoardRect = null;
@@ -15225,33 +15228,92 @@
       piece.layer === 0 && worldX >= piece.x && worldX < piece.x + piece.w);
   }
 
+  function phaseTwoGravitySideSurfaceYAt(piece, worldX) {
+    const localX = clampRange(worldX - piece.x, 0, piece.w);
+    const ridge = piece.ridge;
+    for (let i = 1; i < ridge.length; i++) {
+      if (localX > ridge[i].x) continue;
+      const from = ridge[i - 1], to = ridge[i];
+      const t = (localX - from.x) / Math.max(1, to.x - from.x);
+      return piece.y + from.y + (to.y - from.y) * t;
+    }
+    return piece.y + ridge[ridge.length - 1].y;
+  }
+
+  function addPhaseTwoGravitySideSpikeCluster(subpattern, path) {
+    const length = Math.min(path.w - 20, 85 + Math.random() * 125);
+    if (length < 48) return;
+    const start = path.x + 10 + Math.random() * Math.max(0, path.w - length - 20);
+    const holeWidth = Math.max(HERO_BODY_HALF_W * 2 + 20, 40);
+    const holeStart = length > 145 && Math.random() < 0.48
+      ? start + 40 + Math.random() * Math.max(0, length - holeWidth - 80) : Infinity;
+    for (let x = start; x < start + length - 12;) {
+      const w = 14 + Math.random() * 7;
+      if (x + w <= holeStart || x >= holeStart + holeWidth) {
+        subpattern.spikes.push({ x, w, height: 15 + Math.random() * 13,
+          y: phaseTwoGravitySideSurfaceYAt(path, x + w / 2) });
+      }
+      x += w - 2;
+    }
+  }
+
   function extendPhaseTwoGravitySideTerrain(subpattern) {
     const until = subpattern.scroll + arena.width + 280;
     while (subpattern.nextTerrainX < until) {
       const x = subpattern.nextTerrainX;
       const w = x === 0 ? Math.max(440, arena.width * 0.7) :
-        94 + Math.floor(Math.random() * 70);
-      const height = x === 0 ? 48 : clampRange(
-        subpattern.groundHeight + (Math.random() - 0.5) * 38, 36, 83);
-      subpattern.groundHeight = height;
-      const ground = { layer: 0, x, w, y: arena.height - BORDER - height, h: height };
+        165 + Math.floor(Math.random() * 95);
+      const oldHeight = subpattern.groundHeight;
+      const newHeight = x === 0 ? 48 : clampRange(
+        oldHeight + (Math.random() - 0.5) * 34, 38, 82);
+      const ground = {
+        layer: 0, x, w, y: arena.height - BORDER - oldHeight,
+        h: oldHeight,
+        ridge: [
+          { x: 0, y: 0 },
+          { x: w * 0.23, y: (Math.random() - 0.5) * 9 },
+          { x: w * 0.49, y: (Math.random() - 0.5) * 11 },
+          { x: w * 0.76, y: oldHeight - newHeight + (Math.random() - 0.5) * 9 },
+          { x: w, y: oldHeight - newHeight },
+        ],
+      };
+      subpattern.groundHeight = newHeight;
       subpattern.terrain.push(ground);
       if (x > 0) {
         const paths = [ground];
         for (let layer = 1; layer <= 2; layer++) {
-          if (Math.random() < 0.72) {
-            const platformW = 58 + Math.random() * Math.min(100, w - 30);
+          if (Math.random() < 0.83) {
+            const platformW = 78 + Math.random() * Math.min(165, w - 88);
             const platform = { layer, x: x + Math.random() * (w - platformW),
               w: platformW, y: arena.height - BORDER - 48 - layer * 130 +
-                (Math.random() - 0.5) * 24, h: 9 };
+                (Math.random() - 0.5) * 24, h: 25 + Math.random() * 24,
+              ridge: [
+                { x: 0, y: 11 },
+                { x: platformW * 0.08, y: 1 - Math.random() * 5 },
+                { x: platformW * 0.2, y: (Math.random() - 0.5) * 9 },
+                { x: platformW * 0.42, y: (Math.random() - 0.5) * 12 },
+                { x: platformW * 0.61, y: (Math.random() - 0.5) * 10 },
+                { x: platformW * 0.79, y: (Math.random() - 0.5) * 8 },
+                { x: platformW * 0.92, y: 1 - Math.random() * 5 },
+                { x: platformW, y: 11 },
+              ],
+              underside: [
+                { x: platformW - 4, y: 0 },
+                { x: platformW * 0.87, y: 3 + Math.random() * 8 },
+                { x: platformW * 0.72, y: Math.random() * 3 },
+                { x: platformW * 0.54, y: 4 + Math.random() * 9 },
+                { x: platformW * 0.31, y: Math.random() * 4 },
+                { x: platformW * 0.13, y: 3 + Math.random() * 8 },
+                { x: 5, y: 0 },
+              ] };
             subpattern.terrain.push(platform);
             paths.push(platform);
           }
         }
-        if (Math.random() < 0.26) {
-          const path = paths[Math.floor(Math.random() * paths.length)];
-          subpattern.spikes.push({ x: path.x + 12 +
-            Math.random() * Math.max(0, path.w - 46), y: path.y, w: 22 });
+        for (const path of paths) {
+          if (Math.random() < (path.layer === 0 ? 0.82 : 0.66)) {
+            addPhaseTwoGravitySideSpikeCluster(subpattern, path);
+          }
         }
       }
       subpattern.nextTerrainX += w;
@@ -15265,13 +15327,17 @@
 
   function spawnPhaseTwoGravitySideTentacle(subpattern) {
     const x = subpattern.scroll + arena.width * (0.65 + Math.random() * 0.28);
-    const path = Math.floor(Math.random() * 3);
+    const path = Math.floor(Math.random() * 2);
     const surface = subpattern.terrain.find(piece =>
       piece.layer === path && x >= piece.x && x <= piece.x + piece.w) ||
       phaseTwoGravitySideGroundAt(subpattern, x);
     if (!surface) return;
-    subpattern.tentacles.push({ x, y: surface.y, path: surface.layer,
-      ageBeats: 0, health: 2, dead: false, phase: Math.random() * Math.PI * 2 });
+    const y = phaseTwoGravitySideSurfaceYAt(surface, x);
+    subpattern.tentacles.push({ x, y, path: surface.layer,
+      height: Math.min(260, y - BORDER - 18),
+      ageBeats: 0, health: 2, dead: false, phase: Math.random() * Math.PI * 2,
+      attackMode: 'idle', attackAgeBeats: 0, hitHero: false, targetX: x,
+      targetY: y - 24 });
   }
 
   function spawnPhaseTwoGravitySideAttack(subpattern) {
@@ -15353,20 +15419,67 @@
     for (const spike of subpattern.spikes) {
       const x = spike.x - subpattern.scroll;
       if (Math.abs(core.x - (x + spike.w / 2)) < spike.w / 2 + 5 &&
-          Math.abs(core.y - (spike.y - 10)) < 18) hit(34 * beatStep);
+          core.y > spike.y - spike.height - 7 && core.y < spike.y + 8) {
+        hit(34 * beatStep);
+      }
     }
     for (const tentacle of subpattern.tentacles) {
       tentacle.ageBeats += beatStep;
       const x = tentacle.x - subpattern.scroll;
-      const y = tentacle.y - 22;
-      if (subpattern.swing &&
-          phaseTwoGravitySideSwordTouches(subpattern, x, y, 12) &&
+      const touchingStem = subpattern.swing &&
+        [0.1, 0.3, 0.5, 0.7, 0.9].some(fraction =>
+          phaseTwoGravitySideSwordTouches(subpattern, x,
+            tentacle.y - tentacle.height * fraction, 13));
+      if (touchingStem &&
           !subpattern.swing.hitIds.has(tentacle)) {
         subpattern.swing.hitIds.add(tentacle);
         tentacle.health--;
         if (tentacle.health <= 0) tentacle.dead = true;
       }
-      if (!tentacle.dead && Math.hypot(core.x - x, core.y - y) < 25) hit(24 * beatStep);
+      if (tentacle.dead) continue;
+      const worldHeroX = core.x + subpattern.scroll;
+      if (tentacle.attackMode === 'idle') {
+        if (Math.abs(worldHeroX - tentacle.x) < 190 &&
+            core.y > tentacle.y - tentacle.height - 24 &&
+            core.y < tentacle.y + 22) {
+          tentacle.attackMode = 'windup';
+          tentacle.attackAgeBeats = 0;
+          tentacle.hitHero = false;
+          tentacle.targetX = worldHeroX;
+          tentacle.targetY = clampRange(core.y,
+            tentacle.y - tentacle.height + 12, tentacle.y - 12);
+        }
+      } else {
+        tentacle.attackAgeBeats += beatStep;
+        if (tentacle.attackMode === 'windup' && tentacle.attackAgeBeats >= 0.55) {
+          tentacle.attackMode = 'swipe';
+          tentacle.attackAgeBeats = 0;
+          tentacle.targetX = tentacle.x + clampRange(worldHeroX - tentacle.x, -205, 205);
+          tentacle.targetY = clampRange(core.y,
+            tentacle.y - tentacle.height + 12, tentacle.y - 12);
+        } else if (tentacle.attackMode === 'swipe') {
+          const progress = clamp01(tentacle.attackAgeBeats / 0.42);
+          const tipX = tentacle.x + (tentacle.targetX - tentacle.x) *
+            easeOutCubic(progress);
+          const left = Math.min(tentacle.x, tipX) - 14;
+          const right = Math.max(tentacle.x, tipX) + 14;
+          if (!tentacle.hitHero && worldHeroX >= left && worldHeroX <= right &&
+              Math.abs(core.y - tentacle.targetY) <= HERO_BODY_HALF_H + 12) {
+            tentacle.hitHero = true;
+            hit(45);
+            pattern.vx += Math.sign(worldHeroX - tentacle.x || 1) * 0.15;
+            pattern.vy = Math.min(pattern.vy, -0.12);
+            pattern.grounded = false;
+          }
+          if (tentacle.attackAgeBeats >= 0.42) {
+            tentacle.attackMode = 'recover';
+            tentacle.attackAgeBeats = 0;
+          }
+        } else if (tentacle.attackMode === 'recover' && tentacle.attackAgeBeats >= 2.1) {
+          tentacle.attackMode = 'idle';
+          tentacle.attackAgeBeats = 0;
+        }
+      }
     }
     for (const attack of subpattern.attacks) {
       attack.ageBeats += beatStep;
@@ -15474,11 +15587,13 @@
       for (const piece of subpattern.terrain) {
         if (worldX + HERO_BODY_HALF_W < piece.x ||
             worldX - HERO_BODY_HALF_W > piece.x + piece.w) continue;
-        const climbsSmallStep = piece.layer === 0 && pattern.grounded &&
-          beforeBottom > piece.y && beforeBottom <= piece.y + 22;
-        if ((beforeBottom <= piece.y + 3 || climbsSmallStep) &&
-            afterBottom >= piece.y) {
-          if (!landing || piece.y < landing.y) landing = piece;
+        const surfaceY = phaseTwoGravitySideSurfaceYAt(piece, worldX);
+        const climbsSmallStep = pattern.grounded &&
+          beforeBottom > surfaceY && beforeBottom <= surfaceY +
+            (piece.layer === 0 ? 22 : 17);
+        if ((beforeBottom <= surfaceY + 3 || climbsSmallStep) &&
+            afterBottom >= surfaceY) {
+          if (!landing || surfaceY < landing.y) landing = { y: surfaceY };
         }
       }
     }
@@ -19561,21 +19676,101 @@
   function renderPhaseTwoGravitySideTerrain(subpattern) {
     ctx.save();
     const view = subpattern.scroll;
+    // Vines grow behind the stone, so platforms hide the sections crossing them.
+    for (const tentacle of subpattern.tentacles) {
+      if (tentacle.dead) continue;
+      const x = tentacle.x - view;
+      if (x < -230 || x > arena.width + 230) continue;
+      const top = tentacle.y - tentacle.height;
+      const sway = Math.sin(tentacle.ageBeats * 1.6 + tentacle.phase) * 12;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, tentacle.y + 12);
+      ctx.bezierCurveTo(x - 17, tentacle.y - tentacle.height * 0.28,
+        x + 22 + sway, top + tentacle.height * 0.3, x + sway, top);
+      ctx.strokeStyle = '#130b19'; ctx.lineWidth = 25; ctx.stroke();
+      ctx.strokeStyle = '#702c51'; ctx.lineWidth = 18; ctx.stroke();
+      ctx.strokeStyle = '#ae507b'; ctx.lineWidth = 4; ctx.stroke();
+      for (const fraction of [0.2, 0.39, 0.61, 0.8]) {
+        const by = tentacle.y - tentacle.height * fraction;
+        const bx = x + Math.sin(fraction * 8 + tentacle.phase) * 9;
+        ctx.fillStyle = '#9c3e68';
+        ctx.beginPath();
+        ctx.moveTo(bx - 4, by + 7);
+        ctx.lineTo(bx - 16, by - 3);
+        ctx.lineTo(bx + 4, by);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#d47ea6';
+      ctx.fillRect(x + sway - 5, top - 5, 10, 9);
+      if (tentacle.attackMode === 'windup' || tentacle.attackMode === 'swipe') {
+        const reach = tentacle.attackMode === 'windup'
+          ? 0.18 : easeOutCubic(clamp01(tentacle.attackAgeBeats / 0.42));
+        const aimX = tentacle.targetX - view;
+        const y = tentacle.targetY;
+        const tipX = x + (aimX - x) * reach;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo((x + tipX) / 2, y - 17, tipX, y);
+        ctx.strokeStyle = tentacle.attackMode === 'windup' ? '#914c9b' : '#130717';
+        ctx.lineWidth = tentacle.attackMode === 'windup' ? 5 : 22;
+        ctx.stroke();
+        if (tentacle.attackMode === 'swipe') {
+          ctx.strokeStyle = '#db4b83';
+          ctx.lineWidth = 8;
+          ctx.stroke();
+        }
+      }
+    }
     for (const piece of subpattern.terrain) {
       const x = piece.x - view;
       if (x > arena.width || x + piece.w < 0) continue;
-      ctx.fillStyle = piece.layer ? '#292b30' : '#25262b';
-      ctx.fillRect(x, piece.y, piece.w + 1,
-        piece.layer ? piece.h : arena.height - piece.y);
-      ctx.fillStyle = '#55565a';
-      ctx.fillRect(x, piece.y, piece.w, 3);
-      ctx.fillStyle = '#3b3d42';
+      ctx.beginPath();
+      for (let i = 0; i < piece.ridge.length; i++) {
+        const point = piece.ridge[i];
+        if (i === 0) ctx.moveTo(x + point.x, piece.y + point.y);
+        else ctx.lineTo(x + point.x, piece.y + point.y);
+      }
+      if (piece.layer === 0) {
+        ctx.lineTo(x + piece.w, arena.height - BORDER + 2);
+        ctx.lineTo(x, arena.height - BORDER + 2);
+      } else {
+        for (const point of piece.underside) {
+          ctx.lineTo(x + point.x, piece.y + piece.h + point.y);
+        }
+      }
+      ctx.closePath();
+      ctx.fillStyle = piece.layer ? '#303137' : '#292a2f';
+      ctx.fill();
+      ctx.beginPath();
+      for (let i = 0; i < piece.ridge.length; i++) {
+        const point = piece.ridge[i];
+        if (i === 0) ctx.moveTo(x + point.x, piece.y + point.y);
+        else ctx.lineTo(x + point.x, piece.y + point.y);
+      }
+      ctx.strokeStyle = '#67686b';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      if (piece.layer) {
+        const mid = x + piece.w * 0.38;
+        const surface = phaseTwoGravitySideSurfaceYAt(piece, piece.x + piece.w * 0.38);
+        ctx.strokeStyle = '#1c1e23';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(mid, surface + 7);
+        ctx.lineTo(mid + 6, surface + piece.h * 0.42);
+        ctx.lineTo(mid + 16, surface + piece.h * 0.53);
+        ctx.stroke();
+      }
       const seed = Math.floor(piece.x * 3 + piece.layer * 37);
-      for (let i = 0; i < Math.min(90, piece.w * (piece.layer ? 0.22 : 0.44)); i++) {
+      for (let i = 0; i < Math.min(120, piece.w * 0.48); i++) {
         const px = (seed * 37 + i * 67) % Math.floor(piece.w);
-        const depth = piece.layer ? piece.h - 3 : Math.min(70, arena.height - piece.y - 3);
+        const topY = phaseTwoGravitySideSurfaceYAt(piece, piece.x + px);
+        const depth = piece.layer ? piece.h - 8 :
+          Math.min(74, arena.height - topY - BORDER - 4);
         const py = (seed * 13 + i * 43) % Math.max(1, Math.floor(depth));
-        ctx.fillRect(x + px, piece.y + 4 + py, 2, 1);
+        ctx.fillStyle = i % 5 === 0 ? '#56575a' : '#3d3f44';
+        ctx.fillRect(x + px, topY + 5 + py, i % 4 === 0 ? 3 : 2, 1);
       }
     }
     for (const spike of subpattern.spikes) {
@@ -19586,30 +19781,11 @@
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(x, spike.y);
-      ctx.lineTo(x + 7, spike.y - 19);
-      ctx.lineTo(x + 12, spike.y - 2);
-      ctx.lineTo(x + 18, spike.y - 14);
+      ctx.lineTo(x + spike.w * 0.28, spike.y - spike.height * 0.5);
+      ctx.lineTo(x + spike.w * 0.52, spike.y - spike.height);
+      ctx.lineTo(x + spike.w * 0.73, spike.y - spike.height * 0.37);
       ctx.lineTo(x + spike.w, spike.y);
       ctx.closePath(); ctx.fill(); ctx.stroke();
-    }
-    for (const tentacle of subpattern.tentacles) {
-      if (tentacle.dead) continue;
-      const x = tentacle.x - view;
-      if (x < -35 || x > arena.width + 35) continue;
-      const sway = Math.sin(tentacle.ageBeats * 2.2 + tentacle.phase) * 9;
-      ctx.strokeStyle = '#8e2948';
-      ctx.lineWidth = 12;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(x, tentacle.y + 5);
-      ctx.quadraticCurveTo(x + sway * 1.5, tentacle.y - 16,
-        x + sway, tentacle.y - 43);
-      ctx.stroke();
-      ctx.strokeStyle = '#bd5378';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      ctx.fillStyle = '#e588aa';
-      ctx.fillRect(x + sway - 3, tentacle.y - 46, 6, 5);
     }
     ctx.restore();
   }
