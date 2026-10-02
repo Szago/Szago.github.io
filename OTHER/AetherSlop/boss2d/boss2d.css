@@ -1014,12 +1014,8 @@
   width: var(--phase2-scroll-width, calc(100vw - 28px));
   height: var(--phase2-scroll-height, 500px);
   box-shadow: none;
-  animation: aether-side-scroller-open 0.72s ease-out both;
-}
-
-@keyframes aether-side-scroller-open {
-  from { clip-path: inset(0 33%); }
-  to { clip-path: inset(0 0); }
+  transform: none;
+  animation: none;
 }
 
 #aether-boss2d-overlay.side-scroller-active .aether-boss2d-vbar {
@@ -1101,6 +1097,12 @@
   pointer-events: none;
 }
 
+#aether-boss2d-overlay.side-scroller-entering .aether-boss2d-vp .aether-boss2d-vbar-track::before,
+#aether-boss2d-overlay.side-scroller-entering .aether-boss2d-vp .aether-boss2d-vbar-track::after {
+  visibility: hidden;
+  animation-play-state: paused;
+}
+
 @keyframes aether-scroll-vp-callout {
   from { inset: -70vh -55vw -25vh; opacity: 0.7; border-width: 12px; }
   to { inset: -5px; opacity: 1; border-width: 3px; }
@@ -1112,7 +1114,7 @@
 }
 
 #aether-boss2d-overlay.avatar-phase-two.side-scroller-active .aether-boss2d-wrath {
-  top: 8px;
+  top: calc(var(--phase2-scroll-top, 80px) - 50px);
 }
 
 #aether-boss2d-overlay.avatar-phase-two.rotating-balls-active .aether-boss2d-wrath {
