@@ -1014,6 +1014,8 @@
   const PHASE2_GRAVITY_SCROLL_PER_BEAT = 96;
   const PHASE2_GRAVITY_SWING_COST = VP_MAX * 0.25;
   const PHASE2_GRAVITY_SWING_MS = 280;
+  const PHASE2_GRAVITY_SWING_LENGTH = HERO_H * 3;
+  const PHASE2_GRAVITY_SCROLL_VP_PER_SECOND = 0.0625;
   const PHASE2_GRAVITY_SUBPATTERNS = [
     'weaponTetris', 'ticTacToe', 'spikeDropper', 'wallPass', 'wallPassDynamic',
     'rotatingBalls', 'sideScroller',
@@ -13902,8 +13904,10 @@
     for (const tentacle of subpattern.tentacles) {
       tentacle.y += dy;
       tentacle.targetY += dy;
+      for (const p of tentacle.deathPoints || []) p.y += dy;
     }
     for (const attack of subpattern.attacks) attack.y += dy;
+    for (const spider of subpattern.spiders) { spider.y += dy; spider.baseY += dy; }
     extendPhaseTwoGravitySideTerrain(subpattern);
     frameBoardRect = null;
   }
@@ -13913,8 +13917,10 @@
     setPhaseTwoMayhemCastPose('ritual', 3);
     return {
       type: 'sideScroller', elapsedBeats: 0, introMs: 0, introDone: false,
+      introAttacks: 0, introReleaseMs: 0,
       scroll: 0, nextTerrainX: 0, groundHeight: 48, terrain: [],
-      spikes: [], tentacles: [], attacks: [], nextAttackBeat: 2.5,
+      spikes: [], tentacles: [], spiders: [], attacks: [], nextAttackBeat: 2.5,
+      nextBeamBeat: 3, nextOrbBeat: 4, nextSpiderBeat: 7, nextLaneBeamBeat: 10,
       nextTentacleBeat: 5, swing: null, facing: 1, lastDamageStep: -1,
     };
   }
@@ -15240,6 +15246,77 @@
     return piece.y + ridge[ridge.length - 1].y;
   }
 
+  function phaseTwoGravitySideTerrainPolygon(piece) {
+    const polygon = piece.ridge.map(p => ({ x: piece.x + p.x, y: piece.y + p.y }));
+    if (piece.layer === 0) {
+      polygon.push({ x: piece.x + piece.w, y: arena.height - BORDER + 2 },
+        { x: piece.x, y: arena.height - BORDER + 2 });
+    } else {
+      for (const p of piece.underside) {
+        polygon.push({ x: piece.x + p.x, y: piece.y + piece.h + p.y });
+      }
+    }
+    return polygon;
+  }
+
+  // The same tapered, articulated curve is used for drawing and contact tests.
+  function phaseTwoGravitySideTentaclePoints(tentacle, age = tentacle.attackAgeBeats) {
+    const { x, y, height: h } = tentacle;
+    const direction = Math.sign(tentacle.targetX - x || -1);
+    const sway = Math.sin(tentacle.ageBeats * 1.6 + tentacle.phase) * 12;
+    const idle = [{ x, y: y + 12 }, { x: x - 8, y: y - h * 0.23 },
+      { x: x + 13, y: y - h * 0.48 }, { x: x + 18 + sway, y: y - h * 0.73 },
+      { x: x + sway, y: y - h }, { x: x - 21 + sway, y: y - h + 9 },
+      { x: x - 27 + sway, y: y - h + 32 }];
+    const coil = [{ x, y: y + 12 }, { x: x - direction * 22, y: y - h * 0.23 },
+      { x: x - direction * 65, y: y - h * 0.5 },
+      { x: x - direction * 98, y: y - h * 0.76 },
+      { x: x - direction * 77, y: y - h - 8 },
+      { x: x - direction * 22, y: y - h + 6 },
+      { x: x - direction * 32, y: y - h * 0.78 }];
+    const lash = [{ x, y: y + 12 }, { x: x + direction * 17, y: y - h * 0.24 },
+      { x: x + direction * 43, y: y - h * 0.46 },
+      { x: x + (tentacle.targetX - x) * 0.48, y: tentacle.targetY - 65 },
+      { x: tentacle.targetX - direction * 50, y: tentacle.targetY - 30 },
+      { x: tentacle.targetX, y: tentacle.targetY - 6 },
+      { x: tentacle.targetX + direction * 24, y: tentacle.targetY + 10 }];
+    let from = idle, to = idle, blend = 0;
+    if (tentacle.attackMode === 'windup') {
+      to = coil; blend = smoothstep(age / 0.9);
+    } else if (tentacle.attackMode === 'swipe') {
+      from = coil; to = lash; blend = easeOutCubic(clamp01(age / 0.65));
+    } else if (tentacle.attackMode === 'recover') {
+      from = lash; to = idle; blend = smoothstep(age / 0.85);
+    }
+    const controls = from.map((p, i) => ({
+      x: p.x + (to[i].x - p.x) * blend, y: p.y + (to[i].y - p.y) * blend,
+    }));
+    const points = [];
+    for (let i = 0; i <= 24; i++) {
+      const position = i / 24 * (controls.length - 1);
+      const index = Math.min(controls.length - 2, Math.floor(position));
+      const t = position - index;
+      const a = controls[Math.max(0, index - 1)], b = controls[index];
+      const c = controls[index + 1], d = controls[Math.min(controls.length - 1, index + 2)];
+      const sample = axis => 0.5 * ((2 * b[axis]) + (-a[axis] + c[axis]) * t +
+        (2 * a[axis] - 5 * b[axis] + 4 * c[axis] - d[axis]) * t * t +
+        (-a[axis] + 3 * b[axis] - 3 * c[axis] + d[axis]) * t * t * t);
+      points.push({ x: sample('x'), y: sample('y') });
+    }
+    return points;
+  }
+
+  function phaseTwoGravitySideSwordTouchesSegment(subpattern, a, b, radius) {
+    const tip = phaseTwoGravitySideSwingTip(subpattern);
+    if (!tip) return false;
+    const origin = { x: tip.originX, y: tip.originY };
+    if (phaseTwoGravitySegmentsIntersect(origin, tip, a, b)) return true;
+    return Math.min(distToSeg(a.x, a.y, origin.x, origin.y, tip.x, tip.y),
+      distToSeg(b.x, b.y, origin.x, origin.y, tip.x, tip.y),
+      distToSeg(origin.x, origin.y, a.x, a.y, b.x, b.y),
+      distToSeg(tip.x, tip.y, a.x, a.y, b.x, b.y)) <= radius + 7;
+  }
+
   function addPhaseTwoGravitySideSpikeCluster(subpattern, path) {
     const length = Math.min(path.w - 20, 85 + Math.random() * 125);
     if (length < 48) return;
@@ -15271,9 +15348,9 @@
         h: oldHeight,
         ridge: [
           { x: 0, y: 0 },
-          { x: w * 0.23, y: (Math.random() - 0.5) * 9 },
-          { x: w * 0.49, y: (Math.random() - 0.5) * 11 },
-          { x: w * 0.76, y: oldHeight - newHeight + (Math.random() - 0.5) * 9 },
+          { x: w * 0.23, y: x === 0 ? 0 : (Math.random() - 0.5) * 9 },
+          { x: w * 0.49, y: x === 0 ? 0 : (Math.random() - 0.5) * 11 },
+          { x: w * 0.76, y: oldHeight - newHeight + (x === 0 ? 0 : (Math.random() - 0.5) * 9) },
           { x: w, y: oldHeight - newHeight },
         ],
       };
@@ -15283,8 +15360,10 @@
         const paths = [ground];
         for (let layer = 1; layer <= 2; layer++) {
           if (Math.random() < 0.83) {
-            const platformW = 78 + Math.random() * Math.min(165, w - 88);
-            const platform = { layer, x: x + Math.random() * (w - platformW),
+            // Reserve broad gaps on both ends, including across chunk seams.
+            const margin = 40;
+            const platformW = 65 + Math.random() * Math.max(0, Math.min(100, w - margin * 2 - 65));
+            const platform = { layer, x: x + margin + Math.random() * (w - platformW - margin * 2),
               w: platformW, y: arena.height - BORDER - 48 - layer * 130 +
                 (Math.random() - 0.5) * 24, h: 25 + Math.random() * 24,
               ridge: [
@@ -15311,7 +15390,7 @@
           }
         }
         for (const path of paths) {
-          if (Math.random() < (path.layer === 0 ? 0.82 : 0.66)) {
+          if (Math.random() < (path.layer === 0 ? 0.82 : 0.66) * (2 / 3)) {
             addPhaseTwoGravitySideSpikeCluster(subpattern, path);
           }
         }
@@ -15322,7 +15401,7 @@
     subpattern.terrain = subpattern.terrain.filter(piece => piece.x + piece.w > behind);
     subpattern.spikes = subpattern.spikes.filter(spike => spike.x + spike.w > behind);
     subpattern.tentacles = subpattern.tentacles.filter(tentacle =>
-      !tentacle.dead && tentacle.x > behind);
+      (!tentacle.dead || tentacle.deadAgeBeats < 0.7) && tentacle.x > behind);
   }
 
   function spawnPhaseTwoGravitySideTentacle(subpattern) {
@@ -15335,21 +15414,45 @@
     const y = phaseTwoGravitySideSurfaceYAt(surface, x);
     subpattern.tentacles.push({ x, y, path: surface.layer,
       height: Math.min(260, y - BORDER - 18),
-      ageBeats: 0, health: 2, dead: false, phase: Math.random() * Math.PI * 2,
+      ageBeats: 0, health: 1, dead: false, deadAgeBeats: 0, phase: Math.random() * Math.PI * 2,
       attackMode: 'idle', attackAgeBeats: 0, hitHero: false, targetX: x,
       targetY: y - 24 });
   }
 
-  function spawnPhaseTwoGravitySideAttack(subpattern) {
-    const kinds = ['claw', 'scythe', 'beam', 'spear', 'ball'];
-    const kind = kinds[Math.floor(Math.random() * kinds.length)];
-    const x = subpattern.scroll + hero.x + 20 + Math.random() * Math.min(140, arena.width * 0.15);
+  function spawnPhaseTwoGravitySideAttack(subpattern, forcedKind = null) {
+    const kinds = ['claw', 'scythe', 'spear'];
+    const kind = forcedKind || kinds[Math.floor(Math.random() * kinds.length)];
+    const x = kind === 'beam' || kind === 'ball'
+      ? subpattern.scroll + BORDER + 90 + Math.random() * (arena.width - BORDER * 2 - 120)
+      : subpattern.scroll + hero.x + 20 + Math.random() * Math.min(140, arena.width * 0.15);
     const lane = Math.floor(Math.random() * 3);
     const y = kind === 'beam' ? arena.height - BORDER :
       arena.height - BORDER - 48 - lane * 130;
     subpattern.attacks.push({ kind, x, y, ageBeats: 0, hit: false,
-      deflected: false, vx: 0, vy: 0, radius: kind === 'ball' ? 10 : 21 });
+      deflected: false, vx: 0, vy: 0, radius: kind === 'ball' ? 23 : 21,
+      bounces: 0, nextHitBeat: 0, direction: Math.random() < 0.5 ? -1 : 1 });
     setPhaseTwoMayhemCastPose('ritual', Math.max(1, beatMs * 0.6));
+  }
+
+  function spawnPhaseTwoGravitySideSpiderWave(subpattern) {
+    const lane = Math.floor(Math.random() * 3);
+    const y = arena.height - BORDER - 48 - lane * 130 - 52;
+    const count = 4 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      subpattern.spiders.push({ x: subpattern.scroll + arena.width + 45 + i * 55,
+        lane, baseY: y, y, ageBeats: -i * 0.3, phase: i * 0.85,
+        dead: false, hit: false });
+    }
+    setPhaseTwoMayhemCastPose('ritual', beatMs);
+  }
+
+  function spawnPhaseTwoGravitySideLaneBeam(subpattern) {
+    const lane = Math.floor(Math.random() * 3);
+    subpattern.attacks.push({ kind: 'laneBeam', lane, ageBeats: 0, hit: false,
+      x: subpattern.scroll + arena.width - BORDER - 15,
+      y: arena.height - BORDER - 48 - lane * 130 - 60,
+      radius: 60, deflected: false });
+    setPhaseTwoMayhemCastPose('ritual', beatMs * 2);
   }
 
   function swingPhaseTwoGravitySword() {
@@ -15357,7 +15460,9 @@
     if (!subpattern || subpattern.type !== 'sideScroller' ||
         subpattern.swing || vp < PHASE2_GRAVITY_SWING_COST || dead) return false;
     vp -= PHASE2_GRAVITY_SWING_COST;
-    subpattern.swing = { age: 0, facing: subpattern.facing, hitIds: new Set() };
+    subpattern.swing = { age: 0, facing: subpattern.facing, hitIds: new Set(),
+      realTime: !subpattern.introDone };
+    if (!subpattern.introDone) subpattern.introAttacks = Math.min(2, subpattern.introAttacks + 1);
     playBossSfx('playerTravel');
     return true;
   }
@@ -15367,7 +15472,7 @@
     if (!swing) return null;
     const progress = clamp01(swing.age / PHASE2_GRAVITY_SWING_MS);
     const angle = -2.35 + progress * 3.45;
-    const length = HERO_H * 1.5;
+    const length = PHASE2_GRAVITY_SWING_LENGTH;
     const originX = hero.x + swing.facing * HERO_BODY_HALF_W * 0.55;
     const originY = hero.y - HERO_H * 0.18;
     return { originX, originY,
@@ -15384,30 +15489,135 @@
     return Math.hypot(x - tip.originX - dx * t, y - tip.originY - dy * t) <= radius + 7;
   }
 
+  function deflectPhaseTwoGravitySideAttack(subpattern, attack) {
+    subpattern.swing.hitIds.add(attack);
+    attack.deflected = true;
+    attack.deflectAge = 0;
+    attack.vx = subpattern.swing.facing * 0.55;
+    attack.vy = -0.30;
+    entropy = Math.min(ENTROPY_MAX, entropy + damageEnemy(8));
+    if (setCombatBpm(phaseTwoBpm())) updateBossMusicTempo(true);
+    playBossSfx('playerImpact', { phaseTwo: true });
+  }
+
+  function phaseTwoGravitySideLaneBeamBounds(attack) {
+    const travel = arena.width / 1.1;
+    const age = Math.max(0, attack.ageBeats - 2);
+    return {
+      left: Math.max(BORDER, arena.width - BORDER - travel * age),
+      right: arena.width - BORDER,
+      top: attack.y - 65, bottom: attack.y + 65,
+    };
+  }
+
+  function phaseTwoGravitySideSlashPaths(attack, scroll, age = attack.ageBeats, warning = false) {
+    const progress = warning ? 1 : clamp01((age - 2) / 0.72);
+    const start = warning ? 0 : Math.max(0, progress - 0.48);
+    const direction = attack.direction || 1;
+    const x = attack.x - scroll, y = attack.y - 25;
+    const offsets = attack.kind === 'claw' ? [-13, 0, 13] : [0];
+    return offsets.map(offset => {
+      const points = [];
+      for (let i = 0; i <= 16; i++) {
+        const t = start + (progress - start) * i / 16, u = 1 - t;
+        points.push({
+          x: x + direction * (u * u * -65 + 2 * u * t * (attack.kind === 'claw' ? 25 : -45) + t * t * 65),
+          y: y + offset + u * u * -48 + 2 * u * t * -35 + t * t * 48,
+        });
+      }
+      return points;
+    });
+  }
+
+  function updatePhaseTwoGravitySideOrb(subpattern, orb, dt) {
+    let remaining = dt;
+    while (remaining > 0) {
+      const step = Math.min(8, remaining);
+      remaining -= step;
+      orb.vy += 0.00095 * step;
+      orb.x += orb.vx * step;
+      orb.y += orb.vy * step;
+      const left = subpattern.scroll + BORDER + orb.radius;
+      const right = subpattern.scroll + arena.width - BORDER - orb.radius;
+      if (orb.x > right && orb.vx > 0) { orb.x = right; orb.vx *= -0.9; }
+      if (orb.x < left && orb.vx < 0 && orb.x > subpattern.scroll) {
+        orb.x = left; orb.vx *= -0.9;
+      }
+      if (orb.y < BORDER + orb.radius && orb.vy < 0) {
+        orb.y = BORDER + orb.radius; orb.vy *= -0.9;
+      }
+      for (const piece of subpattern.terrain) {
+        if (orb.x + orb.radius < piece.x || orb.x - orb.radius > piece.x + piece.w ||
+            orb.y + orb.radius < piece.y + Math.min(...piece.ridge.map(p => p.y))) continue;
+        const polygon = phaseTwoGravitySideTerrainPolygon(piece);
+        const inside = pointInPoly(orb.x, orb.y, polygon);
+        let closest = null;
+        for (let i = 0; i < polygon.length; i++) {
+          const a = polygon[i], b = polygon[(i + 1) % polygon.length];
+          const dx = b.x - a.x, dy = b.y - a.y, lengthSq = dx * dx + dy * dy;
+          const t = clamp01(((orb.x - a.x) * dx + (orb.y - a.y) * dy) / Math.max(1, lengthSq));
+          const x = a.x + dx * t, y = a.y + dy * t;
+          const distance = Math.hypot(orb.x - x, orb.y - y);
+          if (!closest || distance < closest.distance) {
+            const length = Math.sqrt(lengthSq) || 1;
+            closest = { x, y, distance, nx: dy / length, ny: -dx / length };
+          }
+        }
+        if (!closest || (!inside && closest.distance >= orb.radius)) continue;
+        let { nx, ny } = closest;
+        if (!inside && closest.distance > 0.001) {
+          nx = (orb.x - closest.x) / closest.distance;
+          ny = (orb.y - closest.y) / closest.distance;
+        }
+        orb.x = closest.x + nx * (orb.radius + 0.02);
+        orb.y = closest.y + ny * (orb.radius + 0.02);
+        const normalSpeed = orb.vx * nx + orb.vy * ny;
+        if (normalSpeed < -0.025) {
+          orb.vx -= 1.88 * normalSpeed * nx;
+          orb.vy -= 1.88 * normalSpeed * ny;
+          if (ny < -0.5) orb.vy = Math.min(orb.vy, -0.38);
+          orb.bounces++;
+        }
+      }
+    }
+  }
+
   function updatePhaseTwoGravitySideScroller(pattern, dt) {
     const subpattern = pattern.subpattern;
-    if (subpattern.introMs < 1900) return;
-    if (!subpattern.introDone) {
-      subpattern.introDone = true;
-      overlay.classList.remove('side-scroller-intro');
-    }
     const beatStep = dt / Math.max(1, beatMs);
     subpattern.elapsedBeats += beatStep;
     const scrollDelta = PHASE2_GRAVITY_SCROLL_PER_BEAT * beatStep;
     subpattern.scroll += scrollDelta;
     hero.x -= scrollDelta;
     extendPhaseTwoGravitySideTerrain(subpattern);
-    vp = Math.min(VP_MAX, vp + VP_MAX * 0.05 * dt / 1000);
+    vp = Math.min(VP_MAX, vp + VP_MAX * PHASE2_GRAVITY_SCROLL_VP_PER_SECOND * dt / 1000);
     while (subpattern.elapsedBeats >= subpattern.nextTentacleBeat) {
       spawnPhaseTwoGravitySideTentacle(subpattern);
       subpattern.nextTentacleBeat += 4 + Math.random() * 2;
     }
     while (subpattern.elapsedBeats >= subpattern.nextAttackBeat) {
       spawnPhaseTwoGravitySideAttack(subpattern);
-      subpattern.nextAttackBeat += 1.7 + Math.random() * 1.1;
+      subpattern.nextAttackBeat += (1.7 + Math.random() * 1.1) * (5 / 3);
+    }
+    // Independent schedules keep doubled beams/orbs spread across the arena.
+    while (subpattern.elapsedBeats >= subpattern.nextBeamBeat) {
+      spawnPhaseTwoGravitySideAttack(subpattern, 'beam');
+      subpattern.nextBeamBeat += (1.7 + Math.random() * 1.1) * 2.5;
+    }
+    while (subpattern.elapsedBeats >= subpattern.nextOrbBeat) {
+      spawnPhaseTwoGravitySideAttack(subpattern, 'ball');
+      subpattern.nextOrbBeat += (1.7 + Math.random() * 1.1) * 2.5;
+    }
+    while (subpattern.elapsedBeats >= subpattern.nextSpiderBeat) {
+      spawnPhaseTwoGravitySideSpiderWave(subpattern);
+      subpattern.nextSpiderBeat += 10 + Math.random() * 4;
+    }
+    while (subpattern.elapsedBeats >= subpattern.nextLaneBeamBeat) {
+      spawnPhaseTwoGravitySideLaneBeam(subpattern);
+      subpattern.nextLaneBeamBeat += 9 + Math.random() * 4;
     }
     if (subpattern.swing) {
-      subpattern.swing.age += dt;
+      if (!subpattern.swing.realTime) subpattern.swing.age += dt;
       if (subpattern.swing.age >= PHASE2_GRAVITY_SWING_MS) subpattern.swing = null;
     }
     const core = heroBodyCenterWorld();
@@ -15420,105 +15630,150 @@
       const x = spike.x - subpattern.scroll;
       if (Math.abs(core.x - (x + spike.w / 2)) < spike.w / 2 + 5 &&
           core.y > spike.y - spike.height - 7 && core.y < spike.y + 8) {
-        hit(34 * beatStep);
+        hit(17 * beatStep);
       }
     }
     for (const tentacle of subpattern.tentacles) {
       tentacle.ageBeats += beatStep;
-      const x = tentacle.x - subpattern.scroll;
-      const touchingStem = subpattern.swing &&
-        [0.1, 0.3, 0.5, 0.7, 0.9].some(fraction =>
-          phaseTwoGravitySideSwordTouches(subpattern, x,
-            tentacle.y - tentacle.height * fraction, 13));
-      if (touchingStem &&
-          !subpattern.swing.hitIds.has(tentacle)) {
-        subpattern.swing.hitIds.add(tentacle);
-        tentacle.health--;
-        if (tentacle.health <= 0) tentacle.dead = true;
-      }
-      if (tentacle.dead) continue;
+      if (tentacle.dead) { tentacle.deadAgeBeats += beatStep; continue; }
       const worldHeroX = core.x + subpattern.scroll;
       if (tentacle.attackMode === 'idle') {
-        if (Math.abs(worldHeroX - tentacle.x) < 190 &&
+        if (Math.abs(worldHeroX - tentacle.x) < 230 &&
             core.y > tentacle.y - tentacle.height - 24 &&
             core.y < tentacle.y + 22) {
           tentacle.attackMode = 'windup';
           tentacle.attackAgeBeats = 0;
           tentacle.hitHero = false;
-          tentacle.targetX = worldHeroX;
+          tentacle.targetX = tentacle.x + clampRange(worldHeroX - tentacle.x, -230, 230);
           tentacle.targetY = clampRange(core.y,
             tentacle.y - tentacle.height + 12, tentacle.y - 12);
         }
       } else {
         tentacle.attackAgeBeats += beatStep;
-        if (tentacle.attackMode === 'windup' && tentacle.attackAgeBeats >= 0.55) {
+        if (tentacle.attackMode === 'windup' && tentacle.attackAgeBeats >= 0.9) {
           tentacle.attackMode = 'swipe';
           tentacle.attackAgeBeats = 0;
-          tentacle.targetX = tentacle.x + clampRange(worldHeroX - tentacle.x, -205, 205);
-          tentacle.targetY = clampRange(core.y,
-            tentacle.y - tentacle.height + 12, tentacle.y - 12);
         } else if (tentacle.attackMode === 'swipe') {
-          const progress = clamp01(tentacle.attackAgeBeats / 0.42);
-          const tipX = tentacle.x + (tentacle.targetX - tentacle.x) *
-            easeOutCubic(progress);
-          const left = Math.min(tentacle.x, tipX) - 14;
-          const right = Math.max(tentacle.x, tipX) + 14;
-          if (!tentacle.hitHero && worldHeroX >= left && worldHeroX <= right &&
-              Math.abs(core.y - tentacle.targetY) <= HERO_BODY_HALF_H + 12) {
-            tentacle.hitHero = true;
-            hit(45);
-            pattern.vx += Math.sign(worldHeroX - tentacle.x || 1) * 0.15;
-            pattern.vy = Math.min(pattern.vy, -0.12);
-            pattern.grounded = false;
-          }
-          if (tentacle.attackAgeBeats >= 0.42) {
+          if (tentacle.attackAgeBeats >= 0.65) {
             tentacle.attackMode = 'recover';
             tentacle.attackAgeBeats = 0;
           }
-        } else if (tentacle.attackMode === 'recover' && tentacle.attackAgeBeats >= 2.1) {
+        } else if (tentacle.attackMode === 'recover' && tentacle.attackAgeBeats >= 1.8) {
           tentacle.attackMode = 'idle';
           tentacle.attackAgeBeats = 0;
         }
       }
+      const points = phaseTwoGravitySideTentaclePoints(tentacle).map(p =>
+        ({ x: p.x - subpattern.scroll, y: p.y }));
+      const heroRect = { left: core.x - HERO_BODY_HALF_W, right: core.x + HERO_BODY_HALF_W,
+        top: core.y - HERO_BODY_HALF_H, bottom: core.y + HERO_BODY_HALF_H };
+      let swordHit = false, heroHit = false;
+      for (let i = 1; i < points.length; i++) {
+        const radius = 13 * Math.pow(1 - i / 25, 0.7) + 2;
+        if (subpattern.swing && phaseTwoGravitySideSwordTouchesSegment(
+          subpattern, points[i - 1], points[i], radius)) swordHit = true;
+        if (tentacle.attackMode === 'swipe' && i > 5 &&
+            segmentRectDistance(points[i - 1].x, points[i - 1].y,
+              points[i].x, points[i].y, heroRect) <= radius) heroHit = true;
+      }
+      if (swordHit) {
+        tentacle.dead = true;
+        tentacle.deathPoints = points.map(p => ({ x: p.x + subpattern.scroll, y: p.y }));
+        playBossSfx('playerImpact', { phaseTwo: true });
+      } else if (heroHit && !tentacle.hitHero) {
+        tentacle.hitHero = true;
+        hit(45);
+        pattern.vx += Math.sign(worldHeroX - tentacle.x || 1) * 0.15;
+        pattern.vy = Math.min(pattern.vy, -0.12);
+        pattern.grounded = false;
+      }
     }
+    for (const spider of subpattern.spiders) {
+      spider.ageBeats += beatStep;
+      if (spider.dead || spider.ageBeats < 0) continue;
+      spider.x -= 110 * beatStep;
+      spider.y = spider.baseY + Math.sin(spider.ageBeats * 2.8 + spider.phase) * 24;
+      const x = spider.x - subpattern.scroll;
+      if (subpattern.swing && phaseTwoGravitySideSwordTouches(subpattern, x, spider.y, 17)) {
+        spider.dead = true;
+        playBossSfx('playerImpact', { phaseTwo: true });
+      } else if (!spider.hit && Math.abs(core.x - x) < HERO_BODY_HALF_W + 15 &&
+          Math.abs(core.y - spider.y) < HERO_BODY_HALF_H + 14) {
+        spider.hit = true;
+        hit(30);
+      }
+    }
+    subpattern.spiders = subpattern.spiders.filter(spider =>
+      !spider.dead && spider.x > subpattern.scroll - 70);
     for (const attack of subpattern.attacks) {
       attack.ageBeats += beatStep;
-      const x = attack.x - subpattern.scroll;
+      if (attack.kind === 'laneBeam') {
+        attack.x = subpattern.scroll + arena.width - BORDER - 15;
+        if (attack.deflected) { attack.deflectAge += dt; continue; }
+        if (attack.ageBeats < 2) continue;
+        if (attack.ageBeats >= 3.1) continue; // full connected beam is fading, no longer harmful
+        const beam = phaseTwoGravitySideLaneBeamBounds(attack);
+        const tip = phaseTwoGravitySideSwingTip(subpattern);
+        if (tip && segmentIntersectsRect(tip.originX, tip.originY, tip.x, tip.y, beam)) {
+          deflectPhaseTwoGravitySideAttack(subpattern, attack);
+        } else if (!attack.hit && core.x + HERO_BODY_HALF_W > beam.left &&
+            core.x - HERO_BODY_HALF_W < beam.right &&
+            core.y + HERO_BODY_HALF_H > beam.top && core.y - HERO_BODY_HALF_H < beam.bottom) {
+          attack.hit = true; hit(55);
+        }
+        continue;
+      }
       if (attack.deflected) {
         attack.deflectAge += dt;
-        if (attack.kind === 'ball' || attack.kind === 'spear') {
+        if (attack.kind === 'spear') {
           attack.x += attack.vx * dt;
           attack.y += attack.vy * dt;
           attack.vy += 0.0009 * dt;
         }
-        continue;
+        if (attack.kind !== 'ball') continue;
       }
       if (attack.ageBeats < 2) continue;
-      if (attack.kind === 'ball') {
-        if (attack.ageBeats - beatStep < 2) {
-          const targetY = attack.y;
-          attack.y = BORDER + 18;
-          attack.vy = Math.max(0.7,
-            (targetY - attack.y) / (beatMs * 0.55));
+      if (attack.kind === 'claw' || attack.kind === 'scythe') {
+        if (attack.ageBeats > 2.72) continue;
+        const paths = phaseTwoGravitySideSlashPaths(attack, subpattern.scroll);
+        const rect = { left: core.x - HERO_BODY_HALF_W, right: core.x + HERO_BODY_HALF_W,
+          top: core.y - HERO_BODY_HALF_H, bottom: core.y + HERO_BODY_HALF_H };
+        let parried = false, touching = false;
+        for (const path of paths) {
+          for (let i = 1; i < path.length; i++) {
+            const a = path[i - 1], b = path[i];
+            if (subpattern.swing && phaseTwoGravitySideSwordTouchesSegment(subpattern, a, b, 5)) parried = true;
+            if (segmentRectDistance(a.x, a.y, b.x, b.y, rect) <= 5) touching = true;
+          }
         }
-        attack.vy += 0.0017 * dt;
-        attack.y += attack.vy * dt;
+        if (parried) deflectPhaseTwoGravitySideAttack(subpattern, attack);
+        else if (touching && !attack.hit) { attack.hit = true; hit(35); }
+        continue;
       }
-      const sweepX = attack.kind === 'scythe' || attack.kind === 'claw'
-        ? x + (clamp01((attack.ageBeats - 2) / 0.72) - 0.5) * 64 : x;
+      if (attack.kind === 'ball') {
+        if (!attack.launched) {
+          attack.launched = true;
+          attack.y = BORDER + attack.radius;
+          attack.vx = (Math.random() < 0.5 ? -1 : 1) * (0.12 + Math.random() * 0.14);
+          attack.vy = 0.12;
+        }
+        updatePhaseTwoGravitySideOrb(subpattern, attack, dt);
+      }
+      const x = attack.x - subpattern.scroll;
+      const sweepX = x;
       const y = attack.kind === 'beam' ? core.y : attack.kind === 'ball'
         ? attack.y : attack.y - 25;
-      if (subpattern.swing &&
+      if (!attack.deflected && subpattern.swing &&
           phaseTwoGravitySideSwordTouches(subpattern, sweepX, y, attack.radius) &&
           !subpattern.swing.hitIds.has(attack)) {
-        subpattern.swing.hitIds.add(attack);
-        attack.deflected = true;
-        attack.deflectAge = 0;
-        attack.vx = subpattern.swing.facing * 0.55;
-        attack.vy = -0.30;
-        entropy = Math.min(ENTROPY_MAX, entropy + damageEnemy(8));
-        if (setCombatBpm(phaseTwoBpm())) updateBossMusicTempo(true);
-        playBossSfx('playerImpact', { phaseTwo: true });
+        deflectPhaseTwoGravitySideAttack(subpattern, attack);
+        continue;
+      }
+      if (attack.kind === 'ball') {
+        if (!attack.deflected && attack.ageBeats >= attack.nextHitBeat &&
+            Math.hypot(core.x - x, core.y - attack.y) < attack.radius + HERO_BODY_HALF_W) {
+          hit(32); attack.nextHitBeat = attack.ageBeats + 0.8;
+        }
         continue;
       }
       if (attack.ageBeats > 2.72) continue;
@@ -15528,8 +15783,13 @@
         hit(35 * beatStep);
       }
     }
-    subpattern.attacks = subpattern.attacks.filter(attack => attack.deflected
-      ? attack.deflectAge < beatMs * 0.9 : attack.ageBeats < 3.2);
+    subpattern.attacks = subpattern.attacks.filter(attack => {
+      if (attack.kind === 'ball') return attack.ageBeats < 22 && attack.bounces < 7 &&
+        attack.x > subpattern.scroll - 80 && (!attack.deflected || attack.deflectAge < beatMs * 4);
+      if (attack.kind === 'laneBeam') return attack.deflected
+        ? attack.deflectAge < beatMs * 0.5 : attack.ageBeats < 3.5;
+      return attack.deflected ? attack.deflectAge < beatMs * 0.9 : attack.ageBeats < 3.2;
+    });
     if (hero.x < BORDER + 65) hit(75 * beatStep);
     if (subpattern.elapsedBeats >= PHASE2_GRAVITY_SCROLL_BEATS) {
       beginPhaseTwoGravitySubpattern(pattern, 'idle');
@@ -15538,6 +15798,75 @@
 
   function updatePhaseTwoGravitySideMovement(pattern, subpattern, dt) {
     extendPhaseTwoGravitySideTerrain(subpattern);
+    let remaining = dt;
+    while (remaining > 0) {
+      const step = Math.min(8, remaining);
+      updatePhaseTwoGravitySideMovementStep(pattern, subpattern, step);
+      remaining -= step;
+    }
+  }
+
+  function phaseTwoGravitySideBodyBlocked(subpattern, x, y) {
+    const wx = x + HERO_BODY_OFFSET_X + subpattern.scroll;
+    const cy = y + HERO_BODY_OFFSET_Y;
+    const skin = 1e-7;
+    const rect = { left: wx - HERO_BODY_HALF_W + skin, right: wx + HERO_BODY_HALF_W - skin,
+      top: cy - HERO_BODY_HALF_H + skin, bottom: cy + HERO_BODY_HALF_H - skin };
+    return subpattern.terrain.some(piece => {
+      if (rect.right <= piece.x || rect.left >= piece.x + piece.w ||
+          rect.bottom <= piece.y + Math.min(...piece.ridge.map(p => p.y)) ||
+          rect.top >= (piece.layer ? piece.y + piece.h + 13 : arena.height)) return false;
+      const polygon = phaseTwoGravitySideTerrainPolygon(piece);
+      // Solid-body contact needs strict edges. The shared inclusive polygon
+      // helper has a tolerance that mistakes a resting foot for penetration.
+      if (polygon.some(p => p.x >= rect.left && p.x <= rect.right && p.y >= rect.top && p.y <= rect.bottom)) return true;
+      if ([[rect.left, rect.top], [rect.right, rect.top], [rect.right, rect.bottom], [rect.left, rect.bottom]]
+          .some(([px, py]) => pointInPoly(px, py, polygon))) return true;
+      return polygon.some((a, i) => {
+        const b = polygon[(i + 1) % polygon.length];
+        return segmentIntersectsRect(a.x, a.y, b.x, b.y, rect);
+      });
+    });
+  }
+
+  function phaseTwoGravitySideMoveAxis(subpattern, axis, amount) {
+    if (!amount) return false;
+    const start = hero[axis];
+    const blockedAt = t => phaseTwoGravitySideBodyBlocked(subpattern,
+      axis === 'x' ? start + amount * t : hero.x,
+      axis === 'y' ? start + amount * t : hero.y);
+    if (!blockedAt(1)) { hero[axis] += amount; return false; }
+    let low = 0, high = 1;
+    for (let i = 0; i < 22; i++) {
+      const mid = (low + high) / 2;
+      if (blockedAt(mid)) high = mid; else low = mid;
+    }
+    hero[axis] = start + amount * low;
+    return true;
+  }
+
+  function phaseTwoGravitySideFootSurface(subpattern, x, nearBottom) {
+    const wx = x + HERO_BODY_OFFSET_X + subpattern.scroll;
+    const left = wx - HERO_BODY_HALF_W, right = wx + HERO_BODY_HALF_W;
+    let surfaceY = Infinity;
+    for (const piece of subpattern.terrain) {
+      if (right <= piece.x || left >= piece.x + piece.w) continue;
+      // Include every ridge vertex under the feet; three point samples missed
+      // narrow peaks and left the rectangle colliding with its own support.
+      const samples = [Math.max(left, piece.x), Math.min(right, piece.x + piece.w)];
+      for (const point of piece.ridge) {
+        const px = piece.x + point.x;
+        if (px > left && px < right) samples.push(px);
+      }
+      const top = Math.min(...samples.map(px => phaseTwoGravitySideSurfaceYAt(piece, px)));
+      if (top >= nearBottom - (piece.layer ? 17 : 22) && top <= nearBottom + 22) {
+        surfaceY = Math.min(surfaceY, top);
+      }
+    }
+    return surfaceY;
+  }
+
+  function updatePhaseTwoGravitySideMovementStep(pattern, subpattern, dt) {
     const horizontal = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) -
       (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
     if (horizontal) subpattern.facing = horizontal;
@@ -15576,35 +15905,28 @@
     pattern.vy += (verticalGravity + (diving ? PHASE2_GRAVITY_DIVE_ACCELERATION : 0)) * dt;
     if (pattern.vy >= 0) pattern.jumpReleaseGravity = 0;
     const beforeBottom = hero.y + HERO_BODY_OFFSET_Y + HERO_BODY_HALF_H;
-    hero.x += (horizontal * playerMovementSpeed() + pattern.vx) * dt;
-    hero.x = clampRange(hero.x, BORDER + HERO_BODY_HALF_W - HERO_BODY_OFFSET_X,
-      arena.width - BORDER - HERO_BODY_HALF_W - HERO_BODY_OFFSET_X);
-    hero.y += pattern.vy * dt;
-    const afterBottom = hero.y + HERO_BODY_OFFSET_Y + HERO_BODY_HALF_H;
-    const worldX = hero.x + subpattern.scroll + HERO_BODY_OFFSET_X;
-    let landing = null;
-    if (pattern.vy >= 0) {
-      for (const piece of subpattern.terrain) {
-        if (worldX + HERO_BODY_HALF_W < piece.x ||
-            worldX - HERO_BODY_HALF_W > piece.x + piece.w) continue;
-        const surfaceY = phaseTwoGravitySideSurfaceYAt(piece, worldX);
-        const climbsSmallStep = pattern.grounded &&
-          beforeBottom > surfaceY && beforeBottom <= surfaceY +
-            (piece.layer === 0 ? 22 : 17);
-        if ((beforeBottom <= surfaceY + 3 || climbsSmallStep) &&
-            afterBottom >= surfaceY) {
-          if (!landing || surfaceY < landing.y) landing = { y: surfaceY };
-        }
+    const dx = (horizontal * playerMovementSpeed() + pattern.vx) * dt;
+    // Follow the full foot span both uphill and downhill, keeping gentle
+    // ridges grounded instead of catching the next rise while briefly airborne.
+    if (pattern.grounded) {
+      const surfaceY = phaseTwoGravitySideFootSurface(subpattern, hero.x + dx, beforeBottom);
+      const raisedY = surfaceY - HERO_BODY_OFFSET_Y - HERO_BODY_HALF_H;
+      if (Number.isFinite(surfaceY) && !phaseTwoGravitySideBodyBlocked(subpattern, hero.x + dx, raisedY)) {
+        hero.y = raisedY;
       }
     }
-    if (landing) {
-      hero.y = landing.y - HERO_BODY_OFFSET_Y - HERO_BODY_HALF_H;
+    phaseTwoGravitySideMoveAxis(subpattern, 'x', dx);
+    hero.x = clampRange(hero.x, BORDER + HERO_BODY_HALF_W - HERO_BODY_OFFSET_X,
+      arena.width - BORDER - HERO_BODY_HALF_W - HERO_BODY_OFFSET_X);
+    const falling = pattern.vy >= 0;
+    const verticalContact = phaseTwoGravitySideMoveAxis(subpattern, 'y', pattern.vy * dt);
+    pattern.grounded = verticalContact && falling;
+    if (verticalContact) {
       pattern.vy = 0;
-      pattern.grounded = true;
-      pattern.groundedGraceMs = PHASE2_GRAVITY_GROUNDED_GRACE_MS;
+      if (falling) pattern.groundedGraceMs = PHASE2_GRAVITY_GROUNDED_GRACE_MS;
       pattern.jumpActive = false;
       pattern.jumpReleaseGravity = 0;
-    } else pattern.grounded = false;
+    }
     const ceiling = BORDER + HERO_BODY_HALF_H - HERO_BODY_OFFSET_Y;
     if (hero.y < ceiling) {
       hero.y = ceiling;
@@ -19676,51 +19998,101 @@
   function renderPhaseTwoGravitySideTerrain(subpattern) {
     ctx.save();
     const view = subpattern.scroll;
-    // Vines grow behind the stone, so platforms hide the sections crossing them.
-    for (const tentacle of subpattern.tentacles) {
-      if (tentacle.dead) continue;
-      const x = tentacle.x - view;
-      if (x < -230 || x > arena.width + 230) continue;
-      const top = tentacle.y - tentacle.height;
-      const sway = Math.sin(tentacle.ageBeats * 1.6 + tentacle.phase) * 12;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(x, tentacle.y + 12);
-      ctx.bezierCurveTo(x - 17, tentacle.y - tentacle.height * 0.28,
-        x + 22 + sway, top + tentacle.height * 0.3, x + sway, top);
-      ctx.strokeStyle = '#130b19'; ctx.lineWidth = 25; ctx.stroke();
-      ctx.strokeStyle = '#702c51'; ctx.lineWidth = 18; ctx.stroke();
-      ctx.strokeStyle = '#ae507b'; ctx.lineWidth = 4; ctx.stroke();
-      for (const fraction of [0.2, 0.39, 0.61, 0.8]) {
-        const by = tentacle.y - tentacle.height * fraction;
-        const bx = x + Math.sin(fraction * 8 + tentacle.phase) * 9;
-        ctx.fillStyle = '#9c3e68';
-        ctx.beginPath();
-        ctx.moveTo(bx - 4, by + 7);
-        ctx.lineTo(bx - 16, by - 3);
-        ctx.lineTo(bx + 4, by);
-        ctx.fill();
+    // Enemies crawl/grow on the back wall; stone masks their buried sections.
+    for (const spider of subpattern.spiders) {
+      if (spider.dead || spider.ageBeats < 0) continue;
+      const x = spider.x - view, y = spider.y;
+      if (x < -55 || x > arena.width + 55) continue;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.cos(spider.ageBeats * 2.8 + spider.phase) * -0.25);
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (let side of [-1, 1]) {
+        for (let leg = 0; leg < 4; leg++) {
+          const gait = Math.sin(spider.ageBeats * 13 + leg * Math.PI + (side > 0 ? Math.PI : 0));
+          const rootX = -9 + leg * 6;
+          const kneeX = rootX + (leg - 1.5) * 9 + gait * 3;
+          const kneeY = side * (18 + Math.abs(gait) * 3);
+          ctx.beginPath(); ctx.moveTo(rootX, side * 5);
+          ctx.lineTo(kneeX, kneeY);
+          ctx.lineTo(kneeX + (leg < 2 ? -8 : 8) + gait * 7, side * (29 - gait * 3));
+          ctx.strokeStyle = '#130c1e'; ctx.lineWidth = 6; ctx.stroke();
+          ctx.strokeStyle = '#93445f'; ctx.lineWidth = 2.5; ctx.stroke();
+        }
       }
-      ctx.fillStyle = '#d47ea6';
-      ctx.fillRect(x + sway - 5, top - 5, 10, 9);
-      if (tentacle.attackMode === 'windup' || tentacle.attackMode === 'swipe') {
-        const reach = tentacle.attackMode === 'windup'
-          ? 0.18 : easeOutCubic(clamp01(tentacle.attackAgeBeats / 0.42));
-        const aimX = tentacle.targetX - view;
-        const y = tentacle.targetY;
-        const tipX = x + (aimX - x) * reach;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.quadraticCurveTo((x + tipX) / 2, y - 17, tipX, y);
-        ctx.strokeStyle = tentacle.attackMode === 'windup' ? '#914c9b' : '#130717';
-        ctx.lineWidth = tentacle.attackMode === 'windup' ? 5 : 22;
-        ctx.stroke();
-        if (tentacle.attackMode === 'swipe') {
-          ctx.strokeStyle = '#db4b83';
-          ctx.lineWidth = 8;
+      ctx.fillStyle = '#190d21'; ctx.strokeStyle = '#ab4166'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(6, 0, 14, 11, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#392036';
+      ctx.beginPath(); ctx.ellipse(-9, 0, 9, 8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#e95b86'; ctx.fillRect(-16, -5, 3, 3); ctx.fillRect(-16, 2, 3, 3);
+      ctx.strokeStyle = '#6c3358'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(11, 0); ctx.lineTo(0, 7); ctx.stroke();
+      ctx.restore();
+    }
+    for (const tentacle of subpattern.tentacles) {
+      const x = tentacle.x - view;
+      if (x < -280 || x > arena.width + 280) continue;
+      ctx.save();
+      if (tentacle.dead) ctx.globalAlpha = 1 - clamp01(tentacle.deadAgeBeats / 0.7);
+      if (!tentacle.dead && tentacle.attackMode === 'swipe') {
+        for (let lag = 3; lag >= 1; lag--) {
+          const trail = phaseTwoGravitySideTentaclePoints(tentacle,
+            Math.max(0, tentacle.attackAgeBeats - lag * 0.065));
+          ctx.beginPath();
+          trail.forEach((p, i) => i ? ctx.lineTo(p.x - view, p.y) : ctx.moveTo(p.x - view, p.y));
+          ctx.lineWidth = 12 - lag * 2;
+          ctx.strokeStyle = `rgba(185, 75, 140, ${0.15 - lag * 0.03})`;
           ctx.stroke();
         }
       }
+      const points = (tentacle.dead ? tentacle.deathPoints :
+        phaseTwoGravitySideTentaclePoints(tentacle)).map(p => ({ x: p.x - view,
+        y: p.y + (tentacle.dead ? tentacle.deadAgeBeats * 32 : 0) }));
+      const edges = points.map((p, i) => {
+        const previous = points[Math.max(0, i - 1)], next = points[Math.min(24, i + 1)];
+        const dx = next.x - previous.x, dy = next.y - previous.y;
+        const length = Math.hypot(dx, dy) || 1;
+        const width = 13 * Math.pow(1 - i / 25, 0.7) + 2;
+        return { x: p.x, y: p.y, nx: -dy / length, ny: dx / length, width };
+      });
+      ctx.beginPath();
+      edges.forEach((p, i) => i ? ctx.lineTo(p.x + p.nx * p.width, p.y + p.ny * p.width)
+        : ctx.moveTo(p.x + p.nx * p.width, p.y + p.ny * p.width));
+      for (let i = edges.length - 1; i >= 0; i--) {
+        const p = edges[i]; ctx.lineTo(p.x - p.nx * p.width, p.y - p.ny * p.width);
+      }
+      ctx.closePath();
+      const flesh = ctx.createLinearGradient(x - 60, tentacle.y, x + 50, tentacle.y - tentacle.height);
+      flesh.addColorStop(0, '#1b111d'); flesh.addColorStop(0.5, '#522b43'); flesh.addColorStop(1, '#975478');
+      ctx.fillStyle = flesh; ctx.fill();
+      ctx.strokeStyle = '#170e20'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.stroke();
+      ctx.beginPath();
+      edges.forEach((p, i) => i ? ctx.lineTo(p.x - p.nx * p.width * 0.55, p.y - p.ny * p.width * 0.55)
+        : ctx.moveTo(p.x - p.nx * p.width * 0.55, p.y - p.ny * p.width * 0.55));
+      ctx.strokeStyle = '#d4769f'; ctx.lineWidth = 2; ctx.stroke();
+      for (let i = 3; i < edges.length - 2; i += 2) {
+        const p = edges[i], side = i % 4 === 3 ? 1 : -1;
+        ctx.fillStyle = '#321526'; ctx.strokeStyle = '#e08bad'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(p.x + p.nx * p.width * 0.35, p.y + p.ny * p.width * 0.35,
+          Math.max(1.4, p.width * 0.35), 2, Math.atan2(p.ny, p.nx), 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+        if (i % 4 === 3) {
+          ctx.beginPath();
+          ctx.moveTo(p.x + p.nx * p.width * side, p.y + p.ny * p.width * side);
+          ctx.lineTo(p.x + p.nx * (p.width + 7) * side + p.ny * 5,
+            p.y + p.ny * (p.width + 7) * side - p.nx * 5);
+          ctx.lineTo(p.x + p.nx * p.width * side - p.ny * 5,
+            p.y + p.ny * p.width * side + p.nx * 5);
+          ctx.fillStyle = '#ac567c'; ctx.fill();
+        }
+      }
+      if (!tentacle.dead && tentacle.attackMode === 'windup') {
+        const tip = points[24];
+        ctx.fillStyle = `rgba(203, 110, 229, ${0.3 + 0.3 * Math.sin(tentacle.attackAgeBeats * 14)})`;
+        ctx.beginPath(); ctx.arc(tip.x, tip.y, 10, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
     }
     for (const piece of subpattern.terrain) {
       const x = piece.x - view;
@@ -19812,12 +20184,81 @@
     }
     for (const attack of subpattern.attacks) {
       const x = attack.x - subpattern.scroll;
+      if (attack.kind === 'laneBeam') {
+        actx.save();
+        const warning = attack.ageBeats < 2;
+        const pulseAge = attack.ageBeats % 1;
+        const flash = warning ? Math.max(0, Math.sin(clamp01((pulseAge - 0.1) / 0.5) * Math.PI)) : 0;
+        if (warning) {
+          actx.fillStyle = 'rgba(128, 50, 181, 0.15)';
+          actx.fillRect(BORDER, attack.y - 65, arena.width - BORDER * 2, 130);
+          actx.strokeStyle = 'rgba(175, 95, 218, 0.35)'; actx.lineWidth = 1;
+          actx.strokeRect(BORDER, attack.y - 65, arena.width - BORDER * 2, 130);
+        } else {
+          const beam = phaseTwoGravitySideLaneBeamBounds(attack);
+          actx.globalAlpha = attack.deflected ? 1 - clamp01(attack.deflectAge / (beatMs * 0.5))
+            : 1 - clamp01((attack.ageBeats - 3.1) / 0.4);
+          const width = Math.max(0, beam.right - beam.left);
+          actx.fillStyle = attack.deflected ? '#eacc79' : '#230913';
+          actx.fillRect(beam.left, beam.top, width, beam.bottom - beam.top);
+          actx.strokeStyle = attack.deflected ? '#fff1ae' : '#fb3059'; actx.lineWidth = 3;
+          actx.strokeRect(beam.left, beam.top, width, beam.bottom - beam.top);
+          for (let i = 0; i < 7; i++) {
+            actx.fillStyle = i % 2 ? '#87182f' : '#cf2643';
+            actx.fillRect(beam.left + 4, beam.top + 10 + i * 17,
+              Math.max(0, width - 8), 2 + i % 3);
+          }
+          actx.fillStyle = attack.deflected ? '#fff7bf' : '#ff7390';
+          actx.fillRect(beam.left, beam.top, 7, 130);
+        }
+        const portalX = arena.width - BORDER - 15;
+        actx.fillStyle = '#170a22'; actx.strokeStyle = warning ? '#ce75ff' : '#f63660';
+        actx.lineWidth = 4 + flash * 5; actx.shadowColor = actx.strokeStyle;
+        actx.shadowBlur = 10 + flash * 30;
+        actx.beginPath(); actx.ellipse(portalX, attack.y, 13 + flash * 4, 62, 0, 0, Math.PI * 2);
+        actx.fill(); actx.stroke();
+        if (flash > 0) {
+          actx.fillStyle = `rgba(239, 211, 255, ${flash * 0.85})`;
+          actx.beginPath(); actx.ellipse(portalX, attack.y, 10, 59, 0, 0, Math.PI * 2); actx.fill();
+        }
+        actx.restore();
+        continue;
+      }
       if (x < -60 || x > arena.width + 60) continue;
+      if (attack.kind === 'claw' || attack.kind === 'scythe') {
+        actx.save();
+        const warning = attack.ageBeats < 2;
+        const paths = phaseTwoGravitySideSlashPaths(attack, subpattern.scroll, attack.ageBeats, warning);
+        actx.lineCap = 'round'; actx.lineJoin = 'round';
+        actx.globalAlpha = warning ? 0.25 + 0.35 * clamp01(attack.ageBeats / 2)
+          : attack.deflected ? 1 - clamp01(attack.deflectAge / (beatMs * 0.35))
+            : 1 - clamp01((attack.ageBeats - 2.72) / 0.35);
+        for (const path of paths) {
+          actx.beginPath();
+          path.forEach((p, i) => i ? actx.lineTo(p.x, p.y) : actx.moveTo(p.x, p.y));
+          actx.strokeStyle = warning ? '#a55dd5' : attack.deflected ? '#fff2ac' : '#190b13';
+          actx.lineWidth = warning ? 4 : 12; actx.stroke();
+          if (!warning) {
+            actx.strokeStyle = attack.deflected ? '#ffe074' : '#d62b4c';
+            actx.lineWidth = 5; actx.stroke();
+            const tip = path[path.length - 1];
+            actx.fillStyle = attack.deflected ? '#fffbd7' : '#ffc2ca';
+            actx.beginPath(); actx.arc(tip.x, tip.y, 4, 0, Math.PI * 2); actx.fill();
+          }
+        }
+        if (warning) {
+          const start = paths[0][0];
+          actx.strokeStyle = '#c488f0'; actx.lineWidth = 2;
+          actx.beginPath(); actx.arc(start.x, start.y, 7 + (1 - attack.ageBeats / 2) * 16, 0, Math.PI * 2);
+          actx.stroke();
+        }
+        actx.restore();
+        continue;
+      }
       if (attack.deflected && attack.kind !== 'ball' && attack.kind !== 'spear') continue;
       const warning = attack.ageBeats < 2;
-      const fading = clamp01((3.2 - attack.ageBeats) / 0.48);
-      const sweepX = attack.kind === 'scythe' || attack.kind === 'claw'
-        ? x + (clamp01((attack.ageBeats - 2) / 0.72) - 0.5) * 64 : x;
+      const fading = attack.kind === 'ball' ? (attack.deflected
+        ? clamp01(4 - attack.deflectAge / beatMs) : 1) : clamp01((3.2 - attack.ageBeats) / 0.48);
       actx.save();
       actx.globalAlpha = warning ? 0.35 + 0.45 *
         (0.5 + 0.5 * Math.sin(attack.ageBeats * Math.PI * 5)) : fading;
@@ -19844,37 +20285,28 @@
         actx.fillRect(x - 10, BORDER, 20, arena.height - BORDER * 2);
         actx.strokeRect(x - 10, BORDER, 20, arena.height - BORDER * 2);
       } else if (attack.kind === 'ball') {
+        actx.translate(x, attack.y);
+        actx.rotate(attack.ageBeats * 1.7);
         actx.fillStyle = attack.deflected ? '#ffdf77' : '#220d18';
         actx.strokeStyle = attack.deflected ? '#fff5c2' : '#f13d5b';
-        actx.lineWidth = 2;
-        actx.beginPath(); actx.arc(x, attack.y, 10, 0, Math.PI * 2);
+        actx.lineWidth = 3;
+        actx.beginPath(); actx.arc(0, 0, attack.radius, 0, Math.PI * 2);
         actx.fill(); actx.stroke();
+        actx.lineWidth = 2;
+        actx.beginPath(); actx.moveTo(-14, -14); actx.lineTo(-4, -5);
+        actx.lineTo(5, -8); actx.lineTo(12, 9); actx.lineTo(19, 12); actx.stroke();
+        actx.beginPath(); actx.arc(0, 0, attack.radius - 7, 0.2, 1.7); actx.stroke();
       } else {
         actx.strokeStyle = attack.deflected ? '#ffe996' : '#f02740';
-        actx.lineWidth = attack.kind === 'scythe' ? 9 : 6;
+        actx.lineWidth = 6;
         actx.lineCap = 'round';
         actx.shadowColor = actx.strokeStyle;
         actx.shadowBlur = 8;
         actx.beginPath();
         const y = attack.y - 25;
-        if (attack.kind === 'spear') {
-          actx.moveTo(x, attack.deflected ? attack.y - 28 : BORDER);
-          actx.lineTo(x, attack.deflected ? attack.y + 28 : y + 28);
-        } else {
-          actx.moveTo(sweepX - 37, y - 26);
-          actx.quadraticCurveTo(sweepX + (attack.kind === 'claw' ? 33 : 5),
-            y - 12, sweepX + 33, y + 22);
-        }
+        actx.moveTo(x, attack.deflected ? attack.y - 28 : BORDER);
+        actx.lineTo(x, attack.deflected ? attack.y + 28 : y + 28);
         actx.stroke();
-        if (attack.kind === 'claw') {
-          for (const offset of [-10, 10]) {
-            actx.beginPath();
-            actx.moveTo(sweepX - 37, y - 26 + offset);
-            actx.quadraticCurveTo(sweepX + 28, y - 12 + offset,
-              sweepX + 32, y + 22 + offset);
-            actx.stroke();
-          }
-        }
       }
       actx.restore();
     }
@@ -19886,26 +20318,26 @@
       actx.shadowColor = '#ffd86b';
       actx.shadowBlur = 18;
       actx.strokeStyle = 'rgba(255, 215, 104, 0.48)';
-      actx.lineWidth = 20;
+      actx.lineWidth = 40;
       actx.beginPath();
       const progress = clamp01(swing.age / PHASE2_GRAVITY_SWING_MS);
       for (let i = 0; i <= 10; i++) {
         const angle = -2.35 + Math.max(0, progress - 0.38 + i * 0.038) * 3.45;
-        const x = tip.originX + Math.cos(angle) * HERO_H * 1.5 * swing.facing;
-        const y = tip.originY + Math.sin(angle) * HERO_H * 1.5;
+        const x = tip.originX + Math.cos(angle) * PHASE2_GRAVITY_SWING_LENGTH * swing.facing;
+        const y = tip.originY + Math.sin(angle) * PHASE2_GRAVITY_SWING_LENGTH;
         if (i === 0) actx.moveTo(x, y); else actx.lineTo(x, y);
       }
       actx.stroke();
       actx.shadowBlur = 7;
       actx.strokeStyle = '#fff2ac';
-      actx.lineWidth = 6;
+      actx.lineWidth = 12;
       actx.beginPath(); actx.moveTo(tip.originX, tip.originY);
       actx.lineTo(tip.x, tip.y); actx.stroke();
       actx.strokeStyle = '#caa55a';
-      actx.lineWidth = 3;
+      actx.lineWidth = 6;
       actx.beginPath();
-      actx.moveTo(tip.originX - 7, tip.originY - 3);
-      actx.lineTo(tip.originX + 7, tip.originY + 3);
+      actx.moveTo(tip.originX - 14, tip.originY - 6);
+      actx.lineTo(tip.originX + 14, tip.originY + 6);
       actx.stroke();
       actx.restore();
     }
@@ -22055,14 +22487,20 @@
     // The strike flourish advances in real time but slows everything else down.
     let timeScale = updateStrike(dtRaw);
     const sideIntro = phase2GravityPattern?.subpattern;
-    if (sideIntro?.type === 'sideScroller' && sideIntro.introMs < 1900) {
+    if (sideIntro?.type === 'sideScroller' && sideIntro.swing?.realTime) {
+      sideIntro.swing.age += dtRaw;
+      if (sideIntro.swing.age >= PHASE2_GRAVITY_SWING_MS) sideIntro.swing = null;
+    }
+    if (sideIntro?.type === 'sideScroller' && !sideIntro.introDone) {
       sideIntro.introMs += dtRaw;
-      vp = Math.min(VP_MAX, vp + VP_MAX * 0.05 * dtRaw / 1000);
-      if (sideIntro.swing) {
-        sideIntro.swing.age += dtRaw;
-        if (sideIntro.swing.age >= PHASE2_GRAVITY_SWING_MS) sideIntro.swing = null;
+      if (sideIntro.introAttacks >= 2) {
+        sideIntro.introReleaseMs += dtRaw;
+        if (sideIntro.introReleaseMs >= 450) {
+          sideIntro.introDone = true;
+          overlay.classList.remove('side-scroller-intro');
+        }
       }
-      timeScale *= 0.08 + 0.92 * smoothstep((sideIntro.introMs - 1150) / 750);
+      timeScale *= 0.05 + 0.95 * smoothstep(sideIntro.introReleaseMs / 450);
     }
     const dt = dtRaw * timeScale;
     clock += dt;
