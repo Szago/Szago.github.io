@@ -753,11 +753,16 @@
   // hero's health, VP the virtue points earned by braving an attack's shadow.
   // Damage and VP both accrue per beat spent inside the relevant hitbox.
   const WRATH_MAX = 200;
-  const HP_MAX = 1000;                // testing cap
+  const PHASE_HP_BUDGET = Object.freeze({ 1: 1000, 2: 2000, 3: 2000 });
+  const HP_MAX = PHASE_HP_BUDGET[1] + PHASE_HP_BUDGET[2] + PHASE_HP_BUDGET[3];
+  // The attempt's HP cap depends on where it STARTS, not the current phase.
+  const CHECKPOINT_HP = Object.freeze({ 1: HP_MAX,
+    2: PHASE_HP_BUDGET[2] + PHASE_HP_BUDGET[3], 3: PHASE_HP_BUDGET[3] });
   const VP_MAX = 50;
   // Global balance knobs. These scale all incoming damage, player healing,
   // and damage represented by the boss's wrath/entropy gauges.
   const PLAYER_DAMAGE_TAKEN_MULTIPLIER = 0.5;
+  const SIDE_SCROLLER_DAMAGE_TAKEN_MULTIPLIER = 0.5;
   const PLAYER_HEALING_MULTIPLIER = 0.5;
   const PLAYER_DAMAGE_DEALT_MULTIPLIER = 0.5;
   const VP_GAIN_MULTIPLIER = 0.5;
@@ -765,7 +770,8 @@
   const DAMAGE_PER_BEAT = 50;        // HP lost per beat per overlapping live skill
   const VP_PER_BEAT = VP_MAX * 0.175; // VP gained per beat per overlapping shadow
   const ATTACK_WRATH_GAIN = 10;      // wrath (BPM) the cultist gains when struck
-  const ATTACK_HEAL_FRAC = 0.05;     // fraction of max HP the hero recovers on a strike
+  const ATTACK_HEAL = 60;           // 30 HP after the global healing multiplier
+  const PASSIVE_HEAL_PER_SECOND = 2; // 1 HP per gameplay second after that multiplier
   const ENTROPY_MAX = 1000;
   const PHASE2_BPM_MIN = 150;
   const PHASE2_BPM_MAX = 250;
@@ -1015,7 +1021,19 @@
   const PHASE2_GRAVITY_LANE_BEAM_HEIGHT = 130 * 0.75;
   const PHASE2_GRAVITY_LANE_BEAM_TRAVEL_BEATS = 1.1;
   const PHASE2_GRAVITY_LANE_BEAM_GROW_BEATS = 2.4;
-  const PHASE2_GRAVITY_SIDE_KILL_HEAL = HP_MAX * 0.04;
+  const PHASE2_GRAVITY_SIDE_KILL_HEAL = 40;
+  const PHASE2_GRAVITY_BALL_DAMAGE = 40;
+  const PHASE2_GRAVITY_SIDE_LAVA_DAMAGE_PER_BEAT = 40;
+  const PHASE2_GRAVITY_SIDE_SPIKE_DAMAGE_PER_BEAT = 17;
+  const PHASE2_GRAVITY_SIDE_TENTACLE_DAMAGE = 45;
+  const PHASE2_GRAVITY_SIDE_SPIDER_DAMAGE = 30;
+  const PHASE2_GRAVITY_SIDE_LANE_BEAM_DAMAGE = 55;
+  const PHASE2_GRAVITY_SIDE_SLASH_DAMAGE = 35;
+  const PHASE2_GRAVITY_SIDE_SPEAR_DAMAGE = 35;
+  const PHASE2_GRAVITY_SIDE_SPEAR_TRAIL_DAMAGE_PER_BEAT = 35;
+  const PHASE2_GRAVITY_SIDE_CEILING_BEAM_DAMAGE_PER_BEAT = 35;
+  const PHASE2_GRAVITY_SIDE_ORB_DAMAGE = 32;
+  const PHASE2_GRAVITY_SIDE_FLAME_DAMAGE_PER_BEAT = 75;
   const PHASE2_GRAVITY_SIDE_LAYOUT_MS = 900;
   const PHASE2_GRAVITY_SIDE_CLAW_SCALE = 2.5;
   const PHASE2_GRAVITY_SIDE_SPEAR_MAX_BOUNCES = PHASE2_MAYHEM_SPEAR_MAX_BOUNCES * 3;
@@ -1058,7 +1076,7 @@
   const PHASE2_SWORD_RESPAWN_DELAY_MS = 430;
   const PHASE2_SWORD_RESPAWN_FORM_MS = 180;
   const PHASE2_SWORD_RING_DAMAGE = 100;
-  const PHASE2_SWORD_PARRY_HEAL = 10;
+  const PHASE2_SWORD_PARRY_HEAL = 14; // fixed 7 HP after the global healing multiplier
   const PHASE2_SWORD_PARRY_VP = VP_MAX * 0.05;
   const PHASE2_SWORD_FINAL_PARRIES = 20;
   const PHASE2_BOSS_SLAM_MS = 1200;
@@ -1143,6 +1161,10 @@
   const HERO_VP_FLASH_INTERVAL_MS = 1000 / 10;
   const HERO_GRAVITY_WAVE_FLASH_MS = 180;
   let hp = HP_MAX;
+  let hpMax = HP_MAX;
+  let runStartingCheckpoint = 1;
+  let combatCheckpoint = 1;
+  let gravityCheckpointEntropy = 0;
   let vp = 0;
   let entropy = 0;
   let dead = false;
@@ -1188,7 +1210,8 @@
   }
 
   function damagePlayer(amount) {
-    const modeScale = phase2GravityPattern?.subpattern?.type === 'sideScroller' ? 0.5 : 1;
+    const modeScale = phase2GravityPattern?.subpattern?.type === 'sideScroller'
+      ? SIDE_SCROLLER_DAMAGE_TAKEN_MULTIPLIER : 1;
     const scaledAmount = Math.max(0, amount) * PLAYER_DAMAGE_TAKEN_MULTIPLIER * modeScale;
     if (scaledAmount <= 0 || hp <= 0) return 0;
     const before = hp;
@@ -1199,8 +1222,13 @@
 
   function healPlayer(amount) {
     const before = hp;
-    hp = Math.min(HP_MAX, hp + Math.max(0, amount) * PLAYER_HEALING_MULTIPLIER);
+    hp = Math.min(hpMax, hp + Math.max(0, amount) * PLAYER_HEALING_MULTIPLIER);
     return hp - before;
+  }
+
+  function updatePassiveHpRegen(dt) {
+    if (!active || dead || combatPaused) return 0;
+    return healPlayer(PASSIVE_HEAL_PER_SECOND * Math.max(0, dt) / 1000);
   }
 
   function damageEnemy(amount) {
@@ -6130,7 +6158,7 @@
       } else if (strike.phaseTwo) {
         strike.impactX = impact.x;
         strike.impactY = impact.y;
-        healPlayer(HP_MAX * ATTACK_HEAL_FRAC);
+        healPlayer(ATTACK_HEAL);
         playBossSfx('playerImpact', { phaseTwo: true });
         entropy = Math.min(ENTROPY_MAX, entropy + damageEnemy(ENTROPY_PER_STRIKE));
         if (setCombatBpm(phaseTwoBpm())) updateBossMusicTempo(true);
@@ -6143,7 +6171,7 @@
       } else {
         strike.impactX = impact.x;
         strike.impactY = impact.y;
-        healPlayer(HP_MAX * ATTACK_HEAL_FRAC);
+        healPlayer(ATTACK_HEAL);
         const finalHit = wrathAfterStrike() >= WRATH_MAX;
         strike.finalHit = finalHit;
         playBossSfx('playerImpact', { finalHit });
@@ -6803,7 +6831,8 @@
       heroY: heroViewport.y,
       heroScaleX: board.width / Math.max(1, canvas.width),
       heroScaleY: board.height / Math.max(1, canvas.height),
-      restartPhase: phase === PHASE.SECOND ? PHASE.SECOND : PHASE.FALL,
+      restartCheckpoint: combatCheckpoint,
+      checkpointEntropy: combatCheckpoint === 3 ? gravityCheckpointEntropy : 0,
       phaseOneAudio: phase === PHASE.ACTIVE || phase === PHASE.SECOND,
       impactPlayed: false,
       crackPlayed: false,
@@ -6833,9 +6862,18 @@
       ? 'ENTROPY ' + Math.round(entropy) + ' / ' + ENTROPY_MAX
       : 'WRATH ' + wrath;
     if (hpFill) {
-      hpFill.style.height = (Math.max(0, hp) / HP_MAX * 100) + '%';
+      hpFill.style.height = (Math.max(0, hp) / hpMax * 100) + '%';
       hpFill.style.transform = phase2GravityPattern?.subpattern?.type === 'sideScroller'
-        ? 'scaleX(' + clamp01(hp / HP_MAX) + ')' : '';
+        ? 'scaleX(' + clamp01(hp / hpMax) + ')' : '';
+      const hpBar = hpFill.closest('.aether-boss2d-hp');
+      if (hpBar) {
+        hpBar.title = 'HP ' + Math.ceil(hp) + ' / ' + hpMax + ' (starting phase ' + runStartingCheckpoint + ')';
+        hpBar.setAttribute('role', 'progressbar');
+        hpBar.setAttribute('aria-label', 'HP');
+        hpBar.setAttribute('aria-valuemin', '0');
+        hpBar.setAttribute('aria-valuemax', String(hpMax));
+        hpBar.setAttribute('aria-valuenow', String(Math.ceil(hp)));
+      }
     }
     if (vpFill) {
       const attackCharge = clamp01(Math.max(0, vp) / PLAYER_ATTACK_VP_COST);
@@ -6872,6 +6910,7 @@
 
   function startSecondPhase() {
     if (phase === PHASE.SECOND) return;
+    combatCheckpoint = Math.max(combatCheckpoint, 2);
     stopBloodSpiralAudio(true);
     stopPhaseTwoMassAudio(true);
     stopPhaseTwoWaveformMusic(0);
@@ -9796,7 +9835,7 @@
     if (type === 'parry') {
       playBossSfx('phase2Parry');
       pattern.successfulParries++;
-      healPlayer(PHASE2_SWORD_PARRY_HEAL * (bpm / PHASE2_BPM_MIN));
+      healPlayer(PHASE2_SWORD_PARRY_HEAL);
       addVp(PHASE2_SWORD_PARRY_VP, false);
       if (!pattern.finalClockwise && pattern.successfulParries >= PHASE2_SWORD_FINAL_PARRIES) {
         pattern.finalClockwisePending = true;
@@ -13054,6 +13093,10 @@
 
   function startPhaseTwoGravityPattern(initialSubpattern = 'weaponTetris') {
     if (!phase2CombatStarted || !canvas || !phase2Avatar) return false;
+    if (combatCheckpoint < 3) {
+      combatCheckpoint = 3;
+      gravityCheckpointEntropy = entropy;
+    }
     stopPhaseTwoWaveformMusic();
     restorePhaseTwoSquareArena(true);
     phase2PitfallPattern = null;
@@ -15243,7 +15286,7 @@
         ball.touchedHero = true;
         if (ball.shadow) addVp(VP_MAX * 0.12, true);
         else {
-          damagePlayer(40);
+          damagePlayer(PHASE2_GRAVITY_BALL_DAMAGE);
           phaseTwoGravityPlayDamageSfx(subpattern);
           if (hp <= 0) die();
         }
@@ -15809,7 +15852,7 @@
         { x: fromX, y: fromY }, { x, y }, PHASE2_MAYHEM_SPEAR_BODY_RADIUS);
       if (!spear.deflected && phaseTwoMayhemSpearHitsHero(screenFromX, fromY, screenX, y)) {
         spear.dead = true; spear.fadeAge = 0;
-        hit(35);
+        hit(PHASE2_GRAVITY_SIDE_SPEAR_DAMAGE);
         break;
       }
       remaining -= travel;
@@ -15939,7 +15982,8 @@
       const surfaceY = phaseTwoGravitySideSurfaceYAt(pit.ground, core.x + subpattern.scroll);
       const bottom = core.y + HERO_BODY_HALF_H;
       if (core.x + HERO_BODY_HALF_W > x && core.x - HERO_BODY_HALF_W < x + pit.w &&
-          bottom >= surfaceY - 3 && core.y - HERO_BODY_HALF_H < surfaceY + 8) hit(40 * beatStep);
+          bottom >= surfaceY - 3 && core.y - HERO_BODY_HALF_H < surfaceY + 8)
+        hit(PHASE2_GRAVITY_SIDE_LAVA_DAMAGE_PER_BEAT * beatStep);
     }
     for (const spike of subpattern.spikes) {
       const x = spike.x - subpattern.scroll;
@@ -15952,7 +15996,7 @@
       }
       if (Math.abs(core.x - (x + spike.w / 2)) < spike.w / 2 + 5 &&
           core.y > spike.y - spike.height - 7 && core.y < spike.y + 8) {
-        hit(17 * beatStep);
+        hit(PHASE2_GRAVITY_SIDE_SPIKE_DAMAGE_PER_BEAT * beatStep);
       }
     }
     subpattern.spikes = subpattern.spikes.filter(spike => !spike.dead);
@@ -16007,7 +16051,7 @@
         damagePhaseTwoGravitySideBoss();
       } else if (heroHit && !tentacle.hitHero) {
         tentacle.hitHero = true;
-        hit(45);
+        hit(PHASE2_GRAVITY_SIDE_TENTACLE_DAMAGE);
         pattern.vx += Math.sign(worldHeroX - tentacle.x || 1) * 0.15;
         pattern.vy = Math.min(pattern.vy, -0.12);
         pattern.grounded = false;
@@ -16027,7 +16071,7 @@
       } else if (!spider.hit && Math.abs(core.x - x) < HERO_BODY_HALF_W + 15 &&
           Math.abs(core.y - spider.y) < HERO_BODY_HALF_H + 14) {
         spider.hit = true;
-        hit(30);
+        hit(PHASE2_GRAVITY_SIDE_SPIDER_DAMAGE);
       }
     }
     subpattern.spiders = subpattern.spiders.filter(spider =>
@@ -16047,7 +16091,7 @@
         } else if (!attack.hit && core.x + HERO_BODY_HALF_W > beam.left &&
             core.x - HERO_BODY_HALF_W < beam.right &&
             core.y + HERO_BODY_HALF_H > beam.top && core.y - HERO_BODY_HALF_H < beam.bottom) {
-          attack.hit = true; hit(55);
+          attack.hit = true; hit(PHASE2_GRAVITY_SIDE_LANE_BEAM_DAMAGE);
         }
         continue;
       }
@@ -16062,7 +16106,7 @@
           const contact = phaseTwoMayhemSpearRainContact({ arrows:
             [{ ...attack, x: attack.x - subpattern.scroll,
               trail: attack.trail.map(p => ({ x: p.x - subpattern.scroll, y: p.y })) }] });
-          if (contact.trailHits) hit(35 * beatStep);
+          if (contact.trailHits) hit(PHASE2_GRAVITY_SIDE_SPEAR_TRAIL_DAMAGE_PER_BEAT * beatStep);
           else if (contact.arrowShadow) addVp(VP_PER_BEAT * beatStep, true);
         }
         continue;
@@ -16083,7 +16127,7 @@
           }
         }
         if (parried) strikePhaseTwoGravitySideAttack(subpattern, attack);
-        else if (touching && !attack.hit) { attack.hit = true; hit(35); }
+        else if (touching && !attack.hit) { attack.hit = true; hit(PHASE2_GRAVITY_SIDE_SLASH_DAMAGE); }
         continue;
       }
       if (attack.kind === 'ball') {
@@ -16111,7 +16155,7 @@
       if (attack.kind === 'ball') {
         if (!attack.deflected && attack.ageBeats >= attack.nextHitBeat &&
             Math.hypot(core.x - x, core.y - attack.y) < attack.radius + HERO_BODY_HALF_W) {
-          hit(32); attack.nextHitBeat = attack.ageBeats + 0.8;
+          hit(PHASE2_GRAVITY_SIDE_ORB_DAMAGE); attack.nextHitBeat = attack.ageBeats + 0.8;
         }
         continue;
       }
@@ -16119,7 +16163,7 @@
       const halfWidth = attack.kind === 'beam' ? 13 : 24;
       if (Math.abs(core.x - sweepX) < halfWidth &&
           (attack.kind === 'beam' || Math.abs(core.y - y) < 34)) {
-        hit(35 * beatStep);
+        hit(PHASE2_GRAVITY_SIDE_CEILING_BEAM_DAMAGE_PER_BEAT * beatStep);
       }
     }
     subpattern.attacks = subpattern.attacks.filter(attack => {
@@ -16134,7 +16178,7 @@
     subpattern.spikes = subpattern.spikes.filter(spike => !spike.dead);
     subpattern.tentacles = subpattern.tentacles.filter(tentacle => !tentacle.dead);
     subpattern.spiders = subpattern.spiders.filter(spider => !spider.dead);
-    if (hero.x < BORDER + 65) hit(75 * beatStep);
+    if (hero.x < BORDER + 65) hit(PHASE2_GRAVITY_SIDE_FLAME_DAMAGE_PER_BEAT * beatStep);
     if (subpattern.elapsedBeats >= PHASE2_GRAVITY_SCROLL_BEATS) {
       beginPhaseTwoGravitySubpattern(pattern, 'idle');
     }
@@ -22932,6 +22976,7 @@
     const dt = dtRaw * timeScale;
     clock += dt;
     phaseTime += dt;
+    updatePassiveHpRegen(dt);
     updateArena(dt);
     updatePhase(dt);
     if ((phase === PHASE.ACTIVE || phase === PHASE.SECOND) && !phase2TowerPattern) clampHero();
@@ -23055,9 +23100,16 @@
 
   // ---- Lifecycle ---------------------------------------------------------
   // Reset all combat state and (re)start the loop at the requested phase boundary.
-  // A normal open starts from the phase-one fall; PERSIST may select phase two.
-  function resetRun(restartPhase) {
-    const checkpoint = restartPhase === PHASE.SECOND ? PHASE.SECOND : PHASE.FALL;
+  // Phase 3 is Gravity within PHASE.SECOND's shared rendering/controller.
+  // Keep checkpoints separate from the intro/animation state enum.
+  function resetRun(restartCheckpoint = 1, checkpointEntropy = 0) {
+    const checkpoint = restartCheckpoint === 3 ? 3 :
+      restartCheckpoint === 2 || restartCheckpoint === PHASE.SECOND ? 2 : 1;
+    // A death during the side-scroller's entry must cancel its HUD/stage
+    // animations before recreating the checkpoint's normal arena layout.
+    if (phase2GravityPattern?.sideScrollerLayout) {
+      restorePhaseTwoGravitySideScrollerLayout(phase2GravityPattern);
+    }
     stopSoundDebugHold();
     setSoundDebugOverlayOpen(false);
     stopBloodSpiralAudio(true);
@@ -23146,7 +23198,11 @@
     lastSingle = null;
     nextSlotId = 1;
     nextAttackBeat = Infinity;
-    hp = HP_MAX;
+    runStartingCheckpoint = checkpoint;
+    combatCheckpoint = checkpoint;
+    gravityCheckpointEntropy = checkpoint === 3 ? clampRange(checkpointEntropy, 0, ENTROPY_MAX) : 0;
+    hpMax = CHECKPOINT_HP[checkpoint];
+    hp = hpMax;
     vp = 0;
     entropy = 0;
     dead = false;
@@ -23157,9 +23213,17 @@
     if (deathScreen) deathScreen.classList.add('hidden');
     if (deathScreen) deathScreen.classList.remove('is-ready');
     if (deathCtx && deathCanvas) deathCtx.clearRect(0, 0, deathCanvas.width, deathCanvas.height);
-    if (checkpoint === PHASE.SECOND) {
+    if (checkpoint >= 2) {
       skipToActive(true);
       startSecondPhase();
+      if (checkpoint === 3) {
+        // Queue Gravity before the avatar finishes its short ground-slam entry,
+        // so no phase-2 attack can run while the checkpoint is being restored.
+        entropy = gravityCheckpointEntropy;
+        phase2GravityDebugSubpattern = 'weaponTetris';
+        phase2GravityDebugQueued = true;
+        skipPhaseTwoTransition();
+      }
     } else {
       // The motif belongs to the whole cultist encounter, including the fall
       // into the arena and the seal-drawing intro before she stands.
@@ -23210,8 +23274,9 @@
   function restart() {
     if (!active) return;
     resumeBossMusicAudio();
-    const checkpoint = deathSequence ? deathSequence.restartPhase : PHASE.FALL;
-    resetRun(checkpoint);
+    const checkpoint = deathSequence ? deathSequence.restartCheckpoint : 1;
+    const checkpointEntropy = deathSequence ? deathSequence.checkpointEntropy : 0;
+    resetRun(checkpoint, checkpointEntropy);
   }
 
   function close() {
